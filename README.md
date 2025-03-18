@@ -28,7 +28,7 @@ CustomMaker is a program designed to facilitate the creation of Customs for the 
 ## Usage
 1. Run the program:
     ```sh
-    python [main.py](http://_vscodecontentref_/1)
+    python main.py
     ```
 2. Select a folder with images to start editing.
 3. Customize the border and resize the images as needed.
