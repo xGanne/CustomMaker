@@ -169,7 +169,15 @@ class CustomMakerApp:
             self.user_image_pos = state['pos']
             self.user_image_size = state['size']
             self.user_image = self.original_image.resize(self.user_image_size, Image.LANCZOS)
-    
+
+    def close_resources(self):
+        if self.original_image:
+            self.original_image.close()
+            self.original_image = None
+        if self.user_image:
+            self.user_image.close()
+            self.user_image = None
+
     def on_image_select(self, _):
         if self.image_listbox.curselection():
             index = self.image_listbox.curselection()[0]
@@ -194,6 +202,7 @@ class CustomMakerApp:
         return image.resize((new_width, new_height), Image.LANCZOS)
 
     def cancel_image(self):
+        self.close_resources()
         self.image_path = None
         self.original_image = None
         self.user_image = None
