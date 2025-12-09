@@ -86,12 +86,40 @@ class ImageProcessor:
             open_cv_image_bgr = cv2.cvtColor(open_cv_image_rgb, cv2.COLOR_RGB2BGR)
             gray_image = cv2.cvtColor(open_cv_image_bgr, cv2.COLOR_BGR2GRAY)
             
-            faces = face_cascade.detectMultiScale(gray_image, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+            # 1. Enhance Contrast (Helps with stylized/faint lines)
+            gray_image = cv2.equalizeHist(gray_image)
             
+            h, w = gray_image.shape
+            min_dim = min(h, w)
+            
+            # --- Pass 1: Strict Mode (Priority) ---
+            # Look for LARGE, CLEAR faces (>15% of image). 
+            # High threshold (minNeighbors=5) to avoid false positives (like jewels).
+            min_size_strict = max(60, int(min_dim * 0.15))
+            
+            faces = face_cascade.detectMultiScale(
+                gray_image, 
+                scaleFactor=1.1, 
+                minNeighbors=5, 
+                minSize=(min_size_strict, min_size_strict)
+            )
+            
+            # --- Pass 2: High Sensitivity Mode (Fallback) ---
+            # If no big face found (maybe tilted, occluded, or small), look harder.
+            # Smaller size (>5%) and lower threshold, but higher resolution scan (scaleFactor=1.05).
+            if faces is None or len(faces) == 0:
+                min_size_relaxed = max(40, int(min_dim * 0.05))
+                faces = face_cascade.detectMultiScale(
+                    gray_image, 
+                    scaleFactor=1.05, 
+                    minNeighbors=3, 
+                    minSize=(min_size_relaxed, min_size_relaxed)
+                )
+
             if len(faces) == 0:
                 return None
                 
-            # Pick largest/best face
+            # Pick largest/best face (Width * Height)
             best_face = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)[0]
             return best_face
         except Exception as e:

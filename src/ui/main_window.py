@@ -68,6 +68,8 @@ class CustomMakerApp:
         self.root.bind('<Control-z>', self.undo)
         self.root.bind('<Control-s>', lambda event: self.show_save_menu())
         self.root.bind('<Control-o>', lambda event: self.select_folder())
+        self.root.bind('<Alt-f>', lambda event: self.intelligent_auto_frame())
+        self.root.bind('<Alt-b>', lambda event: self.auto_fit_image())
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def initialize_state_variables(self):
@@ -604,7 +606,7 @@ class CustomMakerApp:
     def intelligent_auto_frame(self):
         if not self.original_image: return
         face = ImageProcessor.detect_anime_face(self.original_image, self.face_cascade)
-        if not face:
+        if face is None:
             self.auto_fit_image()
             return
             
