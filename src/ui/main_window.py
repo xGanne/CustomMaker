@@ -524,6 +524,15 @@ class CustomMakerApp:
     def release_image(self, _):
         if self.selected_image:
             self.selected_image = False
+            
+            # Re-apply resize with High Quality (LANCZOS) on release
+            if self.user_image and self.original_image:
+                 w, h = self.user_image_size
+                 # Only if size differs significantly or just always to be safe/consistent
+                 # Since drag used NEAREST, we must re-do it.
+                 self.user_image = self.original_image.resize((w, h), Image.LANCZOS)
+                 self.update_canvas()
+
             self.save_current_image_state()
 
     def resize_image_proportional(self, event):
@@ -543,7 +552,7 @@ class CustomMakerApp:
                 fw = max(20, int(nw))
                 fh = max(int(fw/ratio), 20)
                 
-            self.user_image = self.original_image.resize((fw, fh), Image.LANCZOS)
+            self.user_image = self.original_image.resize((fw, fh), Image.NEAREST)
             self.user_image_size = (fw, fh)
             self.update_canvas()
 
