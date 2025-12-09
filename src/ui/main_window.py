@@ -675,8 +675,23 @@ class CustomMakerApp:
                 if error: messagebox.showerror("Erro", f"{error}")
                 elif links:
                     w = ctk.CTkToplevel(self.root)
-                    ctk.CTkTextbox(w, width=400, height=300).pack() # Textbox is CTkTextbox
-                    w.children['!ctktextbox'].insert("1.0", "\n".join(links))
+                    w.title("Resultado Upload")
+                    w.geometry("500x400")
+                    
+                    textbox = ctk.CTkTextbox(w, width=480, height=300)
+                    textbox.pack(pady=10, padx=10)
+                    textbox.insert("1.0", "\n".join(links))
+                    
+                    def copy_command():
+                        cmd = f"$ai {title} $\n" + " $\n".join(links)
+                        self.root.clipboard_clear()
+                        self.root.clipboard_append(cmd)
+                        self.root.update() # Required for clipboard
+                        btn_copy.configure(text="Copiado!", fg_color="green")
+                        w.after(2000, lambda: btn_copy.configure(text="Copiar Comando", fg_color=["#3a7ebf", "#1f538d"]))
+                    
+                    btn_copy = ctk.CTkButton(w, text="Copiar Comando", command=copy_command)
+                    btn_copy.pack(pady=5)
             
             threading.Thread(target=upload_task, daemon=True).start()
 

@@ -17,6 +17,7 @@ class DanbooruSearchTab:
         self.client = DanbooruClient()
         self.results = []
         self.selected_posts = set()
+        self.selected_posts_details = {}
         self.thumbnails = {}
         self.current_page = 1
         
@@ -82,7 +83,9 @@ class DanbooruSearchTab:
         # Keep selections? Maybe not between searches, but between pages? 
         # Usually clearing selection on new search is better.
         if new_search:
+
              self.selected_posts.clear()
+             self.selected_posts_details.clear()
              self.update_selection_label()
         
         self.thumbnails.clear()
@@ -144,8 +147,9 @@ class DanbooruSearchTab:
             lbl.pack(padx=2, pady=2)
             
             # Store data on widget for click handler
-            card.bind("<Button-1>", lambda e, pid=post['id'], w=card: self.toggle_selection(pid, w))
-            lbl.bind("<Button-1>", lambda e, pid=post['id'], w=card: self.toggle_selection(pid, w))
+            # Store data on widget for click handler
+            card.bind("<Button-1>", lambda e, p=post, w=card: self.toggle_selection(p, w))
+            lbl.bind("<Button-1>", lambda e, p=post, w=card: self.toggle_selection(p, w))
             
             # Async thumbnail load
             self.load_thumbnail(preview_url, lbl)
@@ -178,12 +182,15 @@ class DanbooruSearchTab:
         
         threading.Thread(target=task, daemon=True).start()
 
-    def toggle_selection(self, post_id, card_widget):
+    def toggle_selection(self, post, card_widget):
+        post_id = post['id']
         if post_id in self.selected_posts:
             self.selected_posts.remove(post_id)
+            if post_id in self.selected_posts_details: del self.selected_posts_details[post_id]
             card_widget.configure(border_width=0)
         else:
             self.selected_posts.add(post_id)
+            self.selected_posts_details[post_id] = post
             card_widget.configure(border_width=2, border_color="#3B8ED0")
         self.update_selection_label()
 
@@ -220,21 +227,20 @@ class DanbooruSearchTab:
         
         def download_task():
             count = 0
-            for post in self.results:
-                if post['id'] in self.selected_posts:
-                    file_url = post.get('file_url') or post.get('large_file_url') or post.get('source')
-                    if not file_url: continue
-                    
-                    fname = f"{post['id']}.{post.get('file_ext', 'png')}"
-                    save_path = os.path.join(final_path, fname)
-                    
-                    data = self.client.download_image(file_url)
-                    if data:
-                        with open(save_path, 'wb') as f:
-                            f.write(data)
-                    
-                    count += 1
-                    self.app.root.after(0, lambda c=count: popup.update_progress(c, f"Baixado {c}/{len(self.selected_posts)}"))
+            for post in self.selected_posts_details.values():
+                file_url = post.get('file_url') or post.get('large_file_url') or post.get('source')
+                if not file_url: continue
+                
+                fname = f"{post['id']}.{post.get('file_ext', 'png')}"
+                save_path = os.path.join(final_path, fname)
+                
+                data = self.client.download_image(file_url)
+                if data:
+                    with open(save_path, 'wb') as f:
+                        f.write(data)
+                
+                count += 1
+                self.app.root.after(0, lambda c=count: popup.update_progress(c, f"Baixado {c}/{len(self.selected_posts)}"))
             
             self.app.root.after(0, lambda: finish(final_path))
 
@@ -272,6 +278,7 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
         self.current_page = current_page
         
         self.selected_posts = set()
+        self.selected_posts_details = {}
         self.thumbnails = {}
         
         self.setup_ui()
@@ -334,8 +341,9 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
             lbl.pack(padx=2, pady=2)
             
             # Store data on widget for click handler
-            card.bind("<Button-1>", lambda e, pid=post['id'], w=card: self.toggle_selection(pid, w))
-            lbl.bind("<Button-1>", lambda e, pid=post['id'], w=card: self.toggle_selection(pid, w))
+            # Store data on widget for click handler
+            card.bind("<Button-1>", lambda e, p=post, w=card: self.toggle_selection(p, w))
+            lbl.bind("<Button-1>", lambda e, p=post, w=card: self.toggle_selection(p, w))
             
             # Use DanbooruSearchTab static logic or duplicated logic? 
             # Ideally minimal duplication. But for now local load method is fine.
@@ -365,12 +373,15 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
         
         threading.Thread(target=task, daemon=True).start()
 
-    def toggle_selection(self, post_id, card_widget):
+    def toggle_selection(self, post, card_widget):
+        post_id = post['id']
         if post_id in self.selected_posts:
             self.selected_posts.remove(post_id)
+            if post_id in self.selected_posts_details: del self.selected_posts_details[post_id]
             card_widget.configure(border_width=0)
         else:
             self.selected_posts.add(post_id)
+            self.selected_posts_details[post_id] = post
             card_widget.configure(border_width=3, border_color="#3B8ED0")
         self.selection_label.configure(text=f"{len(self.selected_posts)} selecionados")
 
@@ -399,21 +410,20 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
         
         def download_task():
             count = 0
-            for post in self.posts:
-                if post['id'] in self.selected_posts:
-                    file_url = post.get('file_url') or post.get('large_file_url') or post.get('source')
-                    if not file_url: continue
-                    
-                    fname = f"{post['id']}.{post.get('file_ext', 'png')}"
-                    save_path = os.path.join(final_path, fname)
-                    
-                    data = self.client.download_image(file_url)
-                    if data:
-                        with open(save_path, 'wb') as f:
-                            f.write(data)
-                    
-                    count += 1
-                    self.after(0, lambda c=count: popup.update_progress(c, f"Baixado {c}/{len(self.selected_posts)}"))
+            for post in self.selected_posts_details.values():
+                file_url = post.get('file_url') or post.get('large_file_url') or post.get('source')
+                if not file_url: continue
+                
+                fname = f"{post['id']}.{post.get('file_ext', 'png')}"
+                save_path = os.path.join(final_path, fname)
+                
+                data = self.client.download_image(file_url)
+                if data:
+                    with open(save_path, 'wb') as f:
+                        f.write(data)
+                
+                count += 1
+                self.after(0, lambda c=count: popup.update_progress(c, f"Baixado {c}/{len(self.selected_posts)}"))
             
             self.after(0, lambda: finish(final_path))
 
