@@ -513,9 +513,22 @@ class CustomMakerApp:
 
     def undo(self, _=None):
         if self.undo_stack:
-            item = self.undo_stack.pop()
-            # Restore logic (simply pop gives current, we need previous)
-            pass
+            # Pop the last state
+            prev_img, prev_pos, prev_size = self.undo_stack.pop()
+            
+            # Close current user_image to free memory (if it exists and is distinct)
+            # We don't close self.original_image here, just the modified user instance
+            if self.user_image and self.user_image != prev_img:
+                self.user_image.close()
+
+            # Restore state
+            self.user_image = prev_img
+            self.user_image_pos = prev_pos
+            self.user_image_size = prev_size
+            
+            # Update state cache and canvas
+            self.save_current_image_state() # Updates the 'current' persistent state
+            self.update_canvas()
 
     # --- Automated Features (Threaded) ---
     def intelligent_auto_frame(self):
