@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from src.utils.resource_loader import resource_path
 
 # Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -38,6 +39,9 @@ BORDA_HEX = {
 # Obter o token da API do ImgChest
 IMG_CHEST_API_TOKEN = os.getenv('IMG_CHEST_API_TOKEN')
 
+# Nome do arquivo de configuração para persistência
+CONFIG_FILE = "custommaker_config.json"
+
 # Configurações de layout
 BORDA_WIDTH = 225
 BORDA_HEIGHT = 350
@@ -47,3 +51,7 @@ UPLOAD_BATCH_SIZE = 10
 
 # Tipos de arquivos de imagem suportados
 SUPPORTED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')
+
+# Path to local assets
+CSS_FILE = resource_path("bordas.css")
+FACE_CASCADE_FILE = resource_path("lbpcascade_animeface.xml")

@@ -11,8 +11,9 @@ from PIL import Image, ImageTk, ImageDraw
 import cssutils
 from dotenv import load_dotenv
 import time
+import json # Importar json para persistência de configurações
 
-from config import COLORS, BORDA_NAMES, BORDA_HEX, BORDA_WIDTH, BORDA_HEIGHT
+from config import COLORS, BORDA_NAMES, BORDA_HEX, BORDA_WIDTH, BORDA_HEIGHT, SUPPORTED_EXTENSIONS, CONFIG_FILE # Importar CONFIG_FILE e SUPPORTED_EXTENSIONS
 
 class CustomMakerFunctions:
     def __init__(self):
@@ -47,6 +48,38 @@ class CustomMakerFunctions:
                                  f"Não foi possível inicializar o detector de rostos OpenCV: {e}\n"
                                  "O 'Ajuste Inteligente' usará o modo de preenchimento simples.")
             self.face_cascade = None
+        self.config = self.load_app_config() # Carregar configurações na inicialização
+        self.image_path_last_dir = self.config['last_folder'] # Inicializa com o último diretório
+
+    def load_app_config(self):
+        default_config = {
+            'last_folder': None,
+            'last_global_borda': 'White'
+        }
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r') as f:
+                    config = json.load(f)
+                    return {**default_config, **config} # Mescla com defaults para novas chaves
+            except json.JSONDecodeError as e:
+                print(f"AVISO: Erro ao ler {CONFIG_FILE}: {e}. Usando configurações padrão.")
+                return default_config
+        return default_config
+    
+    def save_app_config(self):
+        config_to_save = {
+            'last_folder': self.image_path_last_dir if hasattr(self, 'image_path_last_dir') else None,
+            'last_global_borda': self.selected_borda.get() if hasattr(self, 'selected_borda') else 'White'
+        }
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(config_to_save, f, indent=4)
+        except IOError as e:
+            print(f"ERRO: Não foi possível salvar as configurações em {CONFIG_FILE}: {e}")
+
+    def on_closing(self): # Adicionado para garantir que as configurações sejam salvas ao fechar
+        self.save_app_config()
+        # Não destruir a janela aqui, apenas salvar. A UI lida com o destroy.
 
     def load_resources(self):
         load_dotenv()
@@ -120,21 +153,35 @@ class CustomMakerFunctions:
                     arrowcolor=COLORS["text"])
 
     def select_folder(self):
-        folder_path = filedialog.askdirectory()
+        initial_dir = self.image_path_last_dir if self.image_path_last_dir and os.path.isdir(self.image_path_last_dir) else None
+        folder_path = filedialog.askdirectory(initialdir=initial_dir)
         if folder_path:
+            self.image_path_last_dir = folder_path # Salvar o último diretório selecionado
+            self.save_app_config() # Salva a configuração atualizada
             self.status_var.set("Carregando imagens...")
             self.root.update_idletasks()
-            self.image_list = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
-                          if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'))]
+            # Limpa estados antigos antes de carregar novas imagens
+            self.image_list = []
             self.image_listbox.delete(0, tk.END)
-            self.images = {} 
-            self.image_states = {} 
-            self.individual_bordas = {} 
-            self.undo_stack = [] 
-            for image_path in self.image_list:
-                self.image_listbox.insert(tk.END, os.path.basename(image_path))
+            self.images = {}
+            self.image_states = {}
+            self.individual_bordas = {}
+            self.undo_stack = []
+
+            # Carrega novas imagens na lista temporária e depois adiciona ao UI
+            temp_image_paths = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
+                          if f.lower().endswith(SUPPORTED_EXTENSIONS)] #
+            
+            for image_path in temp_image_paths:
+                self.image_list.append(image_path)
+                display_name = os.path.basename(image_path)
+                # Adiciona um marcador se já tiver uma borda individual (útil ao recarregar estados futuros)
+                if image_path in self.individual_bordas: # Isto pode ser relevante se você persistir estados
+                    display_name = f"⭐ {display_name}" # Ou qualquer outro marcador
+                self.image_listbox.insert(tk.END, display_name)
+
             if self.image_list:
-                self.current_image_index = -1 
+                self.current_image_index = -1
                 self.load_image(0)
                 self.status_var.set(f"Carregadas {len(self.image_list)} imagens")
             else:
@@ -142,6 +189,7 @@ class CustomMakerFunctions:
                 self.user_image = None
                 self.update_canvas()
                 self.status_var.set("Nenhuma imagem encontrada na pasta")
+            
 
     def load_image(self, index, preserve_undo=False):
         if self.current_image_index is not None and self.current_image_index < len(self.image_list) :
@@ -249,19 +297,33 @@ class CustomMakerFunctions:
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
         if canvas_width <= 1 or canvas_height <= 1: 
-            if hasattr(self, 'after_id_update_canvas'):
-                 if self.root.winfo_exists(): self.root.after_cancel(self.after_id_update_canvas)
+            # Atraso para garantir que o canvas tenha dimensões válidas
+            if hasattr(self, 'debounce_id_canvas_config'):
+                if self.root.winfo_exists(): self.root.after_cancel(self.debounce_id_canvas_config)
             if self.root.winfo_exists():
-                self.after_id_update_canvas = self.root.after(50, self.update_canvas)
+                self.debounce_id_canvas_config = self.root.after(100, self.update_canvas)
             return
+
         self.canvas.create_rectangle(0, 0, canvas_width, canvas_height, fill=COLORS["bg_medium"], outline="")
         borda_x = (canvas_width - BORDA_WIDTH) // 2
         borda_y = (canvas_height - BORDA_HEIGHT) // 2
         self.borda_pos = (borda_x, borda_y) 
+        
+        # Lógica para determinar a cor da borda (global, individual ou personalizada)
+        border_color_hex = self.borda_hex.get('White', '#FFFFFF') # Fallback
+        
         current_display_borda_name = self.selected_borda.get() 
         if self.image_path and self.image_path in self.individual_bordas:
             current_display_borda_name = self.individual_bordas[self.image_path] 
-        border_color_hex = self.borda_hex.get(current_display_borda_name, self.borda_hex.get('White', '#FFFFFF')) 
+        
+        if current_display_borda_name == "Cor Personalizada":
+            if self.image_path and self.image_path in self.custom_borda_hex_individual:
+                border_color_hex = self.custom_borda_hex_individual[self.image_path]
+            elif hasattr(self, 'custom_borda_hex'):
+                border_color_hex = self.custom_borda_hex
+        else:
+            border_color_hex = self.borda_hex.get(current_display_borda_name, self.borda_hex.get('White', '#FFFFFF'))
+        
         dash_pattern = (4, 4)
         self.canvas.create_rectangle(borda_x - 5, borda_y - 5, borda_x + BORDA_WIDTH + 5, borda_y + BORDA_HEIGHT + 5,
                                 outline=COLORS["text_dim"], dash=dash_pattern, tags="area_trabalho")
@@ -370,11 +432,23 @@ class CustomMakerFunctions:
         if content_to_paste: content_to_paste.close() 
         return final_custom_area
 
-    def add_borda_to_image(self, image_content_pil, image_path_key_for_borda_lookup):
-        current_display_borda_name = self.selected_borda.get() 
-        if image_path_key_for_borda_lookup in self.individual_bordas:
-            current_display_borda_name = self.individual_bordas[image_path_key_for_borda_lookup]
-        border_color_hex = self.borda_hex.get(current_display_borda_name, self.borda_hex.get('White', '#FFFFFF'))
+    def add_borda_to_image(self, image_content_pil, image_path_key_for_borda_lookup, custom_hex_color=None):
+        if custom_hex_color:
+            border_color_hex = custom_hex_color
+        else:
+            current_display_borda_name = self.selected_borda.get()
+            if image_path_key_for_borda_lookup in self.individual_bordas:
+                current_display_borda_name = self.individual_bordas[image_path_key_for_borda_lookup]
+            
+            # Adicionado para suportar borda individual personalizada
+            if current_display_borda_name == "Cor Personalizada":
+                if image_path_key_for_borda_lookup in self.custom_borda_hex_individual:
+                    border_color_hex = self.custom_borda_hex_individual[image_path_key_for_borda_lookup]
+                else: # Fallback para a cor personalizada global se não houver individual
+                    border_color_hex = self.custom_borda_hex if hasattr(self, 'custom_borda_hex') else self.borda_hex.get('White', '#FFFFFF')
+            else:
+                border_color_hex = self.borda_hex.get(current_display_borda_name, self.borda_hex.get('White', '#FFFFFF'))
+
         image_with_border = image_content_pil.copy()
         draw = ImageDraw.Draw(image_with_border)
         draw.rectangle([0, 0, BORDA_WIDTH - 1, BORDA_HEIGHT - 1], outline=border_color_hex, width=2)
@@ -524,6 +598,10 @@ class CustomMakerFunctions:
             if img_to_close: img_to_close.close()
         if image_path_key_removed in self.image_states: del self.image_states[image_path_key_removed]
         if image_path_key_removed in self.individual_bordas: del self.individual_bordas[image_path_key_removed]
+        
+        # Remover também de custom_borda_hex_individual se aplicável
+        if image_path_key_removed in self.custom_borda_hex_individual: del self.custom_borda_hex_individual[image_path_key_removed]
+
         self.status_var.set(f"'{os.path.basename(image_path_key_removed)}' removido.")
         if not self.image_list: 
             self.current_image_index = None; self.image_path = None
@@ -542,13 +620,38 @@ class CustomMakerFunctions:
         if not selected_indices: messagebox.showwarning("Ação Inválida", "Nenhuma imagem selecionada.", parent=self.root); return
         index = selected_indices[0]; image_path_key = self.image_list[index]
         img_basename = os.path.basename(image_path_key)
+
+        # Para atualizar o marcador visual na Listbox
+        current_display_name = self.image_listbox.get(index)
+        if current_display_name.startswith("⭐ "):
+            img_basename_clean = current_display_name[2:]
+        else:
+            img_basename_clean = img_basename
+
         if image_path_key in self.individual_bordas:
             del self.individual_bordas[image_path_key]
+            if image_path_key in self.custom_borda_hex_individual: # Remover a cor personalizada individual
+                del self.custom_borda_hex_individual[image_path_key]
             self.status_var.set(f"Borda individual removida de '{img_basename}'.")
-        else: 
+            self.image_listbox.delete(index)
+            self.image_listbox.insert(index, img_basename_clean) # Insere sem o marcador
+        else:
             current_global_borda_name = self.selected_borda.get()
             self.individual_bordas[image_path_key] = current_global_borda_name
+            if current_global_borda_name == "Cor Personalizada": # Se for personalizada, salva o valor hexadecimal
+                # Acesso direto a custom_color_entry não é ideal aqui, UI deve passar o valor
+                # No entanto, como o UI já garante que essa variável esteja atualizada, podemos usá-la
+                if hasattr(self, 'custom_borda_hex'):
+                    self.custom_borda_hex_individual[image_path_key] = self.custom_borda_hex
+                else: # Fallback
+                    self.custom_borda_hex_individual[image_path_key] = '#FFFFFF'
             self.status_var.set(f"Borda '{current_global_borda_name}' aplicada a '{img_basename}'.")
+            self.image_listbox.delete(index)
+            self.image_listbox.insert(index, f"⭐ {img_basename_clean}") # Insere com o marcador
+
+        # Re-seleciona e atualiza o canvas
+        self.image_listbox.selection_set(index)
+        self.image_listbox.see(index)
         if self.current_image_index == index: self.update_canvas()
 
     def undo(self, _=None):
@@ -845,20 +948,37 @@ class CustomMakerFunctions:
             progress_window.update_idletasks()
             is_current_image = (self.current_image_index == i)
             if not is_current_image:
-                if image_path_key in self.image_states and image_path_key in self.images:
-                    self.original_image = Image.open(image_path_key).convert("RGBA")
-                else:
-                    self.original_image = Image.open(image_path_key).convert("RGBA")
+                # Carregar o estado original da imagem para processamento
+                original_image_for_batch_processing = None
+                try:
+                    original_image_for_batch_processing = Image.open(image_path_key).convert("RGBA")
+                except Exception as e:
+                    print(f"Erro ao carregar imagem para lote '{os.path.basename(image_path_key)}': {e}")
+                    continue # Pula esta imagem e vai para a próxima
+
+                # Salvar o estado da imagem atualmente exibida
                 current_original_image_backup = self.original_image
                 current_user_image_backup = self.user_image.copy() if self.user_image else None
                 current_user_pos_backup = self.user_image_pos
                 current_user_size_backup = self.user_image_size
                 current_image_path_backup = self.image_path
+
+                # Temporariamente define o estado da imagem para o item do lote
                 self.image_path = image_path_key
                 if self.original_image: self.original_image.close()
-                self.original_image = Image.open(image_path_key).convert("RGBA")
-                adjustment_function()
-                self.save_current_image_state()
+                self.original_image = original_image_for_batch_processing
+                
+                # Reseta user_image, pos e size para a imagem do lote, para que a função de ajuste opere sobre ela
+                if hasattr(self, 'user_image') and self.user_image: self.user_image.close()
+                self.user_image = self.original_image.copy() # Começa com uma cópia limpa
+                self.user_image_pos = (0,0) # Posição temporária
+                self.user_image_size = self.original_image.size # Tamanho temporário
+
+                adjustment_function() # Aplica o ajuste. Isso irá modificar self.user_image, pos, size
+
+                self.save_current_image_state() # Salva o estado ajustado no cache
+
+                # Restaura o estado da imagem exibida anteriormente
                 self.image_path = current_image_path_backup
                 if self.original_image: self.original_image.close()
                 self.original_image = current_original_image_backup
@@ -866,16 +986,112 @@ class CustomMakerFunctions:
                 self.user_image = current_user_image_backup
                 self.user_image_pos = current_user_pos_backup
                 self.user_image_size = current_user_size_backup
-            else:
+                
+                if original_image_for_batch_processing: original_image_for_batch_processing.close()
+            else: # Se for a imagem atualmente selecionada e exibida
                 adjustment_function()
                 self.save_current_image_state()
         progress_window.destroy()
         if original_selection_index is not None and 0 <= original_selection_index < len(self.image_list):
             if self.current_image_index != original_selection_index:
-                self.load_image(original_selection_index, preserve_undo=True)
+                # Garante que a imagem original do usuário seja recarregada e exibida
+                self.load_image(original_selection_index, preserve_undo=True) 
             else:
                 self.update_canvas()
         elif self.image_list:
              self.load_image(0, preserve_undo=True)
         self.status_var.set(f"'{adjustment_name}' aplicado a todas as {total_images} imagens.")
         messagebox.showinfo("Processo Concluído", f"'{adjustment_name}' foi aplicado a todas as imagens.", parent=self.root)
+
+    def reset_current_image(self):
+        if not self.original_image:
+            self.status_var.set("Nenhuma imagem carregada para redefinir.")
+            return
+
+        if messagebox.askyesno("Confirmar Redefinição", "Deseja redefinir a posição e o tamanho da imagem atual para o padrão?", parent=self.root):
+            self.save_state() # Salva o estado atual para permitir desfazer
+            
+            # Recarrega a imagem do original, ou usa o original e redimensiona como no load_image inicial
+            if hasattr(self, 'user_image') and self.user_image: self.user_image.close()
+            
+            # Lógica para redefinir para o estado inicial de carregamento
+            self.user_image = self.resize_image(self.original_image, 400, 300) # Reajusta ao tamanho de exibição inicial
+            self.user_image_size = self.user_image.size
+
+            canvas_width = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else 800
+            canvas_height = self.canvas.winfo_height() if self.canvas.winfo_height() > 1 else 600
+            self.user_image_pos = ((canvas_width - self.user_image_size[0]) // 2,
+                                   (canvas_height - self.user_image_size[1]) // 2)
+            
+            # Remove a borda individual se existir, para que volte a usar a global
+            if self.image_path in self.individual_bordas:
+                del self.individual_bordas[self.image_path]
+            
+            # Remove a borda individual personalizada também
+            if self.image_path in self.custom_borda_hex_individual:
+                del self.custom_borda_hex_individual[self.image_path]
+
+            self.update_canvas()
+            self.status_var.set(f"Imagem '{os.path.basename(self.image_path)}' redefinida.")
+            self.save_current_image_state() # Salva o estado resetado
+
+    def zoom_image(self, event):
+        if not self.user_image or not self.original_image: return
+
+        # Aumentar ou diminuir o zoom
+        zoom_factor = 1.1 # Fator de zoom
+        if event.num == 5 or event.delta < 0: # Rolar para baixo (diminuir) ou delta negativo (Windows/macOS)
+            zoom_factor = 1 / zoom_factor
+
+        self.save_state() # Salva o estado atual para permitir desfazer
+
+        current_img_width, current_img_height = self.user_image_size
+        new_width = int(current_img_width * zoom_factor)
+        new_height = int(current_img_height * zoom_factor)
+
+        # Limitar o zoom para evitar imagens muito pequenas ou excessivamente grandes
+        min_size = 20
+        max_size = max(BORDA_WIDTH, BORDA_HEIGHT) * 10 # Limite de 10x o tamanho da borda
+        
+        if new_width < min_size or new_height < min_size:
+            new_width, new_height = min_size, min_size
+        elif new_width > max_size or new_height > max_size:
+            new_width, new_height = max_size, max_size
+
+        if new_width == 0 or new_height == 0: return # Evitar divisão por zero
+
+        try:
+            # Redimensionar a imagem original para evitar perda de qualidade acumulada
+            # Primeiro, calcule o fator de escala da imagem atual em relação à original
+            current_scale_factor = current_img_width / self.original_image.width
+            
+            # Calcule o novo fator de escala total
+            new_scale_factor = current_scale_factor * zoom_factor
+
+            # Aplique o novo fator de escala na imagem original
+            new_image_from_original = self.original_image.resize(
+                (int(self.original_image.width * new_scale_factor), int(self.original_image.height * new_scale_factor)),
+                Image.LANCZOS
+            )
+
+            if self.user_image: self.user_image.close() # Libera a imagem antiga
+            self.user_image = new_image_from_original
+            self.user_image_size = self.user_image.size
+
+            # Ajustar a posição para que o zoom seja no centro do mouse
+            center_x_on_image = event.x - self.user_image_pos[0]
+            center_y_on_image = event.y - self.user_image_pos[1]
+
+            new_center_x_on_image = center_x_on_image * zoom_factor
+            new_center_y_on_image = center_y_on_image * zoom_factor
+
+            self.user_image_pos = (
+                event.x - new_center_x_on_image,
+                event.y - new_center_y_on_image
+            )
+            self.update_canvas()
+            self.status_var.set(f"Zoom: {self.user_image_size[0]}x{self.user_image_size[1]}px")
+            self.save_current_image_state() # Salva o estado após o zoom
+        except Exception as e:
+            print(f"Erro ao aplicar zoom: {e}")
+            self.status_var.set(f"Erro no zoom: {e}")
