@@ -13,7 +13,7 @@ import threading
 from src.config.settings import COLORS, BORDA_WIDTH, BORDA_HEIGHT, BORDA_HEX, BORDA_NAMES, SUPPORTED_EXTENSIONS, CSS_FILE
 from src.utils.resource_loader import resource_path
 from src.ui.styles import configure_styles
-from src.ui.widgets import Tooltip
+from src.ui.widgets import Tooltip, ProgressBarPopup
 from src.core.image_processor import ImageProcessor
 from src.core.uploader import ImgChestUploader
 from src.core.app_config import AppConfig
@@ -459,6 +459,7 @@ class CustomMakerApp:
             pass 
 
     # --- Automated Features ---
+    # --- Automated Features ---
     def intelligent_auto_frame(self):
         if not self.original_image: return
         face = ImageProcessor.detect_anime_face(self.original_image, self.face_cascade)
@@ -493,39 +494,60 @@ class CustomMakerApp:
          if not self.image_list: return
          if not messagebox.askyesno("Confirmar", f"Aplicar '{name}' a todas as imagens?"): return
          
-         # Logic similar to original but using image_list loop
-         # For brevity, I will implement a simplified version that iterates and updates state cache
-         # But I must be careful not to crash memory.
+         popup = ProgressBarPopup(self.root, title=f"Processando {name}", maximum=len(self.image_list))
          
-         # Note: Refactoring the complex batch logic perfectly required more lines.
-         # I will provide a basic loop.
-         for i, path in enumerate(self.image_list):
-             # Load image to temp
-             try:
-                 temp_img = Image.open(path).convert("RGBA")
-                 # We need to simulate the state as if it was loaded
-                 # But func() (like auto_fit) operates on self.original_image
-                 # So we swap self.original_image
-                 
-                 backup_orig = self.original_image
-                 self.original_image = temp_img
-                 
-                 # Run func
-                 func() # This updates self.user_image/pos/size and saves to current state if called
-                 
-                 # Save to cache
-                 self.images[path] = self.user_image.copy()
-                 self.image_states[path] = {'pos': self.user_image_pos, 'size': self.user_image_size}
-                 
-                 # Restore
-                 self.original_image = backup_orig
-                 temp_img.close()
-             except Exception as e:
-                 print(f"Error processing {path}: {e}")
-         
-         # Reload current to show changes
-         self.load_image(self.current_image_index)
-         messagebox.showinfo("Concluído", "Processamento em lote finalizado.")
+         def batch_task():
+             for i, path in enumerate(self.image_list):
+                 try:
+                     temp_img = Image.open(path).convert("RGBA")
+                     # Preserve main thread state
+                     # We operate on instances that don't touch GUI directly inside func?
+                     # Actually functions intelligent_auto_frame and auto_fit_image use self.original_image and update self.user_image
+                     # This is NOT thread safe if they touch self.canvas.
+                     # We need to Refactor logic to be pure or temporarily mock 'self'.
+                     # For now, since they manipulate 'self.user_image', we should probably lock or use a separate processor instance. 
+                     # Better approach for threading: Extract the logic out of 'self' dependency or run sequentially in thread and update UI at end.
+                     
+                     # HACK: For quick threading, we will manually do the logic here without calling the bound methods that touch Canvas.
+                     
+                     # 1. Logic
+                     nw, nh, px, py = None, None, None, None
+                     
+                     if name == "Ajuste Inteligente":
+                         face = ImageProcessor.detect_anime_face(temp_img, self.face_cascade)
+                         if face:
+                             res = ImageProcessor.calculate_intelligent_frame_pos(temp_img, face, self.borda_pos)
+                             if res: nw, nh, px, py = res
+                     
+                     if not nw: # Fallback or Auto Fit
+                         res = ImageProcessor.calculate_auto_fit_pos(temp_img, self.borda_pos)
+                         if res: nw, nh, px, py = res
+                     
+                     # 2. Save State (Thread Safe? Dictionary is thread safe in CPython generally but better be careful)
+                     if nw and nh:
+                         resized = temp_img.resize((nw, nh), Image.LANCZOS)
+                         # We can't assign to self.images directly if main thread reads it.
+                         # We'll use a temporary dict and merge later or use lock.
+                         # Since main thread is 'blocked' by modal popup, it's safe-ish.
+                         self.images[path] = resized
+                         self.image_states[path] = {'pos': (px, py), 'size': (nw, nh)}
+                     
+                     temp_img.close()
+                     
+                     # Update Progress
+                     self.root.after(0, popup.update_progress, i+1, f"Processando: {os.path.basename(path)}")
+                     
+                 except Exception as e:
+                     print(f"Error processing {path}: {e}")
+             
+             self.root.after(0, finish_batch)
+
+         def finish_batch():
+             popup.close()
+             self.load_image(self.current_image_index)
+             messagebox.showinfo("Concluído", "Processamento em lote finalizado.")
+
+         threading.Thread(target=batch_task, daemon=True).start()
 
 
     # --- Save & Upload ---
@@ -591,43 +613,65 @@ class CustomMakerApp:
         messagebox.showinfo("Salvo", "ZIP salvo.")
 
     def open_upload_window(self):
-        # Simply recreated logic or call uploader
-        # I will create a simple UI here for brevity
         top = tk.Toplevel(self.root)
         top.title("Upload ImgChest")
-        ttk.Label(top, text="Título do Álbum:").pack()
+        top.configure(bg=COLORS["bg_dark"])
+        
+        ttk.Label(top, text="Título do Álbum:", style="TLabel").pack(pady=5, padx=10)
         e_title = ttk.Entry(top)
-        e_title.pack()
+        e_title.pack(pady=5, padx=10)
         
         def do_upload():
             title = e_title.get() or "CustomMaker"
-            # Prepare files
-            files_to_upload = []
-            tmp_dir = tempfile.mkdtemp()
-            try:
-                for path in self.image_list:
-                    img = self._prepare_final_image(path)
-                    if img:
-                        fname = os.path.splitext(os.path.basename(path))[0] + "_custom.png"
-                        fpath = os.path.join(tmp_dir, fname)
-                        img.save(fpath)
-                        files_to_upload.append({'path': fpath, 'filename': fname})
-                
-                links = self.uploader.upload_images(files_to_upload, title)
-                if links:
+            top.destroy()
+            
+            popup = ProgressBarPopup(self.root, title="Fazendo Upload...", maximum=100) # Indeterminate mostly or steps
+            popup.progress.config(mode='indeterminate')
+            popup.progress.start(10)
+            
+            def upload_task():
+                files_to_upload = []
+                tmp_dir = tempfile.mkdtemp()
+                try:
+                    total = len(self.image_list)
+                    for i, path in enumerate(self.image_list):
+                        self.root.after(0, popup.update_progress, 0, f"Preparando {i+1}/{total}: {os.path.basename(path)}")
+                        img = self._prepare_final_image(path)
+                        if img:
+                            fname = os.path.splitext(os.path.basename(path))[0] + "_custom.png"
+                            fpath = os.path.join(tmp_dir, fname)
+                            img.save(fpath)
+                            files_to_upload.append({'path': fpath, 'filename': fname})
+                    
+                    self.root.after(0, popup.update_progress, 0, "Enviando para ImgChest...")
+                    links = self.uploader.upload_images(files_to_upload, title)
+                    
+                    self.root.after(0, lambda: finish_upload(links, None))
+                except Exception as e:
+                    self.root.after(0, lambda: finish_upload(None, str(e)))
+                finally:
+                    try:
+                        import shutil
+                        shutil.rmtree(tmp_dir)
+                    except: pass
+
+            def finish_upload(links, error):
+                popup.close()
+                if error:
+                    messagebox.showerror("Erro", f"Falha no upload: {error}")
+                elif links:
                     txt = "\n".join(links)
-                    # Show links
                     res_win = tk.Toplevel(self.root)
-                    t = tk.Text(res_win); t.pack(); t.insert("1.0", txt)
+                    res_win.title("Links Gerados")
+                    t = tk.Text(res_win, wrap="word")
+                    t.pack(fill="both", expand=True)
+                    t.insert("1.0", txt)
                 else:
-                    messagebox.showerror("Erro", "Upload falhou ou não retornou links.")
-            except Exception as e:
-                messagebox.showerror("Erro", str(e))
-            finally:
-                shutil.rmtree(tmp_dir)
-                top.destroy()
+                    messagebox.showerror("Erro", "Upload não retornou links.")
+
+            threading.Thread(target=upload_task, daemon=True).start()
                 
-        ttk.Button(top, text="Iniciar Upload", command=do_upload).pack()
+        ttk.Button(top, text="Iniciar Upload", command=do_upload).pack(pady=10)
 
     # --- Utils ---
     def update_canvas_if_ready(self):
