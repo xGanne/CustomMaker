@@ -1,6 +1,6 @@
 import os
 import sys
-import tkinter as tk
+import customtkinter as ctk
 from src.ui.main_window import CustomMakerApp
 from src.config.settings import CONFIG_FILE
 
@@ -14,7 +14,10 @@ def main():
         except IOError:
             print("AVISO: Falha ao criar .env")
 
-    root = tk.Tk()
+    ctk.set_appearance_mode("Dark")
+    ctk.set_default_color_theme("blue")
+
+    root = ctk.CTk()
     app = CustomMakerApp(root)
     root.mainloop()
 
