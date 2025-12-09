@@ -3,6 +3,7 @@ import sys
 import customtkinter as ctk
 from src.ui.main_window import CustomMakerApp
 from src.config.settings import CONFIG_FILE
+from src.core.app_config import AppConfig
 
 def main():
     # Ensure environment is set up
@@ -14,11 +15,17 @@ def main():
         except IOError:
             print("AVISO: Falha ao criar .env")
 
-    ctk.set_appearance_mode("Dark")
-    ctk.set_default_color_theme("blue")
+    # Load config and apply theme BEFORE creating window
+    app_config = AppConfig()
+    
+    appearance_mode = app_config.get('appearance_mode', 'Dark')
+    ctk.set_appearance_mode(appearance_mode)
+    
+    color_theme = app_config.get('color_theme', 'blue')
+    ctk.set_default_color_theme(color_theme)
 
     root = ctk.CTk()
-    app = CustomMakerApp(root)
+    app = CustomMakerApp(root, app_config) # Inject config
     root.mainloop()
 
 if __name__ == "__main__":

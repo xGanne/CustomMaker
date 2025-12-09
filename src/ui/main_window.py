@@ -22,7 +22,7 @@ from src.core.app_config import AppConfig
 from src.ui.online_search import DanbooruSearchTab
 
 class CustomMakerApp:
-    def __init__(self, root):
+    def __init__(self, root, app_config):
         self.root = root
         self.root.title("Custom Maker Pro")
 
@@ -38,12 +38,11 @@ class CustomMakerApp:
         except Exception: pass
 
         self.root.geometry("1400x900")
-        try:
-            self.root.state('zoomed')
-        except: pass
+        # Delay maximization to ensure it applies correctly after window mapping
+        self.root.after(200, lambda: self.root.state('zoomed'))
         
         # Internal Logic
-        self.app_config = AppConfig()
+        self.app_config = app_config
         self.uploader = ImgChestUploader()
         self.face_cascade = ImageProcessor.load_face_cascade()
         
@@ -61,11 +60,8 @@ class CustomMakerApp:
             self.selected_borda.set('White')
             
         # Initialize default appearance
-        default_mode = self.app_config.get('appearance_mode', 'Dark')
-        ctk.set_appearance_mode(default_mode)
-        
-        default_theme = self.app_config.get('color_theme', 'blue')
-        ctk.set_default_color_theme(default_theme) # This only affects new widgets mostly, but good for restart
+        # Mode and Theme are already applied in main.py before window creation
+        # to prevent startup flicker.
 
         self.after_id_init_canvas = self.root.after(100, self.update_canvas_if_ready)
         
