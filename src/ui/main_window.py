@@ -356,56 +356,123 @@ class CustomMakerApp:
 
     def load_image(self, index, preserve_undo=False):
         if self.current_image_index is not None and self.current_image_index < len(self.image_list) and self.image_path:
-            self.save_current_image_state()
-            
+             self.save_current_image_state()
+
         self.current_image_index = index
         self.image_path = self.image_list[index]
+        self.preserve_undo_flag = preserve_undo
         
-        try:
-            if self.original_image: self.original_image.close()
-            self.original_image = Image.open(self.image_path).convert("RGBA")
-            
-            if self.image_path in self.images:
-                self.user_image = self.images[self.image_path].copy()
-                if self.image_path in self.image_access_order: self.image_access_order.remove(self.image_path)
-                self.image_access_order.append(self.image_path)
-                
-                if self.image_path in self.image_states:
-                    state = self.image_states[self.image_path]
-                    self.user_image_pos = state['pos']
-                    self.user_image_size = state['size']
-                else: 
-                     cw = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else 800
-                     ch = self.canvas.winfo_height() if self.canvas.winfo_height() > 1 else 600
-                     self.user_image_pos = ((cw - self.user_image.width)//2, (ch - self.user_image.height)//2)
-                     self.user_image_size = self.user_image.size
+        # UI Feedback immediately
+        self.canvas.delete("all")
+        cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
+        if cw > 1 and ch > 1:
+            self.canvas.create_text(cw/2, ch/2, text="Carregando...", fill="white", font=("Arial", 16))
+        
+        self.image_listbox.selection_clear(0, tk.END)
+        self.image_listbox.selection_set(index)
+        self.image_listbox.see(index)
+        
+        threading.Thread(target=self._load_image_background, args=(index, self.image_path), daemon=True).start()
 
-            elif self.image_path in self.image_states:
-                state = self.image_states[self.image_path]
-                self.user_image_size = state['size']
-                self.user_image_pos = state['pos']
-                self.user_image = self.original_image.resize(self.user_image_size, Image.LANCZOS)
-                self._add_to_cache(self.image_path, self.user_image.copy())
+    def _load_image_background(self, index, path):
+        try:
+            # Heavy lifting here
+            original = Image.open(path).convert("RGBA")
+            
+            # Prepare result dictionary
+            result = {
+                'index': index,
+                'path': path,
+                'original': original,
+                'user_image': None,
+                'pos': None,
+                'size': None,
+                'error': None
+            }
+
+            # Logic moved from synchronous load
+            if path in self.images:
+                 # Reuse cached
+                 result['user_image'] = self.images[path].copy()
+                 # Access order update should handle in main thread
+                 
+                 if path in self.image_states:
+                     state = self.image_states[path]
+                     result['pos'] = state['pos']
+                     result['size'] = state['size']
+                 else:
+                     # Default center
+                     # We might need canvas size here. 
+                     # Ideally we pass canvas size to thread or just calc pos in main thread.
+                     # Let's calc pos in main thread to assume safety, 
+                     # OR pass dimensions.
+                     result['calc_center'] = True # Signal to main thread to center
+            
+            elif path in self.image_states:
+                state = self.image_states[path]
+                result['size'] = state['size']
+                result['pos'] = state['pos']
+                result['user_image'] = original.resize(state['size'], Image.LANCZOS)
+                result['add_to_cache'] = True
                 
             else:
-                if self.user_image: self.user_image.close()
-                self.user_image = ImageProcessor.resize_image(self.original_image, 400, 300)
-                self.user_image_size = self.user_image.size
-                cw = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else 800
-                ch = self.canvas.winfo_height() if self.canvas.winfo_height() > 1 else 600
-                self.user_image_pos = ((cw - self.user_image_size[0]) // 2, (ch - self.user_image_size[1]) // 2)
-                self._add_to_cache(self.image_path, self.user_image.copy())
+                 # Default new
+                 # Resize logic
+                 resized = ImageProcessor.resize_image(original, 400, 300)
+                 result['user_image'] = resized
+                 result['size'] = resized.size
+                 result['calc_center'] = True
+                 result['add_to_cache'] = True
 
-            self.update_canvas()
-            self.image_listbox.selection_clear(0, tk.END)
-            self.image_listbox.selection_set(index)
-            self.image_listbox.see(index)
-            self.status_var.set(f"Visualizando: {os.path.basename(self.image_path)}")
-            
-            if not preserve_undo: self.undo_stack = []
-            self.save_state_for_undo()
+            self.root.after(0, lambda: self._on_image_loaded(result))
+
         except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao carregar imagem: {e}")
+            self.root.after(0, lambda: self._on_image_loaded({'index': index, 'error': str(e)}))
+
+    def _on_image_loaded(self, result):
+        if result.get('error'):
+             messagebox.showerror("Erro", f"Falha ao carregar: {result['error']}")
+             return
+             
+        # Race condition check: did user switch image again?
+        if result['index'] != self.current_image_index:
+             # Discard this result, close images if opened
+             if result.get('original'): result['original'].close()
+             if result.get('user_image'): result['user_image'].close()
+             return
+
+        # Apply State
+        if self.original_image: self.original_image.close()
+        self.original_image = result['original']
+        
+        if self.user_image and self.user_image != result['user_image']: 
+            self.user_image.close()
+            
+        self.user_image = result['user_image']
+        
+        if result.get('pos'): self.user_image_pos = result['pos']
+        if result.get('size'): self.user_image_size = result['size']
+        
+        if result.get('calc_center'):
+             cw = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else 800
+             ch = self.canvas.winfo_height() if self.canvas.winfo_height() > 1 else 600
+             if self.user_image:
+                 self.user_image_pos = ((cw - self.user_image.width)//2, (ch - self.user_image.height)//2)
+                 if result.get('pos') is None: self.user_image_pos = ((cw - self.user_image.width)//2, (ch - self.user_image.height)//2)
+
+        if result.get('add_to_cache'):
+             self._add_to_cache(result['path'], self.user_image.copy())
+             
+        # Update LRU
+        if result['path'] in self.images:
+             if result['path'] in self.image_access_order: self.image_access_order.remove(result['path'])
+             self.image_access_order.append(result['path'])
+
+        self.update_canvas()
+        self.status_var.set(f"Visualizando: {os.path.basename(result['path'])}")
+        
+        if not self.preserve_undo_flag: self.undo_stack = []
+        self.save_state_for_undo()
 
     def save_current_image_state(self):
         if self.image_path and self.user_image:
