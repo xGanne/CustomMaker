@@ -19,6 +19,7 @@ from src.ui.widgets import Tooltip, ProgressBarPopup
 from src.core.image_processor import ImageProcessor
 from src.core.uploader import ImgChestUploader
 from src.core.app_config import AppConfig
+from src.ui.online_search import DanbooruSearchTab
 
 class CustomMakerApp:
     def __init__(self, root):
@@ -36,7 +37,10 @@ class CustomMakerApp:
                     self.root.tk.call('wm', 'iconphoto', self.root._w, img)
         except Exception: pass
 
-        self.root.geometry("1100x700")
+        self.root.geometry("1400x900")
+        try:
+            self.root.state('zoomed')
+        except: pass
         
         # Internal Logic
         self.app_config = AppConfig()
@@ -154,7 +158,7 @@ class CustomMakerApp:
         self.left_frame = ctk.CTkFrame(self.root, corner_radius=0, fg_color="transparent")
         self.left_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
-        self.right_frame = ctk.CTkFrame(self.root, width=300, corner_radius=10)
+        self.right_frame = ctk.CTkFrame(self.root, width=320, corner_radius=10)
         self.right_frame.grid(row=0, column=1, sticky="ns", padx=(0, 10), pady=10)
         self.right_frame.grid_propagate(False)
 
@@ -163,7 +167,7 @@ class CustomMakerApp:
         self.canvas_frame.pack(fill="both", expand=True)
         
         # Canvas (Standard TKinter Canvas is best for drawing)
-        self.canvas = tk.Canvas(self.canvas_frame, bg="#2b2b2b", highlightthickness=0)
+        self.canvas = tk.Canvas(self.canvas_frame, bg="#1a1a1a", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
 
     def setup_canvas_events(self):
@@ -182,7 +186,7 @@ class CustomMakerApp:
         self.right_frame.grid_rowconfigure(1, weight=1) # Tabview expands
         self.right_frame.grid_rowconfigure(2, weight=0)
         
-        ctk.CTkLabel(self.right_frame, text="CustomMaker Pro", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(20, 10))
+        ctk.CTkLabel(self.right_frame, text="CustomMaker Pro", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(20, 10))
 
         # Use Tabview for better organization
         self.tabview = ctk.CTkTabview(self.right_frame, width=280)
@@ -190,6 +194,7 @@ class CustomMakerApp:
         
         self.tab_edit = self.tabview.add("Edição")
         self.tab_settings = self.tabview.add("Ajustes")
+        self.tab_online = self.tabview.add("Online")
         
         # --- Tab Edição ---
         self.create_file_section(self.tab_edit)
@@ -198,6 +203,9 @@ class CustomMakerApp:
         
         # --- Tab Ajustes ---
         self.create_settings_section(self.tab_settings)
+
+        # --- Tab Online ---
+        self.danbooru_tab = DanbooruSearchTab(self.tab_online, self)
 
         # Image List (Outside tabs, always visible or inside Edit?)
         # Let's put Image List below Tabs or inside "Edição" but it might be cramped.
@@ -280,9 +288,9 @@ class CustomMakerApp:
         # Use a contrasting bg for listbox based on probable theme? 
         # Hard to know theme color dynamically easily without private access.
         # Just stick to neutral gray.
-        self.image_listbox = tk.Listbox(parent, bg="#2b2b2b", fg="white", selectbackground="#1f538d",
+        self.image_listbox = tk.Listbox(parent, bg="#252525", fg="#eeeeee", selectbackground="#1f538d",
                                         borderwidth=0, highlightthickness=0, yscrollcommand=sb.set,
-                                        font=("Segoe UI", 10))
+                                        font=("Segoe UI", 11))
         sb.config(command=self.image_listbox.yview)
         
         sb.pack(side=tk.RIGHT, fill=tk.Y)
