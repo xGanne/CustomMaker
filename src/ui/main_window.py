@@ -77,8 +77,13 @@ class CustomMakerApp:
         self.start_y = 0
         self.status_var = tk.StringVar(self.root, value="Pronto. Selecione uma pasta para começar.")
         self.selected_borda = tk.StringVar(self.root)
-        self.images = {} # Cache of PIL images
-        self.image_states = {} # Cache of positions/sizes
+        
+        # Memory Optimization
+        self.MAX_CACHE_SIZE = 20
+        self.images = {} # Cache of PIL images (Path -> Image)
+        self.image_access_order = [] # LRU tracking
+        
+        self.image_states = {} # Cache of positions/sizes (Path -> {'pos': (x,y), 'size': (w,h)})
         self.image_list = []
         self.current_image_index = None
         self.undo_stack = []
@@ -280,6 +285,22 @@ class CustomMakerApp:
             self.update_canvas()
             self.status_var.set("Nenhuma imagem encontrada.")
 
+    def _add_to_cache(self, path, image):
+        if path in self.images:
+            # Refresh order
+            self.image_access_order.remove(path)
+            self.image_access_order.append(path)
+            self.images[path] = image # Update if new
+        else:
+            if len(self.images) >= self.MAX_CACHE_SIZE:
+                # Evict oldest
+                oldest = self.image_access_order.pop(0)
+                if oldest in self.images:
+                    self.images[oldest].close()
+                    del self.images[oldest]
+            self.images[path] = image
+            self.image_access_order.append(path)
+
     def load_image(self, index, preserve_undo=False):
         if self.current_image_index is not None and self.current_image_index < len(self.image_list) and self.image_path:
             self.save_current_image_state()
@@ -291,16 +312,47 @@ class CustomMakerApp:
             if self.original_image: self.original_image.close()
             self.original_image = Image.open(self.image_path).convert("RGBA")
             
-            if self.image_path in self.image_states:
-                self.restore_image_state()
+            # Check Cache
+            if self.image_path in self.images:
+                self.user_image = self.images[self.image_path].copy()
+                # Refresh LRU
+                self.image_access_order.remove(self.image_path)
+                self.image_access_order.append(self.image_path)
+                
+                # Restore state just in case (though cache should imply state)
+                if self.image_path in self.image_states:
+                    state = self.image_states[self.image_path]
+                    self.user_image_pos = state['pos']
+                    self.user_image_size = state['size']
+                else: 
+                     # Should not happen if in cache, but safe fallback
+                     cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
+                     cw = cw if cw > 1 else 800
+                     ch = ch if ch > 1 else 600
+                     self.user_image_pos = ((cw - self.user_image.width)//2, (ch - self.user_image.height)//2)
+                     self.user_image_size = self.user_image.size
+
+            elif self.image_path in self.image_states:
+                # Restoration from State (Cache Miss but Metadata Hit)
+                state = self.image_states[self.image_path]
+                self.user_image_size = state['size']
+                self.user_image_pos = state['pos']
+                # Re-create resized image
+                self.user_image = self.original_image.resize(self.user_image_size, Image.LANCZOS)
+                # Add to cache for current session
+                self._add_to_cache(self.image_path, self.user_image.copy())
+                
             else:
-                if self.user_image: self.user_image.close()
+                # New Load
+                if self.user_image: self.user_image.close() # Close previous if exists (though overwritten above)
                 self.user_image = ImageProcessor.resize_image(self.original_image, 400, 300)
                 self.user_image_size = self.user_image.size
                 
                 cw = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else 800
                 ch = self.canvas.winfo_height() if self.canvas.winfo_height() > 1 else 600
                 self.user_image_pos = ((cw - self.user_image_size[0]) // 2, (ch - self.user_image_size[1]) // 2)
+                
+                self._add_to_cache(self.image_path, self.user_image.copy())
 
             self.update_canvas()
             self.image_listbox.selection_clear(0, tk.END)
@@ -315,9 +367,7 @@ class CustomMakerApp:
 
     def save_current_image_state(self):
         if self.image_path and self.user_image:
-            if self.image_path in self.images and self.images[self.image_path]:
-                self.images[self.image_path].close()
-            self.images[self.image_path] = self.user_image.copy()
+            self._add_to_cache(self.image_path, self.user_image.copy())
             self.image_states[self.image_path] = {'pos': self.user_image_pos, 'size': self.user_image_size}
 
     def restore_image_state(self):
@@ -727,6 +777,8 @@ class CustomMakerApp:
         if path in self.images: 
             if self.images[path]: self.images[path].close()
             del self.images[path]
+        if path in self.image_access_order: self.image_access_order.remove(path)
+        
         if path in self.image_states: del self.image_states[path]
         if path in self.individual_bordas: del self.individual_bordas[path]
         if path in self.custom_borda_hex_individual: del self.custom_borda_hex_individual[path]
