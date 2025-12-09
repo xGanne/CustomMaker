@@ -27,17 +27,21 @@ class DanbooruSearchTab:
     def setup_ui(self):
         # Top Bar: Search
         top_frame = ctk.CTkFrame(self.parent, fg_color="transparent")
-        top_frame.pack(fill="x", padx=10, pady=10)
+        top_frame.pack(fill="x", padx=10, pady=(10, 5))
 
         self.entry_search = ctk.CTkEntry(top_frame, placeholder_text="Tags (ex: hatsune_miku rating:safe)")
-        self.entry_search.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.entry_search.pack(fill="x", expand=True)
         self.entry_search.bind("<Return>", lambda e: self.search(page=1, new_search=True))
 
-        btn_search = ctk.CTkButton(top_frame, text="Buscar", width=100, command=lambda: self.search(page=1, new_search=True))
-        btn_search.pack(side="right")
+        # Buttons row
+        btn_frame = ctk.CTkFrame(self.parent, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        btn_search = ctk.CTkButton(btn_frame, text="Buscar", width=120, command=lambda: self.search(page=1, new_search=True))
+        btn_search.pack(side="left", padx=(0, 5), expand=True, fill="x")
         
-        btn_expand = ctk.CTkButton(top_frame, text="🗖 Expandir", width=100, fg_color="#3a3a3a", hover_color="#4a4a4a", command=self.open_expanded_gallery)
-        btn_expand.pack(side="right", padx=10)
+        btn_expand = ctk.CTkButton(btn_frame, text="🗖 Expandir", width=120, fg_color="#3a3a3a", hover_color="#4a4a4a", command=self.open_expanded_gallery)
+        btn_expand.pack(side="left", padx=(5, 0), expand=True, fill="x")
 
         # Main Content: Grid of Images
         self.scroll_frame = ctk.CTkScrollableFrame(self.parent, fg_color="transparent")

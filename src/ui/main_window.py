@@ -160,7 +160,7 @@ class CustomMakerApp:
         
         self.right_frame = ctk.CTkFrame(self.root, width=320, corner_radius=10)
         self.right_frame.grid(row=0, column=1, sticky="ns", padx=(0, 10), pady=10)
-        self.right_frame.grid_propagate(False)
+        self.right_frame.pack_propagate(False)
 
         # Canvas Frame
         self.canvas_frame = ctk.CTkFrame(self.left_frame, fg_color="transparent")
@@ -182,9 +182,7 @@ class CustomMakerApp:
         self.canvas.bind("<Button-5>", self.zoom_image)
 
     def create_right_panel(self):
-        self.right_frame.grid_rowconfigure(0, weight=0)
-        self.right_frame.grid_rowconfigure(1, weight=1) # Tabview expands
-        self.right_frame.grid_rowconfigure(2, weight=0)
+        # self.right_frame uses pack, so no grid config needed here
         
         ctk.CTkLabel(self.right_frame, text="CustomMaker Pro", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(20, 10))
 
