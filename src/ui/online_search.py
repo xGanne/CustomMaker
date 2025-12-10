@@ -50,8 +50,6 @@ class DanbooruSearchTab:
         self.msg_label = ctk.CTkLabel(self.scroll_frame, text="Digite as tags acima para buscar.")
         self.msg_label.pack(pady=20)
 
-        self.msg_label.pack(pady=20)
-
         # Pagination / Footer
         footer_frame = ctk.CTkFrame(self.parent, fg_color="transparent", height=40)
         footer_frame.pack(fill="x", padx=10, pady=5)
@@ -307,6 +305,10 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
         
         ctk.CTkButton(top_frame, text="Criar Pasta com Selecionados", fg_color="green", hover_color="darkgreen", command=self.download_selected).pack(side="right", padx=10)
 
+        # Context Menu
+        self.context_menu = tk.Menu(self, tearoff=0)
+        self.context_menu.add_command(label="Abrir em Tela Cheia", command=lambda: None) # Placeholder, updated dynamically
+
         # Scroll Area
         self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=5)
@@ -346,8 +348,11 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
             
             # Store data on widget for click handler
             # Store data on widget for click handler
+            # Store data on widget for click handlers
             card.bind("<Button-1>", lambda e, p=post, w=card: self.toggle_selection(p, w))
             lbl.bind("<Button-1>", lambda e, p=post, w=card: self.toggle_selection(p, w))
+            card.bind("<Button-3>", lambda e, p=post: self.show_context_menu(e, p))
+            lbl.bind("<Button-3>", lambda e, p=post: self.show_context_menu(e, p))
             
             # Use DanbooruSearchTab static logic or duplicated logic? 
             # Ideally minimal duplication. But for now local load method is fine.
@@ -441,6 +446,15 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
 
         threading.Thread(target=download_task, daemon=True).start()
 
+    def show_context_menu(self, event, post):
+        self.context_menu.delete(0, "end")
+        self.context_menu.add_command(label="👁 Abrir em Tela Cheia", command=lambda: self.open_image_viewer(post))
+        # self.context_menu.add_command(label="🌐 Abrir no Navegador", command=lambda: ...) # User removed this
+        self.context_menu.post(event.x_root, event.y_root)
+
+    def open_image_viewer(self, post):
+        DanbooruImageViewer(self, post, self.client)
+
     def change_page(self, delta):
         new_page = self.current_page + delta
         if new_page < 1: return
@@ -461,3 +475,65 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
             except: pass
         
         threading.Thread(target=fetch, daemon=True).start()
+
+class DanbooruImageViewer(ctk.CTkToplevel):
+    def __init__(self, parent, post, client):
+        super().__init__(parent)
+        self.post = post
+        self.client = client
+        self.title(f"Visualizador - {post.get('tag_string_character', 'Imagem')}")
+        self.geometry("1200x900")
+        try:
+            self.state('zoomed')
+        except: pass
+        
+        self.label_loading = ctk.CTkLabel(self, text="Carregando imagem em alta resolução...", font=ctk.CTkFont(size=20))
+        self.label_loading.pack(expand=True)
+        
+        self.image_label = ctk.CTkLabel(self, text="")
+        self.image_label.pack(fill="both", expand=True)
+        
+        # Close on Escape
+        self.bind("<Escape>", lambda e: self.destroy())
+        
+        threading.Thread(target=self.load_image, daemon=True).start()
+
+    def load_image(self):
+        url = self.post.get('large_file_url') or self.post.get('file_url') or self.post.get('sample_url')
+        if not url:
+            self.label_loading.configure(text="URL da imagem não encontrada.")
+            return
+
+        data = self.client.download_image(url)
+        if data:
+            try:
+                img = Image.open(BytesIO(data))
+                
+                # Resize to fit screen (approx 90% of screen size if possible, or just fit to window)
+                # Since we are in a thread, we can't query window size accurately if it's maximizing.
+                # Use a safe default logic: 
+                # On UI main thread: get window size -> resize img -> show.
+                
+                self.after(0, lambda: self.display_image(img))
+            except Exception as e:
+                self.after(0, lambda: self.label_loading.configure(text=f"Erro ao carregar: {e}"))
+
+    def display_image(self, img_pil):
+        self.label_loading.destroy()
+        
+        # Calculate fit size
+        win_w = self.winfo_width()
+        win_h = self.winfo_height()
+        if win_w < 100: win_w = 1200
+        if win_h < 100: win_h = 900
+        
+        # Fit logic
+        ratio = min(win_w / img_pil.width, win_h / img_pil.height)
+        new_w = int(img_pil.width * ratio)
+        new_h = int(img_pil.height * ratio)
+        
+        resized = img_pil.resize((new_w, new_h), Image.LANCZOS)
+        
+        ctk_img = ctk.CTkImage(light_image=resized, dark_image=resized, size=(new_w, new_h))
+        self.image_label.configure(image=ctk_img)
+        self.image_label.image = ctk_img # keep ref
