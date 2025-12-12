@@ -63,20 +63,27 @@ class DanbooruGridWidget(ctk.CTkScrollableFrame):
             if not preview_url: continue
             
             # Container for image
-            card = ctk.CTkFrame(self.grid_frame, corner_radius=5, fg_color="#2b2b2b")
-            card.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+            card = ctk.CTkFrame(self.grid_frame, corner_radius=10, fg_color="#2b2b2b")
+            card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
 
             if post['id'] in self.selected_posts:
                 card.configure(border_width=2, border_color="#3B8ED0")
             
             # Placeholder Label
             lbl = ctk.CTkLabel(card, text="...", width=150, height=150)
-            lbl.pack(padx=2, pady=2)
+            lbl.pack(padx=2, pady=2, fill="both", expand=True)
             
             # Bind events
+            # Click to select
             card.bind("<Button-1>", lambda e, p=post, w=card: self.toggle_selection(p, w))
             lbl.bind("<Button-1>", lambda e, p=post, w=card: self.toggle_selection(p, w))
             
+            # Hover effects
+            card.bind("<Enter>", lambda e, w=card: self._on_enter(w))
+            card.bind("<Leave>", lambda e, w=card: self._on_leave(w))
+            lbl.bind("<Enter>", lambda e, w=card: self._on_enter(w))
+            lbl.bind("<Leave>", lambda e, w=card: self._on_leave(w))
+
             # Context Menu (Right Click)
             card.bind("<Button-3>", lambda e, p=post: self.show_context_menu(e, p))
             lbl.bind("<Button-3>", lambda e, p=post: self.show_context_menu(e, p))
@@ -139,6 +146,14 @@ class DanbooruGridWidget(ctk.CTkScrollableFrame):
             self.on_selection_change(0)
         # Note: Visual update would require re-displaying or tracking widgets. 
         # For now, usually used when changing search/page so re-display happens anyway.
+
+    def _on_enter(self, card_widget):
+        if card_widget.cget("border_width") == 0: # Only highlight if not selected? OR highlight regardless. Let's start with all.
+             pass
+        card_widget.configure(fg_color="#3a3a3a") # Lighter grey
+
+    def _on_leave(self, card_widget):
+        card_widget.configure(fg_color="#2b2b2b") # Original grey
 
     def show_context_menu(self, event, post):
         menu = tk.Menu(self, tearoff=0)

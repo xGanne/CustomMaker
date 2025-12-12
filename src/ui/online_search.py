@@ -46,10 +46,10 @@ class DanbooruSearchTab:
         btn_frame = ctk.CTkFrame(self.parent, fg_color="transparent")
         btn_frame.pack(fill="x", padx=10, pady=(0, 10))
         
-        btn_search = ctk.CTkButton(btn_frame, text="Buscar", width=120, command=lambda: self.search(page=1, new_search=True))
+        btn_search = ctk.CTkButton(btn_frame, text="🔍 Buscar", width=120, command=lambda: self.search(page=1, new_search=True))
         btn_search.pack(side="left", padx=(0, 5), expand=True, fill="x")
         
-        btn_expand = ctk.CTkButton(btn_frame, text="🗖 Expandir", width=120, fg_color="#3a3a3a", hover_color="#4a4a4a", command=self.open_expanded_gallery)
+        btn_expand = ctk.CTkButton(btn_frame, text="⤢ Expandir", width=120, fg_color="#3a3a3a", hover_color="#4a4a4a", command=self.open_expanded_gallery)
         btn_expand.pack(side="left", padx=(5, 0), expand=True, fill="x")
 
         # Main Content: Grid of Images (using reusable widget)
@@ -66,13 +66,13 @@ class DanbooruSearchTab:
         footer_frame = ctk.CTkFrame(self.parent, fg_color="transparent", height=40)
         footer_frame.pack(fill="x", padx=10, pady=5)
         
-        self.btn_prev = ctk.CTkButton(footer_frame, text="< Anterior", width=80, command=lambda: self.change_page(-1))
+        self.btn_prev = ctk.CTkButton(footer_frame, text="❮", width=40, command=lambda: self.change_page(-1))
         self.btn_prev.pack(side="left")
         
-        self.lbl_page = ctk.CTkLabel(footer_frame, text="Página 1", width=80, anchor="center")
+        self.lbl_page = ctk.CTkLabel(footer_frame, text="Página 1", width=100, anchor="center", font=ctk.CTkFont(weight="bold"))
         self.lbl_page.pack(side="left", padx=5)
         
-        self.btn_next = ctk.CTkButton(footer_frame, text="Próximo >", width=80, command=lambda: self.change_page(1))
+        self.btn_next = ctk.CTkButton(footer_frame, text="❯", width=40, command=lambda: self.change_page(1))
         self.btn_next.pack(side="left")
 
         # Bottom Bar: Actions
