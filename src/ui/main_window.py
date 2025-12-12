@@ -70,6 +70,13 @@ class CustomMakerApp:
         self.root.bind('<Control-o>', lambda event: self.select_folder())
         self.root.bind('<Alt-f>', lambda event: self.intelligent_auto_frame())
         self.root.bind('<Alt-b>', lambda event: self.auto_fit_image())
+        
+        # Rotation Shortcuts
+        self.root.bind('<Control-q>', lambda event: self.rotate_image("left"))
+        self.root.bind('<Control-e>', lambda event: self.rotate_image("right"))
+        self.root.bind('<Control-Q>', lambda event: self.rotate_image("left"))
+        self.root.bind('<Control-E>', lambda event: self.rotate_image("right"))
+
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def initialize_state_variables(self):
@@ -175,6 +182,7 @@ class CustomMakerApp:
         self.canvas.bind("<Shift-B1-Motion>", self.resize_image_proportional)
         self.canvas.bind("<Configure>", self.on_canvas_configure)
         self.canvas.bind("<MouseWheel>", self.zoom_image)
+        self.canvas.bind("<Button-3>", self.show_canvas_context_menu)
         # Linux
         self.canvas.bind("<Button-4>", self.zoom_image)
         self.canvas.bind("<Button-5>", self.zoom_image)
@@ -601,6 +609,35 @@ class CustomMakerApp:
             # Update state cache and canvas
             self.save_current_image_state() # Updates the 'current' persistent state
             self.update_canvas()
+
+    def rotate_image(self, direction):
+        if not self.original_image or not self.user_image: return
+        
+        angle = 90 if direction == "left" else -90
+        
+        self.save_state_for_undo()
+        
+        # Rotate original to maintain source of truth for subsequent resizes
+        self.original_image = self.original_image.rotate(angle, expand=True)
+        
+        # Rotate user_image to match
+        self.user_image = self.user_image.rotate(angle, expand=True)
+        self.user_image_size = self.user_image.size
+        
+        # Adjust position slightly to center? Optional.
+        # For now, let's keep the top-left corner or center logic?
+        # A simple rotation around center of image is what `rotate` does, but `expand=True` changes dimensions.
+        # Let's just update canvas. User can move it if needed.
+        
+        self.update_canvas()
+        self.save_current_image_state()
+
+    def show_canvas_context_menu(self, event):
+        if not self.user_image: return
+        menu = Menu(self.root, tearoff=0)
+        menu.add_command(label="⟲ Rotacionar 90° Esquerda (Ctrl+Q)", command=lambda: self.rotate_image("left"))
+        menu.add_command(label="⟳ Rotacionar 90° Direita (Ctrl+E)", command=lambda: self.rotate_image("right"))
+        menu.post(event.x_root, event.y_root)
 
     # --- Automated Features (Threaded) ---
     def intelligent_auto_frame(self):

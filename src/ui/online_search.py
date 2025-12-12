@@ -349,6 +349,9 @@ class DanbooruImageViewer(ctk.CTkToplevel):
         super().__init__(parent)
         self.post = post
         self.client = client
+        self.rotation = 0
+        self.original_image = None
+        
         self.title(f"Visualizador - {post.get('tag_string_character', 'Imagem')}")
         self.geometry("1200x900")
         try:
@@ -361,8 +364,14 @@ class DanbooruImageViewer(ctk.CTkToplevel):
         self.image_label = ctk.CTkLabel(self, text="")
         self.image_label.pack(fill="both", expand=True)
         
-        # Close on Escape
+        # Controls
         self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Control-q>", lambda e: self.rotate_left())
+        self.bind("<Control-e>", lambda e: self.rotate_right())
+        self.bind("<Control-Q>", lambda e: self.rotate_left())
+        self.bind("<Control-E>", lambda e: self.rotate_right())
+        
+        self.image_label.bind("<Button-3>", self.show_context_menu)
         
         threading.Thread(target=self.load_image, daemon=True).start()
 
@@ -386,8 +395,33 @@ class DanbooruImageViewer(ctk.CTkToplevel):
             except Exception as e:
                 self.after(0, lambda: self.label_loading.configure(text=f"Erro ao carregar: {e}"))
 
-    def display_image(self, img_pil):
-        self.label_loading.destroy()
+    def rotate_left(self):
+        self.rotation = (self.rotation + 90) % 360
+        self.display_image()
+
+    def rotate_right(self):
+        self.rotation = (self.rotation - 90) % 360
+        self.display_image()
+
+    def show_context_menu(self, event):
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="⟲ Rotacionar 90° Esquerda (Ctrl+Q)", command=self.rotate_left)
+        menu.add_command(label="⟳ Rotacionar 90° Direita (Ctrl+E)", command=self.rotate_right)
+        menu.post(event.x_root, event.y_root)
+
+    def display_image(self, img_pil=None):
+        if self.label_loading.winfo_exists():
+            self.label_loading.destroy()
+            
+        if img_pil:
+            self.original_image = img_pil
+            
+        if not self.original_image:
+            return
+
+        # Apply rotation
+        # Expand=True ensures the full image is kept (dimensions swap at 90/270)
+        img_rotated = self.original_image.rotate(self.rotation, expand=True)
         
         # Calculate fit size
         win_w = self.winfo_width()
@@ -396,11 +430,14 @@ class DanbooruImageViewer(ctk.CTkToplevel):
         if win_h < 100: win_h = 900
         
         # Fit logic
-        ratio = min(win_w / img_pil.width, win_h / img_pil.height)
-        new_w = int(img_pil.width * ratio)
-        new_h = int(img_pil.height * ratio)
+        ratio = min(win_w / img_rotated.width, win_h / img_rotated.height)
+        new_w = int(img_rotated.width * ratio)
+        new_h = int(img_rotated.height * ratio)
         
-        resized = img_pil.resize((new_w, new_h), Image.LANCZOS)
+        if new_w <= 0: new_w = 1
+        if new_h <= 0: new_h = 1
+        
+        resized = img_rotated.resize((new_w, new_h), Image.LANCZOS)
         
         ctk_img = ctk.CTkImage(light_image=resized, dark_image=resized, size=(new_w, new_h))
         self.image_label.configure(image=ctk_img)
