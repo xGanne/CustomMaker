@@ -106,7 +106,9 @@ class CustomMakerApp:
         self.custom_borda_hex_individual = {}
         self.current_hover_item_index = -1
         self.hover_tooltip = None
+        self.hover_tooltip = None
         self.drag_data = {"item": None, "index": None}
+        self.is_picking_color = False
 
     def load_resources(self):
         self.bordas = self.load_bordas_from_css()
@@ -280,6 +282,9 @@ class CustomMakerApp:
         self.custom_color_entry = ctk.CTkEntry(parent, placeholder_text="#FFFFFF")
         self.custom_color_entry.bind("<KeyRelease>", self.on_custom_color_change)
         
+        self.btn_pick_color = ctk.CTkButton(parent, text="🎨 Pick Color", width=100, fg_color="#555555", hover_color="#666666", command=self.toggle_color_picker)
+        self.btn_pick_color.pack(fill="x", padx=10, pady=(0, 5))
+
         self._toggle_custom_color_entry()
 
     def create_image_list_section(self, parent):
@@ -511,6 +516,10 @@ class CustomMakerApp:
 
 
     def select_image(self, event):
+        if self.is_picking_color:
+            self.pick_color_from_event(event)
+            return
+
         if self.user_image:
             x, y = self.user_image_pos
             w, h = self.user_image_size
@@ -519,6 +528,68 @@ class CustomMakerApp:
                 self.start_x = event.x - x
                 self.start_y = event.y - y
                 self.save_state_for_undo()
+
+    def toggle_color_picker(self):
+        self.is_picking_color = not self.is_picking_color
+        if self.is_picking_color:
+            self.canvas.configure(cursor="crosshair")
+            self.btn_pick_color.configure(fg_color="#1f538d", text="Cancelar Pick")
+            self.status_var.set("Modo Pick Color: Clique na imagem para copiar a cor.")
+        else:
+            self.canvas.configure(cursor="")
+            self.btn_pick_color.configure(fg_color="#555555", text="🎨 Pick Color")
+            self.status_var.set("Modo Pick Color desativado.")
+
+    def pick_color_from_event(self, event):
+        # Allow picking from anywhere on canvas, but let's prioritize image if user clicks it
+        # Tkinter canvas doesn't easily give pixel color directly without taking a screenshot or knowing the source.
+        # We rely on our known 'self.user_image' and 'self.user_image_pos'.
+        
+        color = None
+        
+        # Check against user image
+        if self.user_image:
+            ix, iy = self.user_image_pos
+            iw, ih = self.user_image_size
+            if ix <= event.x < ix + iw and iy <= event.y < iy + ih:
+                # Inside image
+                # Map to image coordinates
+                rel_x = event.x - ix
+                rel_y = event.y - iy
+                
+                # Careful with bounds
+                rel_x = max(0, min(rel_x, iw-1))
+                rel_y = max(0, min(rel_y, ih-1))
+                
+                try:
+                    # Get pixel from the resized user_image currently displayed
+                    # This matches what the user sees
+                    rgb = self.user_image.getpixel((rel_x, rel_y))
+                    if isinstance(rgb, int): # Grayscale?
+                        color = '#{:02x}{:02x}{:02x}'.format(rgb, rgb, rgb)
+                    else:
+                        # Handle RGBA
+                        if len(rgb) == 4:
+                             r, g, b, a = rgb
+                             # If transparent, maybe mix with bg? Or just ignore alpha?
+                             # Let's just take RGB for now.
+                             color = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+                        else:
+                             r, g, b = rgb
+                             color = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+                except: pass
+        
+        # If not on image, or failed, maybe we want to allow picking background?
+        # For this requirement, user likely wants image colors.
+        
+        if color:
+             self.root.clipboard_clear()
+             self.root.clipboard_append(color)
+             self.root.update()
+             messagebox.showinfo("Pick Color", f"Cor copiada: {color}")
+             self.toggle_color_picker() # Turn off
+        else:
+             self.status_var.set("Nenhuma cor detectada (Clique na imagem).")
 
     def move_image(self, event):
         if self.selected_image:
