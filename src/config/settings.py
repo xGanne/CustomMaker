@@ -46,6 +46,7 @@ CONFIG_FILE = "custommaker_config.json"
 # Configurações de layout
 BORDA_WIDTH = 225
 BORDA_HEIGHT = 350
+BORDER_THICKNESS = 5 # Standardized thickness for UI and Export
 
 # Configurações de upload
 UPLOAD_BATCH_SIZE = 10

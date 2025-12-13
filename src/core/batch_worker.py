@@ -3,7 +3,7 @@ import os
 from PIL import Image
 from src.core.image_processor import ImageProcessor
 from src.core.animation_processor import AnimationProcessor
-from src.config.settings import BORDA_WIDTH, BORDA_HEIGHT
+from src.config.settings import BORDA_WIDTH, BORDA_HEIGHT, BORDER_THICKNESS
 
 def process_image_task(task_data):
     """
@@ -34,13 +34,19 @@ def process_image_task(task_data):
         if anim_type != "Nenhuma":
             # Animated
             if anim_type == "Rainbow":
-                frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=10)
+                frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=BORDER_THICKNESS)
             elif anim_type == "Neon Pulsante":
-                frames, duration = AnimationProcessor.generate_neon_frames(cropped, border_color, total_frames=40, border_width=10)
+                frames, duration = AnimationProcessor.generate_neon_frames(cropped, border_color, total_frames=40, border_width=BORDER_THICKNESS)
             elif anim_type == "Strobe (Pisca)":
-                frames, duration = AnimationProcessor.generate_strobe_frames(cropped, total_frames=10, border_width=10)
+                frames, duration = AnimationProcessor.generate_strobe_frames(cropped, total_frames=10, border_width=BORDER_THICKNESS)
+            elif anim_type == "Glitch":
+                frames, duration = AnimationProcessor.generate_glitch_frames(cropped, total_frames=20, border_width=BORDER_THICKNESS)
+            elif anim_type == "Spin":
+                frames, duration = AnimationProcessor.generate_spin_frames(cropped, border_color, total_frames=30, border_width=BORDER_THICKNESS)
+            elif anim_type == "Flow":
+                frames, duration = AnimationProcessor.generate_flow_frames(cropped, border_color, total_frames=30, border_width=BORDER_THICKNESS)
             else:
-                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=10)
+                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=BORDER_THICKNESS)
             
             # Enforce dimensions
             final_frames = []

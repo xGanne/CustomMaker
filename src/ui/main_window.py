@@ -12,7 +12,7 @@ import threading
 import shutil
 
 # Internal imports
-from src.config.settings import COLORS, BORDA_WIDTH, BORDA_HEIGHT, BORDA_HEX, BORDA_NAMES, SUPPORTED_EXTENSIONS, CSS_FILE
+from src.config.settings import COLORS, BORDA_WIDTH, BORDA_HEIGHT, BORDA_HEX, BORDA_NAMES, SUPPORTED_EXTENSIONS, CSS_FILE, BORDER_THICKNESS
 from src.utils.resource_loader import resource_path
 # from src.ui.styles import configure_styles # Removed
 from src.ui.widgets import Tooltip, ProgressBarPopup
@@ -24,6 +24,7 @@ from src.ui.online_search import DanbooruSearchTab
 from src.core.animation_processor import AnimationProcessor
 from src.controllers.batch_controller import BatchController
 from src.core.preset_manager import PresetManager
+from src.ui.toast import show_toast
 
 class CustomMakerApp:
     def __init__(self, root, app_config):
@@ -304,7 +305,7 @@ class CustomMakerApp:
         self.preset_manager.add_preset(name, data)
         self.update_presets_menu()
         self.preset_menu_var.set(name)
-        messagebox.showinfo("Sucesso", f"Preset '{name}' salvo!")
+        show_toast(self.root, "Preset Salvo", f"Preset '{name}' salvo com sucesso!", "success")
 
     def load_selected_preset(self, name):
         data = self.preset_manager.get_preset(name)
@@ -312,17 +313,26 @@ class CustomMakerApp:
         
         if 'border_name' in data:
             self.selected_borda.set(data['border_name'])
-            # Trigger logic for border selection
-            self.on_borda_select(data['border_name'])
-            
+            # Trigger handler to update UI (toggle entry, etc)
+            self.on_borda_global_selected(None)
+        
         if 'border_color' in data:
-            self.custom_borda_hex = data['border_color']
-            self.btn_borda_color.configure(fg_color=self.custom_borda_hex, text=self.custom_borda_hex)
+            h = data['border_color']
+            self.custom_borda_hex = h
+            # Update UI elements
+            # self.btn_borda_color.configure(fg_color=h, text=h) # Button not present in this version
+            self.custom_color_entry.delete(0, tk.END)
+            self.custom_color_entry.insert(0, h)
             
+            # If custom, ensure canvas updates with new color
+            if self.selected_borda.get() == "Cor Personalizada":
+                 self.update_canvas()
+
         if 'animation_type' in data:
-            self.animation_type.set(data['animation_type'])
-            
-        self.update_canvas()
+            anim = data['animation_type']
+            self.animation_type.set(anim)
+            # Trigger handler to start/restart animation
+            self.on_animation_change(anim)
 
     def delete_current_preset(self):
         name = self.preset_menu_var.get()
@@ -396,7 +406,7 @@ class CustomMakerApp:
 
         ctk.CTkLabel(parent, text="Animação:", anchor="w").pack(fill="x", padx=10, pady=(5,0))
         self.anim_combo = ctk.CTkOptionMenu(parent, variable=self.animation_type, 
-                                            values=["Nenhuma", "Rainbow", "Neon Pulsante", "Strobe (Pisca)"], 
+                                            values=["Nenhuma", "Rainbow", "Neon Pulsante", "Strobe (Pisca)", "Glitch", "Spin", "Flow"], 
                                             command=self.on_animation_change)
         self.anim_combo.pack(fill="x", padx=10, pady=5)
 
@@ -696,13 +706,14 @@ class CustomMakerApp:
             self.user_tk = ImageTk.PhotoImage(self.user_image)
             self.canvas.create_image(self.user_image_pos[0], self.user_image_pos[1], anchor=tk.NW, image=self.user_tk)
 
-        self.canvas.create_rectangle(bx, by, bx+BORDA_WIDTH, by+BORDA_HEIGHT, outline=b_hex, width=3, tags="border_rect")
+        self.canvas.create_rectangle(bx, by, bx+BORDA_WIDTH, by+BORDA_HEIGHT, outline=b_hex, width=BORDER_THICKNESS, tags="border_rect")
 
     def on_animation_change(self, choice):
         if choice == "Nenhuma":
             self.stop_preview_animation()
             self.update_canvas()
         else:
+            self.stop_preview_animation() # Force restart to regen frames
             self.start_preview_animation()
 
     def start_preview_animation(self):
@@ -711,66 +722,100 @@ class CustomMakerApp:
         self.animation_hue = 0.0
         self.animation_pulse = 0.0
         self.animation_index = 0
+        self.preview_frames = []
+        self.preview_overlay_item = None
+        
+        # Start generation in background
+        threading.Thread(target=self._generate_preview_frames_thread, daemon=True).start()
+        
         self.animate_loop()
+
+    def _generate_preview_frames_thread(self):
+        try:
+            anim_type = self.animation_type.get()
+            
+            # Determine color
+            b_name = self.individual_bordas.get(self.image_path, self.selected_borda.get()) if self.image_path else self.selected_borda.get()
+            if b_name == "Cor Personalizada":
+                b_hex = self.custom_borda_hex_individual.get(self.image_path, self.custom_borda_hex) if self.image_path else self.custom_borda_hex
+            else:
+                b_hex = self.borda_hex.get(b_name, '#FFFFFF')
+            
+            # Generate frames with overlay_only=True
+            # Size is fixed layout size
+            size = (BORDA_WIDTH, BORDA_HEIGHT)
+            
+            frames, duration = [], 50
+            if anim_type == "Rainbow":
+                frames, duration = AnimationProcessor.generate_rainbow_frames(size, total_frames=40, border_width=BORDER_THICKNESS, overlay_only=True)
+            elif anim_type == "Neon Pulsante":
+                frames, duration = AnimationProcessor.generate_neon_frames(size, b_hex, total_frames=40, border_width=BORDER_THICKNESS, overlay_only=True)
+            elif anim_type == "Strobe (Pisca)":
+                frames, duration = AnimationProcessor.generate_strobe_frames(size, total_frames=10, border_width=BORDER_THICKNESS, overlay_only=True)
+            elif anim_type == "Glitch":
+                frames, duration = AnimationProcessor.generate_glitch_frames(size, total_frames=20, border_width=BORDER_THICKNESS, overlay_only=True)
+            elif anim_type == "Spin":
+                frames, duration = AnimationProcessor.generate_spin_frames(size, b_hex, total_frames=30, border_width=BORDER_THICKNESS, overlay_only=True)
+            elif anim_type == "Flow":
+                frames, duration = AnimationProcessor.generate_flow_frames(size, b_hex, total_frames=30, border_width=BORDER_THICKNESS, overlay_only=True)
+            
+            # Convert to ImageTk in thread? No, Tkinter objects must be created in main thread usually.
+            # But ImageTk.PhotoImage can sometimes work if passed carefully, OR better: convert in loop.
+            # Storing PIL images is safer.
+            self.preview_frames = frames
+            self.preview_duration = duration
+            
+        except Exception as e:
+            print(f"Preview Gen Error: {e}")
 
     def stop_preview_animation(self):
         self.animation_running = False
         if self.animation_job:
             self.root.after_cancel(self.animation_job)
             self.animation_job = None
+        self.canvas.delete("preview_overlay")
+        # Ensure border rect is visible again if needed
+        self.canvas.itemconfig("border_rect", state="normal")
 
     def animate_loop(self):
         if not self.animation_running: return
         
-        anim_type = self.animation_type.get()
-        hex_color = None
         delay = 50
         
-        if anim_type == "Rainbow":
-            import colorsys
-            self.animation_hue += 0.02
-            if self.animation_hue > 1.0: self.animation_hue = 0.0
-            rgb = colorsys.hsv_to_rgb(self.animation_hue, 1.0, 1.0)
-            r, g, b = [int(x*255) for x in rgb]
-            hex_color = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+        # If we have high-fi frames, use them
+        if hasattr(self, 'preview_frames') and self.preview_frames:
+            idx = self.animation_index % len(self.preview_frames)
+            pil_frame = self.preview_frames[idx]
             
-        elif anim_type == "Neon Pulsante":
+            # Convert to TK
+            self.current_preview_tk = ImageTk.PhotoImage(pil_frame) # Keep ref
+            
+            bx, by = self.borda_pos
+            
+            # Update or create overlay
+            self.canvas.delete("preview_overlay") # naive redraw
+            self.canvas.create_image(bx, by, anchor=tk.NW, image=self.current_preview_tk, tags="preview_overlay")
+            
+            # Hide default border rect to avoid clash
+            self.canvas.itemconfig("border_rect", state="hidden")
+            
+            self.animation_index += 1
+            if hasattr(self, 'preview_duration'): delay = self.preview_duration
+
+        else:
+            # Fallback to simple simulation while loading
+            anim_type = self.animation_type.get()
+            hex_color = None
+            
+            # reuse simulated logic for loading state... or just simple pulse
+            # ... (Simplified logic from before, truncated for brevity/cleanliness)
+            # Actually, let's just do a simple "Loading" pulse using Neon logic
+            self.animation_pulse += 0.2
             import math
-            import colorsys
+            val = int(128 + 127 * math.sin(self.animation_pulse))
+            hex_color = '#{:02x}{:02x}{:02x}'.format(val, val, val)
+            self.canvas.itemconfig("border_rect", outline=hex_color, state="normal")
             
-            # Base Color
-            b_name = self.individual_bordas.get(self.image_path, self.selected_borda.get()) if self.image_path else self.selected_borda.get()
-            if b_name == "Cor Personalizada":
-                base_hex = self.custom_borda_hex_individual.get(self.image_path, self.custom_borda_hex) if self.image_path else self.custom_borda_hex
-            else:
-                base_hex = self.borda_hex.get(b_name, '#FFFFFF')
-            
-            # Convert hex to rgb
-            try:
-                r = int(base_hex[1:3], 16)
-                g = int(base_hex[3:5], 16)
-                b = int(base_hex[5:7], 16)
-                
-                self.animation_pulse += 0.1
-                intensity = 0.5 + 0.5 * math.sin(self.animation_pulse)
-                
-                nr = int(r * intensity)
-                ng = int(g * intensity)
-                nb = int(b * intensity)
-                hex_color = '#{:02x}{:02x}{:02x}'.format(nr, ng, nb)
-            except: hex_color = base_hex
-
-        elif anim_type == "Strobe (Pisca)":
-            colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#00FFFF", "#FF00FF", "#FFFFFF", "#000000"]
-            self.animation_index = (self.animation_index + 1) % len(colors)
-            hex_color = colors[self.animation_index]
-            delay = 100
-
-        if hex_color:
-            try:
-                 self.canvas.itemconfig("border_rect", outline=hex_color)
-            except: pass
-        
         self.animation_job = self.root.after(delay, self.animate_loop)
         # I'll modify update_canvas in another chunk to add tags.
         
@@ -1034,7 +1079,7 @@ class CustomMakerApp:
          def finish_batch():
              popup.close()
              self.load_image(self.current_image_index)
-             messagebox.showinfo("Concluído", "Processamento em lote finalizado.")
+             show_toast(self.root, "Concluído", "Processamento em lote finalizado.", "success")
 
          threading.Thread(target=batch_task, daemon=True).start()
 
@@ -1061,7 +1106,7 @@ class CustomMakerApp:
              
         def on_finish():
              popup.close()
-             messagebox.showinfo("Salvo", "Imagens salvas com sucesso.")
+             show_toast(self.root, "Salvo", "Imagens salvas com sucesso.", "success")
              
         self.batch_controller.save_all_images(d, on_progress, on_finish)
 
@@ -1076,7 +1121,7 @@ class CustomMakerApp:
              
         def on_finish():
              popup.close()
-             messagebox.showinfo("Salvo", "ZIP salvo com sucesso.")
+             show_toast(self.root, "Salvo", "ZIP salvo com sucesso.", "success")
         
         self.batch_controller.save_zip(f, on_progress, on_finish)
 
@@ -1136,7 +1181,11 @@ class CustomMakerApp:
         h = self.custom_color_entry.get()
         if len(h) == 7 and h.startswith("#"):
             self.custom_borda_hex = h
-            if self.selected_borda.get() == "Cor Personalizada": self.update_canvas()
+            if self.selected_borda.get() == "Cor Personalizada": 
+                self.update_canvas()
+                if self.animation_running: 
+                    self.stop_preview_animation()
+                    self.start_preview_animation()
 
     def _toggle_custom_color_entry(self):
         if self.selected_borda.get() == "Cor Personalizada":
@@ -1147,6 +1196,9 @@ class CustomMakerApp:
     def on_borda_global_selected(self, event):
         self._toggle_custom_color_entry()
         self.update_canvas()
+        if self.animation_running: 
+            self.stop_preview_animation()
+            self.start_preview_animation()
         if self.image_path in self.individual_bordas:
             if messagebox.askyesno("Remover Individual", "Remover borda individual?"):
                 del self.individual_bordas[self.image_path]
