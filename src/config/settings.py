@@ -15,7 +15,8 @@ COLORS = {
     "text_dim": "#bac2de",        # Texto menos importante
     "success": "#a6e3a1",         # Verde para sucesso
     "warning": "#f9e2af",         # Amarelo para avisos
-    "error": "#f38ba8"            # Vermelho para erros
+    "error": "#f38ba8",           # Vermelho para erros
+    "danger": "#f38ba8"           # Alias para erro
 }
 
 # Mapeamento de nomes de borda para exibição

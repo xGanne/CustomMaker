@@ -3,7 +3,7 @@ import sys
 import tkinter as tk
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, Menu # standard menu is still better for context menus usually, unless CTkOptionMenu replaces it totally
-from PIL import Image, ImageTk, ImageOps
+from PIL import Image, ImageTk, ImageOps, ImageGrab
 import cssutils
 import numpy as np
 import zipfile
@@ -23,6 +23,7 @@ from src.ui.online_search import DanbooruSearchTab
 from src.ui.online_search import DanbooruSearchTab
 from src.core.animation_processor import AnimationProcessor
 from src.controllers.batch_controller import BatchController
+from src.core.preset_manager import PresetManager
 
 class CustomMakerApp:
     def __init__(self, root, app_config):
@@ -49,6 +50,7 @@ class CustomMakerApp:
         self.uploader = ImgChestUploader()
         self.face_cascade = ImageProcessor.load_face_cascade()
         self.batch_controller = BatchController(self)
+        self.preset_manager = PresetManager()
         
         # Drag & Drop Registration
         try:
@@ -79,6 +81,7 @@ class CustomMakerApp:
         self.root.bind('<Control-z>', self.undo)
         self.root.bind('<Control-s>', lambda event: self.show_save_menu())
         self.root.bind('<Control-o>', lambda event: self.select_folder())
+        self.root.bind('<Control-v>', self.paste_image)
         self.root.bind('<Alt-f>', lambda event: self.intelligent_auto_frame())
         self.root.bind('<Alt-b>', lambda event: self.auto_fit_image())
         
@@ -226,6 +229,8 @@ class CustomMakerApp:
         self.create_file_section(self.tab_edit)
         ctk.CTkFrame(self.tab_edit, height=2, fg_color="gray30").pack(fill="x", pady=10, padx=5)
         self.create_border_section(self.tab_edit)
+        ctk.CTkFrame(self.tab_edit, height=2, fg_color="gray30").pack(fill="x", pady=10, padx=5)
+        self.create_presets_section(self.tab_edit)
         
         # --- Tab Ajustes ---
         self.create_settings_section(self.tab_settings)
@@ -242,6 +247,90 @@ class CustomMakerApp:
         
         self.create_tips_section(self.right_frame)
         self.create_context_menu_image_list()
+
+    def create_presets_section(self, parent):
+        ctk.CTkLabel(parent, text="Presets:", font=ctk.CTkFont(size=14, weight="bold"), anchor="w").pack(fill="x", padx=10, pady=(10,5))
+        
+        # Save
+        frame_save = ctk.CTkFrame(parent, fg_color="transparent")
+        frame_save.pack(fill="x", padx=10, pady=5)
+        
+        self.preset_name_var = tk.StringVar()
+        entry = ctk.CTkEntry(frame_save, textvariable=self.preset_name_var, placeholder_text="Nome do Preset", width=120)
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        btn_save = ctk.CTkButton(frame_save, text="💾", width=30, command=self.save_current_preset, fg_color=COLORS['success'])
+        btn_save.pack(side="right")
+        Tooltip(btn_save, "Salvar Preset Atual")
+
+        # Load/Delete
+        frame_load = ctk.CTkFrame(parent, fg_color="transparent")
+        frame_load.pack(fill="x", padx=10, pady=5)
+        
+        self.preset_menu_var = tk.StringVar(value="Selecione...")
+        self.preset_menu = ctk.CTkOptionMenu(frame_load, variable=self.preset_menu_var, values=[], command=self.load_selected_preset)
+        self.preset_menu.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        btn_del = ctk.CTkButton(frame_load, text="❌", width=30, command=self.delete_current_preset, fg_color=COLORS['danger'])
+        btn_del.pack(side="right")
+        Tooltip(btn_del, "Excluir Preset Selecionado")
+        
+        self.update_presets_menu()
+
+    def update_presets_menu(self):
+        presets = self.preset_manager.list_presets()
+        if not presets:
+            self.preset_menu.configure(values=["Vazio"])
+            self.preset_menu_var.set("Vazio")
+            self.preset_menu.configure(state="disabled")
+        else:
+            self.preset_menu.configure(state="normal")
+            self.preset_menu.configure(values=presets)
+            if self.preset_menu_var.get() not in presets:
+                self.preset_menu_var.set("Selecione...")
+
+    def save_current_preset(self):
+        name = self.preset_name_var.get().strip()
+        if not name:
+            messagebox.showwarning("Aviso", "Digite um nome para o preset.")
+            return
+            
+        data = {
+            "border_name": self.selected_borda.get(),
+            "border_color": self.custom_borda_hex, 
+            "animation_type": self.animation_type.get(),
+        }
+        
+        self.preset_manager.add_preset(name, data)
+        self.update_presets_menu()
+        self.preset_menu_var.set(name)
+        messagebox.showinfo("Sucesso", f"Preset '{name}' salvo!")
+
+    def load_selected_preset(self, name):
+        data = self.preset_manager.get_preset(name)
+        if not data: return
+        
+        if 'border_name' in data:
+            self.selected_borda.set(data['border_name'])
+            # Trigger logic for border selection
+            self.on_borda_select(data['border_name'])
+            
+        if 'border_color' in data:
+            self.custom_borda_hex = data['border_color']
+            self.btn_borda_color.configure(fg_color=self.custom_borda_hex, text=self.custom_borda_hex)
+            
+        if 'animation_type' in data:
+            self.animation_type.set(data['animation_type'])
+            
+        self.update_canvas()
+
+    def delete_current_preset(self):
+        name = self.preset_menu_var.get()
+        if name and name != "Selecione..." and name != "Vazio":
+            if messagebox.askyesno("Confirmar", f"Excluir preset '{name}'?"):
+                self.preset_manager.delete_preset(name)
+                self.update_presets_menu()
+                self.preset_menu_var.set("Selecione...")
 
     def create_settings_section(self, parent):
         ctk.CTkLabel(parent, text="Aparência:", font=ctk.CTkFont(size=14, weight="bold"), anchor="w").pack(fill="x", padx=10, pady=(10,5))
@@ -501,6 +590,37 @@ class CustomMakerApp:
 
         except Exception as e:
             self.root.after(0, lambda: self._on_image_loaded({'index': index, 'error': str(e)}))
+
+    def paste_image(self, event=None):
+        try:
+            img = ImageGrab.grabclipboard()
+            if isinstance(img, Image.Image):
+                # Save to temp
+                temp_dir = os.path.join(tempfile.gettempdir(), "CustomMakerPaste")
+                os.makedirs(temp_dir, exist_ok=True)
+                
+                # Unique name
+                import time
+                filename = f"pasted_{int(time.time())}.png"
+                path = os.path.join(temp_dir, filename)
+                img.save(path)
+                
+                # Load
+                if not self.image_list: self.image_list = []
+                # Check if already exists? Unlikely with timestamp
+                self.image_list.append(path)
+                self.image_listbox.insert(tk.END, filename)
+                
+                # Select it
+                idx = len(self.image_list) - 1
+                self.load_image(idx)
+                
+                self.status_var.set("Imagem colada da área de transferência.")
+            else:
+                self.status_var.set("Nenhuma imagem na área de transferência.")
+        except Exception as e:
+            print(f"Paste error: {e}")
+            self.status_var.set("Erro ao colar imagem.")
 
     def _on_image_loaded(self, result):
         if result.get('error'):
