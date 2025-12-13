@@ -20,7 +20,9 @@ from src.core.image_processor import ImageProcessor
 from src.core.uploader import ImgChestUploader
 from src.core.app_config import AppConfig
 from src.ui.online_search import DanbooruSearchTab
+from src.ui.online_search import DanbooruSearchTab
 from src.core.animation_processor import AnimationProcessor
+from src.controllers.batch_controller import BatchController
 
 class CustomMakerApp:
     def __init__(self, root, app_config):
@@ -46,6 +48,14 @@ class CustomMakerApp:
         self.app_config = app_config
         self.uploader = ImgChestUploader()
         self.face_cascade = ImageProcessor.load_face_cascade()
+        self.batch_controller = BatchController(self)
+        
+        # Drag & Drop Registration
+        try:
+            self.root.drop_target_register('DND_Files')
+            self.root.dnd_bind('<<Drop>>', self.on_drop_files)
+        except Exception as e:
+            print(f"DnD Init Warn: {e}")
         
         self.initialize_state_variables()
         self.load_resources()
@@ -340,6 +350,44 @@ class CustomMakerApp:
             self.app_config.save()
             self.load_images_from_folder(folder)
 
+    def on_drop_files(self, event):
+        files = event.data
+        if not files: return
+        
+        # TkinterDnD returns a Tcl list string. root.tk.splitlist handles it correctly.
+        try:
+            paths = self.root.tk.splitlist(files)
+        except Exception as e:
+            print(f"DnD Parse Error: {e}")
+            paths = [files]
+
+        valid_images = []
+        for p in paths:
+            if os.path.isdir(p):
+                 self.load_images_from_folder(p)
+                 return # If folder, just load folder and stop
+            elif os.path.isfile(p) and p.lower().endswith(SUPPORTED_EXTENSIONS):
+                 valid_images.append(p)
+        
+        if valid_images:
+            # Append or Replace? Let's Append if list exists, or Replace if user wants?
+            # Current behavior is load folder replaces list. Let's make Drop replace list to match folder behavior roughly,
+            # OR append if it's just files. Let's Append.
+            # Actually, let's just add them.
+            if not self.image_list: 
+                self.image_list = []
+                self.images.clear()
+            
+            for p in valid_images:
+                if p not in self.image_list:
+                    self.image_list.append(p)
+                    self.image_listbox.insert(tk.END, os.path.basename(p))
+            
+            if len(valid_images) > 0 and self.current_image_index is None:
+                self.load_image(0)
+            
+            self.status_var.set(f"Adicionadas {len(valid_images)} imagens via Drag & Drop.")
+
     def load_images_from_folder(self, folder):
         self.status_var.set("Carregando imagens...")
         self.root.update_idletasks()
@@ -608,52 +656,6 @@ class CustomMakerApp:
         
         pass # Placeholder, see next chunk logic adjustments
         
-    def _prepare_animated_gif(self, path):
-        # Generate frames using the current user settings
-        # We need the cropped image first
-        state = self.image_states.get(path)
-        if not state: return None
-        try:
-             orig = Image.open(path).convert("RGBA")
-             resized = orig.resize(state['size'], Image.LANCZOS)
-             cropped = ImageProcessor.crop_image_to_borda(resized, state['pos'], state['size'], self.borda_pos)
-             
-             anim_type = self.animation_type.get()
-             frames = []
-             duration = 50
-             
-             # Get Color
-             b_name = self.individual_bordas.get(path, self.selected_borda.get())
-             if b_name == "Cor Personalizada":
-                 b_hex = self.custom_borda_hex_individual.get(path, self.custom_borda_hex)
-             else:
-                 b_hex = self.borda_hex.get(b_name, '#FFFFFF')
-
-             if anim_type == "Rainbow":
-                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=10)
-             elif anim_type == "Neon Pulsante":
-                 frames, duration = AnimationProcessor.generate_neon_frames(cropped, b_hex, total_frames=40, border_width=10)
-             elif anim_type == "Strobe (Pisca)":
-                 frames, duration = AnimationProcessor.generate_strobe_frames(cropped, total_frames=10, border_width=10)
-             else:
-                 # Default fallback
-                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=10)
-             
-             # Enforce strict 225x350 output
-             final_frames = []
-             for f in frames:
-                 if f.size != (BORDA_WIDTH, BORDA_HEIGHT):
-                     # print(f"Resizing frame from {f.size} to ({BORDA_WIDTH}, {BORDA_HEIGHT})")
-                     f = f.resize((BORDA_WIDTH, BORDA_HEIGHT), Image.LANCZOS)
-                 final_frames.append(f)
-
-             orig.close()
-             return final_frames, duration
-        except Exception as e: 
-             print(f"Gif error: {e}")
-             return None, None
-
-
     def select_image(self, event):
         if self.is_picking_color:
             self.pick_color_from_event(event)
@@ -917,40 +919,7 @@ class CustomMakerApp:
          threading.Thread(target=batch_task, daemon=True).start()
 
     # --- Save & Upload ---
-    def _prepare_animated_gif(self, path):
-        # Generate frames using the current user settings
-        state = self.image_states.get(path)
-        if not state: return None
-        
-        anim_type = self.animation_type.get()
-        if anim_type == "Nenhuma": return None
 
-        try:
-             orig = Image.open(path).convert("RGBA")
-             resized = orig.resize(state['size'], Image.LANCZOS)
-             cropped = ImageProcessor.crop_image_to_borda(resized, state['pos'], state['size'], self.borda_pos)
-             
-             frames = []
-             duration = 50
-             
-             if anim_type == "Rainbow":
-                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=10)
-             elif anim_type == "Neon Pulsante":
-                 # Use current custom color as base
-                 b_name = self.individual_bordas.get(path, self.selected_borda.get())
-                 if b_name == "Cor Personalizada":
-                     b_hex = self.custom_borda_hex_individual.get(path, self.custom_borda_hex)
-                 else:
-                     b_hex = self.borda_hex.get(b_name, '#FFFFFF')
-                 frames, duration = AnimationProcessor.generate_neon_frames(cropped, color_hex=b_hex, total_frames=30, border_width=10)
-             elif anim_type == "Strobe (Pisca)":
-                 frames, duration = AnimationProcessor.generate_strobe_frames(cropped, total_frames=16, border_width=10)
-
-             orig.close()
-             return frames, duration
-        except Exception as e: 
-             print(f"Gif error: {e}")
-             return None, None
 
     def show_save_menu(self):
         m = Menu(self.root, tearoff=0)
@@ -959,99 +928,37 @@ class CustomMakerApp:
         m.add_command(label="Upload ImgChest", command=self.open_upload_window)
         m.post(self.root.winfo_pointerx(), self.root.winfo_pointery())
 
-    def _prepare_final_image(self, path):
-        state = self.image_states.get(path)
-        if not state: return None
-        try:
-             orig = Image.open(path).convert("RGBA")
-             resized = orig.resize(state['size'], Image.LANCZOS)
-             cropped = ImageProcessor.crop_image_to_borda(resized, state['pos'], state['size'], self.borda_pos)
-             b_name = self.individual_bordas.get(path, self.selected_borda.get())
-             if b_name == "Cor Personalizada":
-                 b_hex = self.custom_borda_hex_individual.get(path, self.custom_borda_hex)
-             else:
-                 b_hex = self.borda_hex.get(b_name, '#FFFFFF')
-             final = ImageProcessor.add_borda_to_image(cropped, b_hex)
-             orig.close()
-             return final
-        except Exception: return None
+
 
     def save_all_images(self):
         d = filedialog.askdirectory()
         if not d: return
         
-        is_anim = (self.animation_type.get() != "Nenhuma")
-        
         popup = ProgressBarPopup(self.root, title="Salvando...", maximum=len(self.image_list))
         
-        def save_task():
-            count = 0
-            for path in self.image_list:
-                try:
-                    if is_anim:
-                        frames, duration = self._prepare_animated_gif(path)
-                        if frames:
-                            out = os.path.join(d, os.path.splitext(os.path.basename(path))[0] + "_custom.webp")
-                            frames[0].save(out, save_all=True, append_images=frames[1:], loop=0, duration=duration, optimize=True, quality=90)
-                    else:
-                        img = self._prepare_final_image(path)
-                        if img:
-                            out = os.path.join(d, os.path.splitext(os.path.basename(path))[0] + "_custom.png")
-                            img.save(out)
-                            
-                    count += 1
-                    self.root.after(0, lambda c=count: popup.update_progress(c, f"Salvando {c}/{len(self.image_list)}"))
-                except Exception as e:
-                    print(f"Error saving {path}: {e}")
-            
-            self.root.after(0, lambda: finish_save())
-
-        def finish_save():
-            popup.close()
-            messagebox.showinfo("Salvo", "Imagens salvas com sucesso.")
-
-        threading.Thread(target=save_task, daemon=True).start()
+        def on_progress(current, total, msg):
+             popup.update_progress(current, msg)
+             
+        def on_finish():
+             popup.close()
+             messagebox.showinfo("Salvo", "Imagens salvas com sucesso.")
+             
+        self.batch_controller.save_all_images(d, on_progress, on_finish)
 
     def save_zip(self):
         f = filedialog.asksaveasfilename(defaultextension=".zip")
         if not f: return
         
-        is_anim = (self.animation_type.get() != "Nenhuma")
-
-        with zipfile.ZipFile(f, 'w') as z:
-            popup = ProgressBarPopup(self.root, title="Salvando ZIP...", maximum=len(self.image_list))
-            
-            def zip_task():
-                for i, path in enumerate(self.image_list):
-                    try:
-                        self.root.after(0, lambda v=i: popup.update_progress(v, f"Processando {os.path.basename(path)}..."))
-                        
-                        if is_anim:
-                            frames, duration = self._prepare_animated_gif(path)
-                            if frames:
-                                with tempfile.NamedTemporaryFile(suffix=".webp", delete=False) as tmp:
-                                    frames[0].save(tmp.name, save_all=True, append_images=frames[1:], loop=0, duration=duration, optimize=True, quality=90)
-                                    tmp_name = tmp.name
-                                z.write(tmp_name, os.path.splitext(os.path.basename(path))[0] + "_custom.webp")
-                                os.unlink(tmp_name)
-                        else:
-                            img = self._prepare_final_image(path)
-                            if img:
-                                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                                    img.save(tmp.name)
-                                    tmp_name = tmp.name
-                                z.write(tmp_name, os.path.splitext(os.path.basename(path))[0] + "_custom.png")
-                                os.unlink(tmp_name)
-                    except Exception as e:
-                        print(f"Zip error {path}: {e}")
-
-                self.root.after(0, lambda: finish_zip())
-
-            def finish_zip():
-                popup.close()
-                messagebox.showinfo("Salvo", "ZIP salvo com sucesso.")
-
-            threading.Thread(target=zip_task, daemon=True).start()
+        popup = ProgressBarPopup(self.root, title="Salvando ZIP...", maximum=len(self.image_list))
+        
+        def on_progress(current, total, msg):
+             popup.update_progress(current, msg)
+             
+        def on_finish():
+             popup.close()
+             messagebox.showinfo("Salvo", "ZIP salvo com sucesso.")
+        
+        self.batch_controller.save_zip(f, on_progress, on_finish)
 
     def open_upload_window(self):
         top = ctk.CTkToplevel(self.root)
@@ -1069,62 +976,35 @@ class CustomMakerApp:
             popup.progress.configure(mode='indeterminate')
             popup.progress.start()
             
-            def upload_task():
-                files = []
-                tmp_dir = tempfile.mkdtemp()
-                try:
-                    is_anim = (self.animation_type.get() != "Nenhuma")
-                    
-                    for i, path in enumerate(self.image_list):
-                        self.root.after(0, lambda v=i: popup.update_progress(0, f"Preparando {os.path.basename(path)}..."))
-                        
-                        if is_anim:
-                            frames, duration = self._prepare_animated_gif(path)
-                            if frames:
-                                fname = os.path.splitext(os.path.basename(path))[0] + "_custom.webp"
-                                fpath = os.path.join(tmp_dir, fname)
-                                frames[0].save(fpath, save_all=True, append_images=frames[1:], loop=0, duration=duration, optimize=True, quality=90)
-                                files.append({'path': fpath, 'filename': fname})
-                        else:
-                            img = self._prepare_final_image(path)
-                            if img:
-                                fname = os.path.splitext(os.path.basename(path))[0] + "_custom.png"
-                                fpath = os.path.join(tmp_dir, fname)
-                                img.save(fpath)
-                                files.append({'path': fpath, 'filename': fname})
-                    
-                    self.root.after(0, lambda: popup.update_progress(0, "Enviando..."))
-                    links = self.uploader.upload_images(files, title)
-                    self.root.after(0, lambda: finish(links, None))
-                except Exception as e:
-                    self.root.after(0, lambda: finish(None, str(e)))
-                finally:
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
-
-            def finish(links, error):
-                popup.close()
-                if error: messagebox.showerror("Erro", f"{error}")
-                elif links:
-                    w = ctk.CTkToplevel(self.root)
-                    w.title("Resultado Upload")
-                    w.geometry("500x400")
-                    
-                    textbox = ctk.CTkTextbox(w, width=480, height=300)
-                    textbox.pack(pady=10, padx=10)
-                    textbox.insert("1.0", "\n".join(links))
-                    
-                    def copy_command():
-                        cmd = f"$ai {title} $\n" + " $\n".join(links)
-                        self.root.clipboard_clear()
-                        self.root.clipboard_append(cmd)
-                        self.root.update() # Required for clipboard
-                        btn_copy.configure(text="Copiado!", fg_color="green")
-                        w.after(2000, lambda: btn_copy.configure(text="Copiar Comando", fg_color=["#3a7ebf", "#1f538d"]))
-                    
-                    btn_copy = ctk.CTkButton(w, text="Copiar Comando", command=copy_command)
-                    btn_copy.pack(pady=5)
+            def on_progress(current, total, msg):
+                popup.update_progress(0, msg)
             
-            threading.Thread(target=upload_task, daemon=True).start()
+            def on_error(msg):
+                popup.close()
+                messagebox.showerror("Erro", f"{msg}")
+
+            def on_finish(links):
+                popup.close()
+                w = ctk.CTkToplevel(self.root)
+                w.title("Resultado Upload")
+                w.geometry("500x400")
+                
+                textbox = ctk.CTkTextbox(w, width=480, height=300)
+                textbox.pack(pady=10, padx=10)
+                textbox.insert("1.0", "\n".join(links))
+                
+                def copy_command():
+                    cmd = f"$ai {title} $\n" + " $\n".join(links)
+                    self.root.clipboard_clear()
+                    self.root.clipboard_append(cmd)
+                    self.root.update() 
+                    btn_copy.configure(text="Copiado!", fg_color="green")
+                    w.after(2000, lambda: btn_copy.configure(text="Copiar Comando", fg_color=["#3a7ebf", "#1f538d"]))
+                
+                btn_copy = ctk.CTkButton(w, text="Copiar Comando", command=copy_command)
+                btn_copy.pack(pady=5)
+            
+            self.batch_controller.upload_to_imgchest(title, on_progress, on_finish, on_error)
 
         ctk.CTkButton(top, text="Upload", command=do_upload).pack(pady=10)
 

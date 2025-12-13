@@ -24,7 +24,17 @@ def main():
     color_theme = app_config.get('color_theme', 'blue')
     ctk.set_default_color_theme(color_theme)
 
-    root = ctk.CTk()
+    try:
+        from tkinterdnd2 import TkinterDnD
+        class CTkDnD(ctk.CTk, TkinterDnD.DnDWrapper):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.TkdndVersion = TkinterDnD._require(self)
+        root = CTkDnD()
+    except ImportError:
+        print("AVISO: tkinterdnd2 não encontrado. Drag & Drop desativado.")
+        root = ctk.CTk()
+
     app = CustomMakerApp(root, app_config) # Inject config
     root.mainloop()
 
