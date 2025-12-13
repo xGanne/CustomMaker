@@ -20,6 +20,7 @@ from src.core.image_processor import ImageProcessor
 from src.core.uploader import ImgChestUploader
 from src.core.app_config import AppConfig
 from src.ui.online_search import DanbooruSearchTab
+from src.core.animation_processor import AnimationProcessor
 
 class CustomMakerApp:
     def __init__(self, root, app_config):
@@ -109,6 +110,15 @@ class CustomMakerApp:
         self.hover_tooltip = None
         self.drag_data = {"item": None, "index": None}
         self.is_picking_color = False
+        
+        
+        # Animation State
+        self.animation_type = ctk.StringVar(value="Nenhuma")
+        self.animation_running = False
+        self.animation_hue = 0.0
+        self.animation_pulse = 0.0 # For Neon
+        self.animation_index = 0   # For Strobe
+        self.animation_job = None
 
     def load_resources(self):
         self.bordas = self.load_bordas_from_css()
@@ -284,6 +294,12 @@ class CustomMakerApp:
         
         self.btn_pick_color = ctk.CTkButton(parent, text="🎨 Pick Color", width=100, fg_color="#555555", hover_color="#666666", command=self.toggle_color_picker)
         self.btn_pick_color.pack(fill="x", padx=10, pady=(0, 5))
+
+        ctk.CTkLabel(parent, text="Animação:", anchor="w").pack(fill="x", padx=10, pady=(5,0))
+        self.anim_combo = ctk.CTkOptionMenu(parent, variable=self.animation_type, 
+                                            values=["Nenhuma", "Rainbow", "Neon Pulsante", "Strobe (Pisca)"], 
+                                            command=self.on_animation_change)
+        self.anim_combo.pack(fill="x", padx=10, pady=5)
 
         self._toggle_custom_color_entry()
 
@@ -512,7 +528,130 @@ class CustomMakerApp:
             self.user_tk = ImageTk.PhotoImage(self.user_image)
             self.canvas.create_image(self.user_image_pos[0], self.user_image_pos[1], anchor=tk.NW, image=self.user_tk)
 
-        self.canvas.create_rectangle(bx, by, bx+BORDA_WIDTH, by+BORDA_HEIGHT, outline=b_hex, width=3)
+        self.canvas.create_rectangle(bx, by, bx+BORDA_WIDTH, by+BORDA_HEIGHT, outline=b_hex, width=3, tags="border_rect")
+
+    def on_animation_change(self, choice):
+        if choice == "Nenhuma":
+            self.stop_preview_animation()
+            self.update_canvas()
+        else:
+            self.start_preview_animation()
+
+    def start_preview_animation(self):
+        if self.animation_running: return
+        self.animation_running = True
+        self.animation_hue = 0.0
+        self.animation_pulse = 0.0
+        self.animation_index = 0
+        self.animate_loop()
+
+    def stop_preview_animation(self):
+        self.animation_running = False
+        if self.animation_job:
+            self.root.after_cancel(self.animation_job)
+            self.animation_job = None
+
+    def animate_loop(self):
+        if not self.animation_running: return
+        
+        anim_type = self.animation_type.get()
+        hex_color = None
+        delay = 50
+        
+        if anim_type == "Rainbow":
+            import colorsys
+            self.animation_hue += 0.02
+            if self.animation_hue > 1.0: self.animation_hue = 0.0
+            rgb = colorsys.hsv_to_rgb(self.animation_hue, 1.0, 1.0)
+            r, g, b = [int(x*255) for x in rgb]
+            hex_color = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+            
+        elif anim_type == "Neon Pulsante":
+            import math
+            import colorsys
+            
+            # Base Color
+            b_name = self.individual_bordas.get(self.image_path, self.selected_borda.get()) if self.image_path else self.selected_borda.get()
+            if b_name == "Cor Personalizada":
+                base_hex = self.custom_borda_hex_individual.get(self.image_path, self.custom_borda_hex) if self.image_path else self.custom_borda_hex
+            else:
+                base_hex = self.borda_hex.get(b_name, '#FFFFFF')
+            
+            # Convert hex to rgb
+            try:
+                r = int(base_hex[1:3], 16)
+                g = int(base_hex[3:5], 16)
+                b = int(base_hex[5:7], 16)
+                
+                self.animation_pulse += 0.1
+                intensity = 0.5 + 0.5 * math.sin(self.animation_pulse)
+                
+                nr = int(r * intensity)
+                ng = int(g * intensity)
+                nb = int(b * intensity)
+                hex_color = '#{:02x}{:02x}{:02x}'.format(nr, ng, nb)
+            except: hex_color = base_hex
+
+        elif anim_type == "Strobe (Pisca)":
+            colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#00FFFF", "#FF00FF", "#FFFFFF", "#000000"]
+            self.animation_index = (self.animation_index + 1) % len(colors)
+            hex_color = colors[self.animation_index]
+            delay = 100
+
+        if hex_color:
+            try:
+                 self.canvas.itemconfig("border_rect", outline=hex_color)
+            except: pass
+        
+        self.animation_job = self.root.after(delay, self.animate_loop)
+        # I'll modify update_canvas in another chunk to add tags.
+        
+        pass # Placeholder, see next chunk logic adjustments
+        
+    def _prepare_animated_gif(self, path):
+        # Generate frames using the current user settings
+        # We need the cropped image first
+        state = self.image_states.get(path)
+        if not state: return None
+        try:
+             orig = Image.open(path).convert("RGBA")
+             resized = orig.resize(state['size'], Image.LANCZOS)
+             cropped = ImageProcessor.crop_image_to_borda(resized, state['pos'], state['size'], self.borda_pos)
+             
+             anim_type = self.animation_type.get()
+             frames = []
+             duration = 50
+             
+             # Get Color
+             b_name = self.individual_bordas.get(path, self.selected_borda.get())
+             if b_name == "Cor Personalizada":
+                 b_hex = self.custom_borda_hex_individual.get(path, self.custom_borda_hex)
+             else:
+                 b_hex = self.borda_hex.get(b_name, '#FFFFFF')
+
+             if anim_type == "Rainbow":
+                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=10)
+             elif anim_type == "Neon Pulsante":
+                 frames, duration = AnimationProcessor.generate_neon_frames(cropped, b_hex, total_frames=40, border_width=10)
+             elif anim_type == "Strobe (Pisca)":
+                 frames, duration = AnimationProcessor.generate_strobe_frames(cropped, total_frames=10, border_width=10)
+             else:
+                 # Default fallback
+                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=10)
+             
+             # Enforce strict 225x350 output
+             final_frames = []
+             for f in frames:
+                 if f.size != (BORDA_WIDTH, BORDA_HEIGHT):
+                     # print(f"Resizing frame from {f.size} to ({BORDA_WIDTH}, {BORDA_HEIGHT})")
+                     f = f.resize((BORDA_WIDTH, BORDA_HEIGHT), Image.LANCZOS)
+                 final_frames.append(f)
+
+             orig.close()
+             return final_frames, duration
+        except Exception as e: 
+             print(f"Gif error: {e}")
+             return None, None
 
 
     def select_image(self, event):
@@ -778,6 +917,41 @@ class CustomMakerApp:
          threading.Thread(target=batch_task, daemon=True).start()
 
     # --- Save & Upload ---
+    def _prepare_animated_gif(self, path):
+        # Generate frames using the current user settings
+        state = self.image_states.get(path)
+        if not state: return None
+        
+        anim_type = self.animation_type.get()
+        if anim_type == "Nenhuma": return None
+
+        try:
+             orig = Image.open(path).convert("RGBA")
+             resized = orig.resize(state['size'], Image.LANCZOS)
+             cropped = ImageProcessor.crop_image_to_borda(resized, state['pos'], state['size'], self.borda_pos)
+             
+             frames = []
+             duration = 50
+             
+             if anim_type == "Rainbow":
+                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=10)
+             elif anim_type == "Neon Pulsante":
+                 # Use current custom color as base
+                 b_name = self.individual_bordas.get(path, self.selected_borda.get())
+                 if b_name == "Cor Personalizada":
+                     b_hex = self.custom_borda_hex_individual.get(path, self.custom_borda_hex)
+                 else:
+                     b_hex = self.borda_hex.get(b_name, '#FFFFFF')
+                 frames, duration = AnimationProcessor.generate_neon_frames(cropped, color_hex=b_hex, total_frames=30, border_width=10)
+             elif anim_type == "Strobe (Pisca)":
+                 frames, duration = AnimationProcessor.generate_strobe_frames(cropped, total_frames=16, border_width=10)
+
+             orig.close()
+             return frames, duration
+        except Exception as e: 
+             print(f"Gif error: {e}")
+             return None, None
+
     def show_save_menu(self):
         m = Menu(self.root, tearoff=0)
         m.add_command(label="Salvar PNGs", command=self.save_all_images)
@@ -805,26 +979,79 @@ class CustomMakerApp:
     def save_all_images(self):
         d = filedialog.askdirectory()
         if not d: return
-        for path in self.image_list:
-            img = self._prepare_final_image(path)
-            if img:
-                out = os.path.join(d, os.path.splitext(os.path.basename(path))[0] + "_custom.png")
-                img.save(out)
-        messagebox.showinfo("Salvo", "Imagens salvas.")
+        
+        is_anim = (self.animation_type.get() != "Nenhuma")
+        
+        popup = ProgressBarPopup(self.root, title="Salvando...", maximum=len(self.image_list))
+        
+        def save_task():
+            count = 0
+            for path in self.image_list:
+                try:
+                    if is_anim:
+                        frames, duration = self._prepare_animated_gif(path)
+                        if frames:
+                            out = os.path.join(d, os.path.splitext(os.path.basename(path))[0] + "_custom.webp")
+                            frames[0].save(out, save_all=True, append_images=frames[1:], loop=0, duration=duration, optimize=True, quality=90)
+                    else:
+                        img = self._prepare_final_image(path)
+                        if img:
+                            out = os.path.join(d, os.path.splitext(os.path.basename(path))[0] + "_custom.png")
+                            img.save(out)
+                            
+                    count += 1
+                    self.root.after(0, lambda c=count: popup.update_progress(c, f"Salvando {c}/{len(self.image_list)}"))
+                except Exception as e:
+                    print(f"Error saving {path}: {e}")
+            
+            self.root.after(0, lambda: finish_save())
+
+        def finish_save():
+            popup.close()
+            messagebox.showinfo("Salvo", "Imagens salvas com sucesso.")
+
+        threading.Thread(target=save_task, daemon=True).start()
 
     def save_zip(self):
         f = filedialog.asksaveasfilename(defaultextension=".zip")
         if not f: return
+        
+        is_anim = (self.animation_type.get() != "Nenhuma")
+
         with zipfile.ZipFile(f, 'w') as z:
-            for path in self.image_list:
-                img = self._prepare_final_image(path)
-                if img:
-                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                        img.save(tmp.name)
-                        tmp_name = tmp.name
-                    z.write(tmp_name, os.path.splitext(os.path.basename(path))[0] + "_custom.png")
-                    os.unlink(tmp_name)
-        messagebox.showinfo("Salvo", "ZIP salvo.")
+            popup = ProgressBarPopup(self.root, title="Salvando ZIP...", maximum=len(self.image_list))
+            
+            def zip_task():
+                for i, path in enumerate(self.image_list):
+                    try:
+                        self.root.after(0, lambda v=i: popup.update_progress(v, f"Processando {os.path.basename(path)}..."))
+                        
+                        if is_anim:
+                            frames, duration = self._prepare_animated_gif(path)
+                            if frames:
+                                with tempfile.NamedTemporaryFile(suffix=".webp", delete=False) as tmp:
+                                    frames[0].save(tmp.name, save_all=True, append_images=frames[1:], loop=0, duration=duration, optimize=True, quality=90)
+                                    tmp_name = tmp.name
+                                z.write(tmp_name, os.path.splitext(os.path.basename(path))[0] + "_custom.webp")
+                                os.unlink(tmp_name)
+                        else:
+                            img = self._prepare_final_image(path)
+                            if img:
+                                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                                    img.save(tmp.name)
+                                    tmp_name = tmp.name
+                                z.write(tmp_name, os.path.splitext(os.path.basename(path))[0] + "_custom.png")
+                                os.unlink(tmp_name)
+                    except Exception as e:
+                        print(f"Zip error {path}: {e}")
+
+                self.root.after(0, lambda: finish_zip())
+
+            def finish_zip():
+                popup.close()
+                messagebox.showinfo("Salvo", "ZIP salvo com sucesso.")
+
+            threading.Thread(target=zip_task, daemon=True).start()
 
     def open_upload_window(self):
         top = ctk.CTkToplevel(self.root)
@@ -846,14 +1073,25 @@ class CustomMakerApp:
                 files = []
                 tmp_dir = tempfile.mkdtemp()
                 try:
+                    is_anim = (self.animation_type.get() != "Nenhuma")
+                    
                     for i, path in enumerate(self.image_list):
                         self.root.after(0, lambda v=i: popup.update_progress(0, f"Preparando {os.path.basename(path)}..."))
-                        img = self._prepare_final_image(path)
-                        if img:
-                            fname = os.path.splitext(os.path.basename(path))[0] + "_custom.png"
-                            fpath = os.path.join(tmp_dir, fname)
-                            img.save(fpath)
-                            files.append({'path': fpath, 'filename': fname})
+                        
+                        if is_anim:
+                            frames, duration = self._prepare_animated_gif(path)
+                            if frames:
+                                fname = os.path.splitext(os.path.basename(path))[0] + "_custom.webp"
+                                fpath = os.path.join(tmp_dir, fname)
+                                frames[0].save(fpath, save_all=True, append_images=frames[1:], loop=0, duration=duration, optimize=True, quality=90)
+                                files.append({'path': fpath, 'filename': fname})
+                        else:
+                            img = self._prepare_final_image(path)
+                            if img:
+                                fname = os.path.splitext(os.path.basename(path))[0] + "_custom.png"
+                                fpath = os.path.join(tmp_dir, fname)
+                                img.save(fpath)
+                                files.append({'path': fpath, 'filename': fname})
                     
                     self.root.after(0, lambda: popup.update_progress(0, "Enviando..."))
                     links = self.uploader.upload_images(files, title)
