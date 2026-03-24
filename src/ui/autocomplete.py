@@ -1,7 +1,10 @@
 import tkinter as tk
 import customtkinter as ctk
 import threading
-from tkinter import messagebox
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 class DanbooruAutocomplete:
     def __init__(self, entry_widget, root, client):
@@ -50,8 +53,8 @@ class DanbooruAutocomplete:
             
             threading.Thread(target=task, daemon=True).start()
 
-        except Exception as e:
-            print(e)
+        except Exception as exc:
+            logger.warning("Falha no autocomplete: %s", exc)
             self.hide_popup()
 
     def show_suggestions(self, tags, query_word):

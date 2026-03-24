@@ -13,9 +13,14 @@ CustomMaker is a program designed to facilitate the creation of Customs for the 
 ## Requirements
 
 - Python 3.11
-- Install dependencies:
+- Install dependencies (runtime + tests):
     ```sh
     pip install -r requirements.txt
+    ```
+  or via project metadata:
+    ```sh
+    pip install .
+    pip install ".[dev]"
     ```
 
 ## Configuration
@@ -33,6 +38,12 @@ CustomMaker is a program designed to facilitate the creation of Customs for the 
 2. Select a folder with images to start editing.
 3. Customize the border and resize the images as needed.
 4. Save the images to your computer or upload them directly to ImgChest.
+
+## Tests
+Run the automated suite with:
+```sh
+python -m pytest -q
+```
 
 ## About
 

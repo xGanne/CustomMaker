@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "custommaker"
+version = "0.1.0"
+description = "Desktop editor for Mudae custom card workflows."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "cssutils==2.11.1",
+    "customtkinter==5.2.2",
+    "google-generativeai==0.8.5",
+    "numpy==1.26.4",
+    "opencv-python==4.10.0.84",
+    "pillow==10.4.0",
+    "python-dotenv==1.0.1",
+    "requests==2.32.3",
+    "scipy==1.13.1",
+    "tkinterdnd2==0.4.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

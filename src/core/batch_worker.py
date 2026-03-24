@@ -13,7 +13,7 @@ def process_image_task(task_data):
     - borda_pos: tuple
     - anim_type: str
     - border_color: str (hex)
-    - output_format: 'webp' or 'png'
+    - output_format: 'gif' or 'png'
     """
     path = task_data['path']
     state = task_data['state']
@@ -58,7 +58,27 @@ def process_image_task(task_data):
             orig.close()
             
             if output_path:
-                final_frames[0].save(output_path, save_all=True, append_images=final_frames[1:], loop=0, duration=duration, optimize=True, quality=90)
+                if str(output_path).lower().endswith(".gif"):
+                    gif_frames = [frame.convert("P", palette=Image.ADAPTIVE) for frame in final_frames]
+                    gif_frames[0].save(
+                        output_path,
+                        format="GIF",
+                        save_all=True,
+                        append_images=gif_frames[1:],
+                        loop=0,
+                        duration=duration,
+                        disposal=2,
+                    )
+                else:
+                    final_frames[0].save(
+                        output_path,
+                        save_all=True,
+                        append_images=final_frames[1:],
+                        loop=0,
+                        duration=duration,
+                        optimize=True,
+                        quality=90,
+                    )
                 return {'status': 'success', 'path': path, 'saved_to': output_path}
             else:
                 return {'status': 'success', 'frames': final_frames, 'duration': duration, 'path': path, 'type': 'anim'}

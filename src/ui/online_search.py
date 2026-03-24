@@ -1,88 +1,261 @@
-import os
-import threading
+﻿import os
+import logging
 import customtkinter as ctk
-from PIL import Image, ImageTk
+from PIL import Image, UnidentifiedImageError
 from io import BytesIO
 from tkinter import messagebox, filedialog
 import tkinter as tk
 
 from src.core.danbooru import DanbooruClient
-from src.ui.widgets import ProgressBarPopup
+from src.core.task_runner import TaskRunner
+from src.ui.theme import (
+    ACCENT,
+    ACCENT_HOVER,
+    FONT_BODY,
+    FONT_CAPTION,
+    SURFACE_BG,
+    SURFACE_ELEVATED,
+    SURFACE_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
+from src.ui.widgets import ActionButtonPrimary, ActionButtonSecondary, InlineHint, ProgressBarPopup, SectionCard
 from src.ui.autocomplete import DanbooruAutocomplete
 from src.ui.danbooru_grid import DanbooruGridWidget
+
+logger = logging.getLogger(__name__)
+
+
+def _submit_download_task(
+    *,
+    app,
+    ui_parent,
+    task_id,
+    selected_posts,
+    final_path,
+    client,
+    on_success,
+    running_message,
+):
+    if app.task_runner.is_running(task_id):
+        messagebox.showwarning("Aviso", running_message)
+        return
+
+    popup = ProgressBarPopup(
+        ui_parent,
+        title="Baixando...",
+        maximum=max(1, len(selected_posts)),
+        on_cancel=lambda: app._cancel_background_task(task_id, "Download"),
+    )
+
+    def task_fn(cancel_event, on_progress):
+        processed = 0
+        downloaded = 0
+        errors = []
+        total = len(selected_posts)
+
+        for post in selected_posts:
+            if cancel_event and cancel_event.is_set():
+                return {
+                    "cancelled": True,
+                    "processed": processed,
+                    "downloaded": downloaded,
+                    "errors": errors,
+                    "path": final_path,
+                }
+
+            try:
+                file_url = post.get("file_url") or post.get("large_file_url") or post.get("sample_url")
+                if not file_url:
+                    errors.append(f"Post {post.get('id')}: URL nao encontrada.")
+                else:
+                    fname = f"{post['id']}.{post.get('file_ext', 'png')}"
+                    save_path = os.path.join(final_path, fname)
+                    data = client.download_image(file_url)
+                    if data:
+                        with open(save_path, "wb") as f:
+                            f.write(data)
+                        downloaded += 1
+                    else:
+                        errors.append(f"Post {post.get('id')}: download vazio.")
+            except Exception as exc:
+                logger.warning("Erro ao baixar post %s: %s", post.get("id"), exc)
+                errors.append(f"Post {post.get('id')}: {exc}")
+
+            processed += 1
+            if on_progress:
+                on_progress(processed, total, f"Baixado {processed}/{total}")
+
+        return {
+            "cancelled": False,
+            "processed": processed,
+            "downloaded": downloaded,
+            "errors": errors,
+            "path": final_path,
+        }
+
+    def on_progress(current, total, msg):
+        def _update():
+            try:
+                if not popup.window.winfo_exists():
+                    return
+                popup.maximum = max(1, total)
+                popup.update_progress(current, msg)
+            except tk.TclError:
+                return
+
+        ui_parent.after(0, _update)
+
+    def on_done(result):
+        def _finish():
+            popup.close()
+            if result.get("cancelled"):
+                return
+
+            errors = result.get("errors") or []
+            if errors:
+                messagebox.showwarning("Download com avisos", "\n".join(errors[:20]))
+
+            on_success(result)
+
+        ui_parent.after(0, _finish)
+
+    def on_error(exc):
+        ui_parent.after(0, lambda: (popup.close(), messagebox.showerror("Erro", str(exc))))
+
+    started = app.task_runner.submit(
+        task_id,
+        task_fn,
+        on_progress=on_progress,
+        on_done=on_done,
+        on_error=on_error,
+    )
+    if not started:
+        popup.close()
+        messagebox.showwarning("Aviso", "Nao foi possivel iniciar o download.")
+
 
 class DanbooruSearchTab:
     def __init__(self, parent_frame, app_instance):
         self.parent = parent_frame
         self.app = app_instance
-        self.client = DanbooruClient()
+        self.client = DanbooruClient(config=self.app.app_config)
         self.current_page = 1
+        self._search_seq = 0
+        self._active_search_task_id = None
         
         self.setup_ui()
         self.autocomplete = DanbooruAutocomplete(self.entry_search, self.app.root, self.client)
 
-    def setup_ui(self):
-        # Top Bar: Search
-        top_frame = ctk.CTkFrame(self.parent, fg_color="transparent")
-        top_frame.pack(fill="x", padx=10, pady=(10, 5))
+    def close(self):
+        if self._active_search_task_id and self.app.task_runner.is_running(self._active_search_task_id):
+            self.app.task_runner.cancel(self._active_search_task_id)
+        self.client.close()
 
-        self.entry_search = ctk.CTkEntry(top_frame, placeholder_text="Tags (ex: hatsune_miku rating:safe)")
+    def setup_ui(self):
+        controls_card = SectionCard(
+            self.parent,
+            title="Busca Online",
+            subtitle="Pesquise e filtre imagens antes de importar para a edicao.",
+        )
+        controls_card.pack(fill="x", padx=10, pady=(10, 6))
+
+        top_frame = ctk.CTkFrame(controls_card.body, fg_color="transparent")
+        top_frame.pack(fill="x", pady=(0, 5))
+
+        self.entry_search = ctk.CTkEntry(
+            top_frame,
+            placeholder_text="Tags (ex: hatsune_miku rating:safe)",
+            fg_color=SURFACE_MUTED,
+            border_color="#3A465D",
+            text_color=TEXT_PRIMARY,
+            font=FONT_BODY,
+            height=34,
+        )
         self.entry_search.pack(fill="x", expand=True)
         self.entry_search.bind("<Return>", lambda e: self.search(page=1, new_search=True))
 
         # Filters Row
-        filters_frame = ctk.CTkFrame(self.parent, fg_color="transparent")
-        filters_frame.pack(fill="x", padx=10, pady=(0, 5))
+        filters_frame = ctk.CTkFrame(controls_card.body, fg_color="transparent")
+        filters_frame.pack(fill="x", pady=(0, 5))
         
         # Rating Filter
-        self.opt_rating = ctk.CTkOptionMenu(filters_frame, values=["Qualquer Classificação", "Geral (General)", "Sensível (Sensitive)", "Questionável (Questionable)", "Explícito (Explicit)"])
+        self.opt_rating = ctk.CTkOptionMenu(
+            filters_frame,
+            values=[
+                "Qualquer Classificacao",
+                "Geral (General)",
+                "Sensivel (Sensitive)",
+                "Questionavel (Questionable)",
+                "Explicito (Explicit)",
+            ],
+        )
+        self._style_option_menu(self.opt_rating)
         self.opt_rating.pack(side="left", expand=True, fill="x", padx=(0, 5))
         
         # Sort Filter
         self.opt_sort = ctk.CTkOptionMenu(filters_frame, values=["Mais Recentes", "Melhor Avaliados", "Mais Favoritos"])
+        self._style_option_menu(self.opt_sort)
         self.opt_sort.pack(side="left", expand=True, fill="x", padx=(5, 0))
 
         # Buttons row
-        btn_frame = ctk.CTkFrame(self.parent, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=10, pady=(0, 10))
+        btn_frame = ctk.CTkFrame(controls_card.body, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(0, 0))
         
-        btn_search = ctk.CTkButton(btn_frame, text="🔍 Buscar", width=120, command=lambda: self.search(page=1, new_search=True))
+        btn_search = ActionButtonPrimary(btn_frame, text="Buscar", width=120, command=lambda: self.search(page=1, new_search=True))
         btn_search.pack(side="left", padx=(0, 5), expand=True, fill="x")
         
-        btn_expand = ctk.CTkButton(btn_frame, text="⤢ Expandir", width=120, fg_color="#3a3a3a", hover_color="#4a4a4a", command=self.open_expanded_gallery)
+        btn_expand = ActionButtonSecondary(btn_frame, text="Expandir", width=120, command=self.open_expanded_gallery)
         btn_expand.pack(side="left", padx=(5, 0), expand=True, fill="x")
+        InlineHint(controls_card.body, text="Dica: clique direito em uma miniatura para abrir em tela cheia.").pack(fill="x", pady=(6, 0))
+
+        result_card = SectionCard(self.parent, title="Resultados")
+        result_card.pack(fill="both", expand=True, padx=10, pady=(6, 8))
 
         # Main Content: Grid of Images (using reusable widget)
         self.grid_widget = DanbooruGridWidget(
-            self.parent, 
+            result_card.body,
             self.app, 
             self.client, 
             on_selection_change=self.update_selection_label,
             columns=4
         )
-        self.grid_widget.pack(fill="both", expand=True, padx=10, pady=5)
+        self.grid_widget.pack(fill="both", expand=True, pady=5)
         
         # Pagination / Footer
-        footer_frame = ctk.CTkFrame(self.parent, fg_color="transparent", height=40)
-        footer_frame.pack(fill="x", padx=10, pady=5)
+        footer_frame = ctk.CTkFrame(result_card.body, fg_color="transparent", height=40)
+        footer_frame.pack(fill="x", pady=5)
         
-        self.btn_prev = ctk.CTkButton(footer_frame, text="❮", width=40, command=lambda: self.change_page(-1))
+        self.btn_prev = ActionButtonSecondary(footer_frame, text="<", width=40, command=lambda: self.change_page(-1))
         self.btn_prev.pack(side="left")
         
-        self.lbl_page = ctk.CTkLabel(footer_frame, text="Página 1", width=100, anchor="center", font=ctk.CTkFont(weight="bold"))
+        self.lbl_page = ctk.CTkLabel(footer_frame, text="Pagina 1", width=100, anchor="center", font=ctk.CTkFont(weight="bold"), text_color=TEXT_PRIMARY)
         self.lbl_page.pack(side="left", padx=5)
         
-        self.btn_next = ctk.CTkButton(footer_frame, text="❯", width=40, command=lambda: self.change_page(1))
+        self.btn_next = ActionButtonSecondary(footer_frame, text=">", width=40, command=lambda: self.change_page(1))
         self.btn_next.pack(side="left")
 
         # Bottom Bar: Actions
-        bottom_frame = ctk.CTkFrame(self.parent, fg_color="transparent", height=40)
-        bottom_frame.pack(fill="x", padx=10, pady=(0, 10))
+        bottom_frame = ctk.CTkFrame(result_card.body, fg_color="transparent", height=40)
+        bottom_frame.pack(fill="x", pady=(0, 6))
 
-        self.selection_label = ctk.CTkLabel(bottom_frame, text="0 selecionados")
+        self.selection_label = ctk.CTkLabel(bottom_frame, text="0 selecionados", text_color=TEXT_SECONDARY, font=FONT_CAPTION)
         self.selection_label.pack(side="left", padx=10)
 
-        ctk.CTkButton(bottom_frame, text="Criar Pasta com Selecionados", fg_color="green", hover_color="darkgreen", command=self.download_selected).pack(side="right")
+        ActionButtonPrimary(bottom_frame, text="Criar Pasta com Selecionados", command=self.download_selected).pack(side="right")
+
+    @staticmethod
+    def _style_option_menu(widget):
+        widget.configure(
+            fg_color=SURFACE_MUTED,
+            button_color=ACCENT,
+            button_hover_color=ACCENT_HOVER,
+            text_color=TEXT_PRIMARY,
+            font=FONT_BODY,
+            dropdown_fg_color=SURFACE_ELEVATED,
+            dropdown_text_color=TEXT_PRIMARY,
+            dropdown_hover_color=SURFACE_MUTED,
+        )
 
     def search(self, page=1, new_search=False):
         tags = self.entry_search.get()
@@ -91,9 +264,9 @@ class DanbooruSearchTab:
         # Apply Filters
         rating_map = {
             "Geral (General)": "rating:general",
-            "Sensível (Sensitive)": "rating:sensitive",
-            "Questionável (Questionable)": "rating:questionable",
-            "Explícito (Explicit)": "rating:explicit"
+            "Sensivel (Sensitive)": "rating:sensitive",
+            "Questionavel (Questionable)": "rating:questionable",
+            "Explicito (Explicit)": "rating:explicit"
         }
         sort_map = {
             "Melhor Avaliados": "order:score",
@@ -111,22 +284,51 @@ class DanbooruSearchTab:
             tags += f" {sort_map[sort_val]}"
 
         self.current_page = page
-        self.lbl_page.configure(text=f"Página {self.current_page}")
+        self.lbl_page.configure(text=f"Pagina {self.current_page}")
 
         if new_search:
              self.grid_widget.clear_selection()
              self.update_selection_label(0)
-        
-        self.app.root.update()
+        self.grid_widget.display_loading()
 
-        def fetch():
-            try:
-                posts = self.client.search_posts(tags, limit=20, page=self.current_page)
-                self.app.root.after(0, lambda: self.grid_widget.display_posts(posts))
-            except Exception as e:
-                print(f"ERROR: Search failed: {e}")
+        if self._active_search_task_id and self.app.task_runner.is_running(self._active_search_task_id):
+            self.app.task_runner.cancel(self._active_search_task_id)
 
-        threading.Thread(target=fetch, daemon=True).start()
+        self._search_seq += 1
+        task_id = f"online_search_main_{self._search_seq}"
+        self._active_search_task_id = task_id
+
+        def task_fn(cancel_event, _on_progress):
+            if cancel_event and cancel_event.is_set():
+                return {"cancelled": True, "posts": [], "task_id": task_id}
+
+            posts = self.client.search_posts(tags, limit=20, page=page)
+            if cancel_event and cancel_event.is_set():
+                return {"cancelled": True, "posts": [], "task_id": task_id}
+
+            return {"cancelled": False, "posts": posts, "task_id": task_id}
+
+        def on_done(result):
+            if result.get("task_id") != self._active_search_task_id:
+                return
+            self._active_search_task_id = None
+            if result.get("cancelled"):
+                return
+            self.app.root.after(0, lambda: self.grid_widget.display_posts(result.get("posts") or []))
+
+        def on_error(exc):
+            if task_id != self._active_search_task_id:
+                return
+            self._active_search_task_id = None
+            logger.exception("Search failed: %s", exc)
+            self.app.root.after(0, lambda: messagebox.showerror("Erro", f"Falha na busca: {exc}"))
+
+        self.app.task_runner.submit(
+            task_id,
+            task_fn,
+            on_done=on_done,
+            on_error=on_error,
+        )
 
     def change_page(self, delta):
         new_page = self.current_page + delta
@@ -156,47 +358,27 @@ class DanbooruSearchTab:
         if not os.path.exists(final_path):
             os.makedirs(final_path)
 
-        popup = ProgressBarPopup(self.app.root, title="Baixando...", maximum=len(selected_posts))
-        
-        def download_task():
-            try:
-                count = 0
-                for post in selected_posts:
-                    try:
-                        file_url = post.get('file_url') or post.get('large_file_url') or post.get('source')
-                        if not file_url: continue
-                        
-                        fname = f"{post['id']}.{post.get('file_ext', 'png')}"
-                        save_path = os.path.join(final_path, fname)
-                        
-                        data = self.client.download_image(file_url)
-                        if data:
-                            with open(save_path, 'wb') as f:
-                                f.write(data)
-                        
-                        count += 1
-                        self.app.root.after(0, lambda c=count: popup.update_progress(c, f"Baixado {c}/{len(selected_posts)}"))
-                    except Exception as e:
-                        print(f"ERRO ao baixar post {post.get('id')}: {e}")
-
-                self.app.root.after(0, lambda: finish(final_path))
-            except Exception as e:
-                print(f"ERRO CRÍTICO no download (Main Tab): {e}")
-                self.app.root.after(0, popup.close)
-
-        def finish(path):
-            popup.close()
-            messagebox.showinfo("Sucesso", "Download concluído! Carregando pasta...")
-            self.app.app_config.set('last_folder', path)
-            self.app.load_images_from_folder(path)
+        def on_success(result):
+            messagebox.showinfo("Sucesso", "Download concluido! Carregando pasta...")
+            self.app.app_config.set("last_folder", result["path"])
+            self.app.load_images_from_folder(result["path"])
             self.app.tabview.set("Edição")
 
-        threading.Thread(target=download_task, daemon=True).start()
+        _submit_download_task(
+            app=self.app,
+            ui_parent=self.app.root,
+            task_id="online_download_main",
+            selected_posts=selected_posts,
+            final_path=final_path,
+            client=self.client,
+            on_success=on_success,
+            running_message="Ja existe um download em andamento.",
+        )
 
     def open_expanded_gallery(self):
         tags = self.entry_search.get()
         if not tags:
-            messagebox.showinfo("Info", "Faça uma busca primeiro.")
+            messagebox.showinfo("Info", "Faca uma busca primeiro.")
             return
         
         DanbooruGalleryWindow(self.app.root, self.grid_widget.posts, self.client, self.app, tags, self.current_page)
@@ -207,44 +389,109 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
         super().__init__(parent)
         self.title(f"Galeria Expandida - {tags}")
         self.geometry("1100x850")
+        self.minsize(980, 680)
         
         self.posts = posts
         self.client = client
         self.app = app_instance
         self.tags = tags
         self.current_page = current_page
+        self._search_seq = 0
+        self._active_search_task_id = None
         
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.setup_ui()
         self.after(100, self.display_results)
 
+    def _on_close(self):
+        if self._active_search_task_id and self.app.task_runner.is_running(self._active_search_task_id):
+            self.app.task_runner.cancel(self._active_search_task_id)
+        self.destroy()
+
     def setup_ui(self):
-        # Top Bar
-        top_frame = ctk.CTkFrame(self, height=50)
-        top_frame.pack(fill="x", padx=10, pady=10)
-        
-        self.btn_prev = ctk.CTkButton(top_frame, text="<", width=40, command=lambda: self.change_page(-1))
-        self.btn_prev.pack(side="left", padx=(10, 5))
-        
-        self.lbl_page = ctk.CTkLabel(top_frame, text=f"Pág. {self.current_page}", width=60)
-        self.lbl_page.pack(side="left", padx=5)
+        self.configure(fg_color=SURFACE_BG)
 
-        self.btn_next = ctk.CTkButton(top_frame, text=">", width=40, command=lambda: self.change_page(1))
-        self.btn_next.pack(side="left", padx=(5, 20))
-        
-        self.selection_label = ctk.CTkLabel(top_frame, text="0 selecionados")
-        self.selection_label.pack(side="left", padx=20)
-        
-        ctk.CTkButton(top_frame, text="Criar Pasta com Selecionados", fg_color="green", hover_color="darkgreen", command=self.download_selected).pack(side="right", padx=10)
+        shell = ctk.CTkFrame(self, fg_color="transparent")
+        shell.pack(fill="both", expand=True, padx=12, pady=12)
 
-        # Reusable Grid Widget
-        self.grid_widget = DanbooruGridWidget(
-            self, 
-            self.app, 
-            self.client, 
-            on_selection_change=self.update_selection_label,
-            columns=5 # More columns for expanded view
+        header_card = SectionCard(
+            shell,
+            title="Galeria Expandida",
+            subtitle=f"Resultados para: {self.tags}",
         )
-        self.grid_widget.pack(fill="both", expand=True, padx=10, pady=5)
+        header_card.pack(fill="x", pady=(0, 8))
+
+        header_meta = ctk.CTkFrame(header_card.body, fg_color="transparent")
+        header_meta.pack(fill="x")
+        ctk.CTkLabel(
+            header_meta,
+            text="Visualize mais resultados, selecione e baixe em lote.",
+            text_color=TEXT_SECONDARY,
+            font=FONT_CAPTION,
+            anchor="w",
+            justify="left",
+        ).pack(fill="x")
+
+        results_card = SectionCard(
+            shell,
+            title="Resultados",
+            subtitle="Clique para selecionar. Clique direito em uma miniatura para abrir em tela cheia.",
+        )
+        results_card.pack(fill="both", expand=True)
+
+        self.grid_widget = DanbooruGridWidget(
+            results_card.body,
+            self.app,
+            self.client,
+            on_selection_change=self.update_selection_label,
+            columns=5,
+        )
+        self.grid_widget.pack(fill="both", expand=True, pady=(0, 8))
+
+        footer = ctk.CTkFrame(results_card.body, fg_color="transparent")
+        footer.pack(fill="x")
+
+        nav_frame = ctk.CTkFrame(footer, fg_color="transparent")
+        nav_frame.pack(side="left")
+
+        self.btn_prev = ActionButtonSecondary(nav_frame, text="<", width=44, command=lambda: self.change_page(-1))
+        self.btn_prev.pack(side="left")
+
+        self.lbl_page = ctk.CTkLabel(
+            nav_frame,
+            text=f"Pagina {self.current_page}",
+            width=110,
+            height=36,
+            corner_radius=8,
+            fg_color=SURFACE_MUTED,
+            text_color=TEXT_PRIMARY,
+            font=FONT_BODY,
+        )
+        self.lbl_page.pack(side="left", padx=6)
+
+        self.btn_next = ActionButtonSecondary(nav_frame, text=">", width=44, command=lambda: self.change_page(1))
+        self.btn_next.pack(side="left")
+
+        actions_frame = ctk.CTkFrame(footer, fg_color="transparent")
+        actions_frame.pack(side="right")
+
+        self.selection_label = ctk.CTkLabel(
+            actions_frame,
+            text="0 selecionados",
+            text_color=TEXT_SECONDARY,
+            font=FONT_CAPTION,
+            anchor="e",
+        )
+        self.selection_label.pack(side="left", padx=(0, 12))
+
+        self.btn_download_selected = ActionButtonPrimary(
+            actions_frame,
+            text="Criar Pasta com Selecionados",
+            command=self.download_selected,
+        )
+        self.btn_download_selected.pack(side="left")
+
+        self._update_page_controls()
 
     def display_results(self):
         if self.posts:
@@ -255,26 +502,61 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
         new_page = self.current_page + delta
         if new_page < 1: return
         self.current_page = new_page
-        self.lbl_page.configure(text=f"Pág. {self.current_page}")
+        self._update_page_controls()
         
         self.grid_widget.display_loading()
-        
-        def fetch():
-            try:
-                print(f"DEBUG: Fetching page {self.current_page} for tags '{self.tags}'")
-                posts = self.client.search_posts(self.tags, limit=20, page=self.current_page)
-                self.posts = posts
-                self.after(0, lambda: self.grid_widget.display_posts(posts))
-            except Exception as e:
-                print(f"ERROR: Failed to fetch posts: {e}")
-                def show_error():
-                    tk.messagebox.showerror("Erro", f"Erro ao buscar imagens: {e}")
-                self.after(0, show_error)
-        
-        threading.Thread(target=fetch, daemon=True).start()
+
+        if self._active_search_task_id and self.app.task_runner.is_running(self._active_search_task_id):
+            self.app.task_runner.cancel(self._active_search_task_id)
+
+        self._search_seq += 1
+        task_id = f"online_search_gallery_{id(self)}_{self._search_seq}"
+        self._active_search_task_id = task_id
+
+        def task_fn(cancel_event, _on_progress):
+            if cancel_event and cancel_event.is_set():
+                return {"cancelled": True, "posts": [], "task_id": task_id}
+
+            logger.debug("Fetching page %s for tags '%s'", self.current_page, self.tags)
+            posts = self.client.search_posts(self.tags, limit=20, page=self.current_page)
+            if cancel_event and cancel_event.is_set():
+                return {"cancelled": True, "posts": [], "task_id": task_id}
+
+            return {"cancelled": False, "posts": posts, "task_id": task_id}
+
+        def on_done(result):
+            if result.get("task_id") != self._active_search_task_id:
+                return
+            self._active_search_task_id = None
+            if result.get("cancelled"):
+                return
+            self.posts = result.get("posts") or []
+            self.after(0, lambda: self.grid_widget.display_posts(self.posts))
+
+        def on_error(exc):
+            if task_id != self._active_search_task_id:
+                return
+            self._active_search_task_id = None
+            logger.exception("Failed to fetch posts: %s", exc)
+            self.after(0, lambda: tk.messagebox.showerror("Erro", f"Erro ao buscar imagens: {exc}"))
+
+        self.app.task_runner.submit(
+            task_id,
+            task_fn,
+            on_done=on_done,
+            on_error=on_error,
+        )
 
     def update_selection_label(self, count):
-        self.selection_label.configure(text=f"{count} selecionados")
+        noun = "selecionado" if count == 1 else "selecionados"
+        self.selection_label.configure(text=f"{count} {noun}")
+
+    def _update_page_controls(self):
+        if hasattr(self, "lbl_page"):
+            self.lbl_page.configure(text=f"Pagina {self.current_page}")
+        if hasattr(self, "btn_prev"):
+            state = "disabled" if self.current_page <= 1 else "normal"
+            self.btn_prev.configure(state=state)
 
     def download_selected(self):
         selected_posts = self.grid_widget.get_selected_items()
@@ -296,104 +578,142 @@ class DanbooruGalleryWindow(ctk.CTkToplevel):
         if not os.path.exists(final_path):
             os.makedirs(final_path)
 
-        popup = ProgressBarPopup(self, title="Baixando...", maximum=len(selected_posts))
-        
-        def download_task():
-            try:
-                count = 0
-                for post in selected_posts:
-                    try:
-                        print(f"DEBUG: Processing post {post.get('id')}")
-                        file_url = post.get('file_url') or post.get('large_file_url') or post.get('source')
-                        if not file_url: 
-                            print(f"AVISO: URL não encontrada para post {post.get('id')}")
-                            continue
-                        
-                        fname = f"{post['id']}.{post.get('file_ext', 'png')}"
-                        save_path = os.path.join(final_path, fname)
-                        
-                        # Try to use cache if available (or just download)
-                        data = self.client.download_image(file_url)
-                        
-                        if data:
-                            with open(save_path, 'wb') as f:
-                                f.write(data)
-                        
-                        count += 1
-                        self.after(0, lambda c=count: popup.update_progress(c, f"Baixado {c}/{len(selected_posts)}"))
-                    except Exception as e:
-                        print(f"ERRO ao baixar imagem {post.get('id')}: {e}")
-                
-                self.after(0, lambda: finish(final_path))
-            except Exception as e:
-                print(f"ERRO CRÍTICO no download: {e}")
-                self.after(0, popup.close)
-
-        def finish(path):
-            popup.close()
-            messagebox.showinfo("Sucesso", "Download concluído! Carregando pasta...")
-            self.app.app_config.set('last_folder', path)
-            self.app.load_images_from_folder(path)
+        def on_success(result):
+            messagebox.showinfo("Sucesso", "Download concluido! Carregando pasta...")
+            self.app.app_config.set("last_folder", result["path"])
+            self.app.load_images_from_folder(result["path"])
             self.app.tabview.set("Edição")
             self.destroy()
 
-        threading.Thread(target=download_task, daemon=True).start()
+        _submit_download_task(
+            app=self.app,
+            ui_parent=self,
+            task_id=f"online_download_gallery_{id(self)}",
+            selected_posts=selected_posts,
+            final_path=final_path,
+            client=self.client,
+            on_success=on_success,
+            running_message="Ja existe um download em andamento nesta galeria.",
+        )
 
     def open_image_viewer(self, post):
-        DanbooruImageViewer(self, post, self.client)
+        DanbooruImageViewer(self, post, self.client, app_instance=self.app)
 
 
 
 class DanbooruImageViewer(ctk.CTkToplevel):
-    def __init__(self, parent, post, client):
+    SUPPORTED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "bmp"}
+
+    def __init__(self, parent, post, client, app_instance=None):
         super().__init__(parent)
         self.post = post
         self.client = client
+        self.app = app_instance
+        self.task_runner = app_instance.task_runner if app_instance else TaskRunner()
         self.rotation = 0
         self.original_image = None
-        
+        self._load_task_id = f"online_viewer_load_{id(self)}"
+
         self.title(f"Visualizador - {post.get('tag_string_character', 'Imagem')}")
         self.geometry("1200x900")
         try:
             self.state('zoomed')
-        except: pass
-        
-        self.label_loading = ctk.CTkLabel(self, text="Carregando imagem em alta resolução...", font=ctk.CTkFont(size=20))
+        except Exception as exc:
+            logger.debug("Nao foi possivel maximizar o visualizador: %s", exc)
+
+        self.label_loading = ctk.CTkLabel(self, text="Carregando imagem em alta resolucao...", font=ctk.CTkFont(size=20))
         self.label_loading.pack(expand=True)
-        
+
         self.image_label = ctk.CTkLabel(self, text="")
         self.image_label.pack(fill="both", expand=True)
-        
+
         # Controls
-        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Escape>", lambda e: self._on_close())
         self.bind("<Control-q>", lambda e: self.rotate_left())
         self.bind("<Control-e>", lambda e: self.rotate_right())
         self.bind("<Control-Q>", lambda e: self.rotate_left())
         self.bind("<Control-E>", lambda e: self.rotate_right())
-        
-        self.image_label.bind("<Button-3>", self.show_context_menu)
-        
-        threading.Thread(target=self.load_image, daemon=True).start()
 
-    def load_image(self):
-        url = self.post.get('large_file_url') or self.post.get('file_url') or self.post.get('sample_url')
-        if not url:
-            self.label_loading.configure(text="URL da imagem não encontrada.")
+        self.image_label.bind("<Button-3>", self.show_context_menu)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self._start_load_image()
+
+    def _on_close(self):
+        if self._load_task_id and self.task_runner.is_running(self._load_task_id):
+            self.task_runner.cancel(self._load_task_id)
+        if self.original_image:
+            try:
+                self.original_image.close()
+            except Exception:
+                pass
+            self.original_image = None
+        self.destroy()
+
+    def _start_load_image(self):
+        task_id = self._load_task_id
+        if self.task_runner.is_running(task_id):
             return
 
-        data = self.client.download_image(url)
-        if data:
+        def task_fn(cancel_event, _on_progress):
+            url = self.post.get("large_file_url") or self.post.get("file_url") or self.post.get("sample_url")
+            if not url:
+                return {"error": "URL da imagem nao encontrada."}
+
+            file_ext = str(self.post.get("file_ext") or "").lower()
+            if file_ext and file_ext not in self.SUPPORTED_IMAGE_EXTENSIONS:
+                return {"error": f"Formato nao suportado no visualizador: .{file_ext}"}
+
+            if cancel_event and cancel_event.is_set():
+                return {"cancelled": True}
+
+            data = self.client.download_image(url)
+            if cancel_event and cancel_event.is_set():
+                return {"cancelled": True}
+            if not data:
+                return {"error": "Falha ao baixar imagem."}
+
             try:
-                img = Image.open(BytesIO(data))
-                
-                # Resize to fit screen (approx 90% of screen size if possible, or just fit to window)
-                # Since we are in a thread, we can't query window size accurately if it's maximizing.
-                # Use a safe default logic: 
-                # On UI main thread: get window size -> resize img -> show.
-                
-                self.after(0, lambda: self.display_image(img))
-            except Exception as e:
-                self.after(0, lambda: self.label_loading.configure(text=f"Erro ao carregar: {e}"))
+                with Image.open(BytesIO(data)) as img:
+                    loaded = img.convert("RGBA").copy()
+                return {"cancelled": False, "image": loaded}
+            except (UnidentifiedImageError, OSError):
+                return {"error": "Arquivo recebido nao e uma imagem valida para visualizacao."}
+
+        def on_done(result):
+            self.after(0, lambda: self._on_image_loaded(result))
+
+        def on_error(exc):
+            self.after(0, lambda: self._set_loading_error(f"Erro ao carregar: {exc}"))
+
+        started = self.task_runner.submit(
+            task_id,
+            task_fn,
+            on_done=on_done,
+            on_error=on_error,
+        )
+        if not started:
+            self._set_loading_error("Falha ao iniciar carregamento.")
+
+    def _set_loading_error(self, text):
+        if not self.winfo_exists():
+            return
+        if self.label_loading.winfo_exists():
+            self.label_loading.configure(text=text)
+
+    def _on_image_loaded(self, result):
+        if not self.winfo_exists():
+            return
+        if result.get("cancelled"):
+            return
+        if result.get("error"):
+            self._set_loading_error(result["error"])
+            return
+        img = result.get("image")
+        if img is None:
+            self._set_loading_error("Falha ao carregar imagem.")
+            return
+        self.display_image(img)
 
     def rotate_left(self):
         self.rotation = (self.rotation + 90) % 360
@@ -405,8 +725,8 @@ class DanbooruImageViewer(ctk.CTkToplevel):
 
     def show_context_menu(self, event):
         menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label="⟲ Rotacionar 90° Esquerda (Ctrl+Q)", command=self.rotate_left)
-        menu.add_command(label="⟳ Rotacionar 90° Direita (Ctrl+E)", command=self.rotate_right)
+        menu.add_command(label="Rotacionar 90 Esquerda (Ctrl+Q)", command=self.rotate_left)
+        menu.add_command(label="Rotacionar 90 Direita (Ctrl+E)", command=self.rotate_right)
         menu.post(event.x_root, event.y_root)
 
     def display_image(self, img_pil=None):
@@ -414,6 +734,11 @@ class DanbooruImageViewer(ctk.CTkToplevel):
             self.label_loading.destroy()
             
         if img_pil:
+            if self.original_image and self.original_image is not img_pil:
+                try:
+                    self.original_image.close()
+                except Exception:
+                    pass
             self.original_image = img_pil
             
         if not self.original_image:
@@ -442,3 +767,4 @@ class DanbooruImageViewer(ctk.CTkToplevel):
         ctk_img = ctk.CTkImage(light_image=resized, dark_image=resized, size=(new_w, new_h))
         self.image_label.configure(image=ctk_img)
         self.image_label.image = ctk_img # keep ref
+

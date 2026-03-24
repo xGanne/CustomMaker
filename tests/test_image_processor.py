@@ -8,7 +8,7 @@ class TestImageProcessor(unittest.TestCase):
     def setUp(self):
         # Create a dummy image for testing
         self.img = Image.new("RGBA", (800, 600), "blue")
-        self.borda_pos = (15, 15, 240, 365) # Example border pos
+        self.borda_pos = (15, 15)
 
     def test_resize_image(self):
         # Image is 800x600 (4:3)
@@ -38,10 +38,8 @@ class TestImageProcessor(unittest.TestCase):
         # Test if cropping returns consistent size
         pos = (0, 0)
         size = (800, 600)
-        # crop_image_to_borda(image, pos, size, borda_pos)
-        # It crops relative to canvas logic.
-        # This is UI dependent logic usually, but let's see if we can test basic bounds
-        pass
+        cropped = ImageProcessor.crop_image_to_borda(self.img, pos, size, self.borda_pos)
+        self.assertEqual(cropped.size, (BORDA_WIDTH, BORDA_HEIGHT))
 
 if __name__ == "__main__":
     unittest.main()

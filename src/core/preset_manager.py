@@ -1,13 +1,13 @@
-
 import json
+import logging
 import os
-from src.config.settings import CONFIG_FILE # Use same dir? Or separate?
 
-# Let's save presets in the same folder as config, processing relative to settings if possible, 
-# or just utilize AppConfig logic. But a separate file is cleaner.
-# Let's assume standard config location.
+
+logger = logging.getLogger(__name__)
+
 
 PRESETS_FILE = "presets.json"
+
 
 class PresetManager:
     def __init__(self):
@@ -15,27 +15,24 @@ class PresetManager:
         self.load_presets()
 
     def load_presets(self):
-        if os.path.exists(PRESETS_FILE):
-            try:
-                with open(PRESETS_FILE, 'r') as f:
-                    self.presets = json.load(f)
-            except Exception as e:
-                print(f"Error loading presets: {e}")
-                self.presets = {}
-        else:
+        if not os.path.exists(PRESETS_FILE):
+            self.presets = {}
+            return
+        try:
+            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+                self.presets = json.load(f)
+        except Exception as exc:
+            logger.warning("Falha ao carregar presets: %s", exc)
             self.presets = {}
 
     def save_presets(self):
         try:
-            with open(PRESETS_FILE, 'w') as f:
-                json.dump(self.presets, f, indent=4)
-        except Exception as e:
-            print(f"Error saving presets: {e}")
+            with open(PRESETS_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.presets, f, indent=4, ensure_ascii=False)
+        except Exception as exc:
+            logger.error("Falha ao salvar presets: %s", exc)
 
     def add_preset(self, name, data):
-        """
-        data: dict containing 'border', 'color_hex', 'anim_type'
-        """
         self.presets[name] = data
         self.save_presets()
 
