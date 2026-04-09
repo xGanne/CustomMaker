@@ -1,13 +1,19 @@
 
 import unittest
-from PIL import Image
+from PIL import Image, ImageDraw
 from src.core.image_processor import ImageProcessor
-from src.config.settings import BORDA_WIDTH, BORDA_HEIGHT
+from src.config.settings import BORDA_WIDTH, BORDA_HEIGHT, BORDER_THICKNESS
 
 class TestImageProcessor(unittest.TestCase):
     def setUp(self):
-        # Create a dummy image for testing
-        self.img = Image.new("RGBA", (800, 600), "blue")
+        # Patterned image so positional crop regressions are detectable.
+        self.img = Image.new("RGBA", (800, 600), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(self.img)
+        for x in range(0, 800, 20):
+            color = (x % 256, (x * 2) % 256, (x * 3) % 256, 255)
+            draw.rectangle([x, 0, min(799, x + 19), 599], fill=color)
+        for y in range(0, 600, 20):
+            draw.line((0, y, 799, y), fill=(255, 255, 255, 255), width=2)
         self.borda_pos = (15, 15)
 
     def test_resize_image(self):
@@ -22,17 +28,11 @@ class TestImageProcessor(unittest.TestCase):
         self.assertEqual(resized_fit.size, (200, 150))
 
     def test_add_borda(self):
-        # Test if adding border returns an image of correct size (indirectly)
-        # Actually add_borda_to_image implementation might assume input is exactly BORDA_WIDTH x BORDA_HEIGHT
-        # or it might resize. Let's check implementation behavior
-        
-        # Based on code: add_borda_to_image(image_content, hex_color)
-        # It creates a new image of BORDA_WIDTH x BORDA_HEIGHT and composites
-        
-        content = Image.new("RGBA", (BORDA_WIDTH, BORDA_HEIGHT), "red")
+        content = Image.new("RGBA", (BORDA_WIDTH, BORDA_HEIGHT), (0, 0, 0, 0))
         final = ImageProcessor.add_borda_to_image(content, "#00FF00")
-        
         self.assertEqual(final.size, (BORDA_WIDTH, BORDA_HEIGHT))
+        self.assertEqual(final.getpixel((0, BORDA_HEIGHT // 2))[:3], (0, 255, 0))
+        self.assertEqual(final.getpixel((BORDER_THICKNESS + 2, BORDA_HEIGHT // 2))[3], 0)
         
     def test_crop_logic_consistency(self):
         # Test if cropping returns consistent size
@@ -40,6 +40,26 @@ class TestImageProcessor(unittest.TestCase):
         size = (800, 600)
         cropped = ImageProcessor.crop_image_to_borda(self.img, pos, size, self.borda_pos)
         self.assertEqual(cropped.size, (BORDA_WIDTH, BORDA_HEIGHT))
+
+    def test_render_image_to_borda_matches_resized_crop_dimensions(self):
+        pos = (-50, -30)
+        size = (500, 375)
+        resized = self.img.resize(size, Image.LANCZOS)
+        cropped = ImageProcessor.crop_image_to_borda(resized, pos, size, self.borda_pos)
+        rendered = ImageProcessor.render_image_to_borda(self.img, pos, size, self.borda_pos)
+
+        self.assertEqual(rendered.size, (BORDA_WIDTH, BORDA_HEIGHT))
+        self.assertEqual(list(cropped.getdata()), list(rendered.getdata()))
+
+    def test_render_image_to_borda_matches_resized_crop_for_offset_case(self):
+        pos = (102, 84)
+        size = (317, 476)
+        borda_pos = (170, 120)
+        resized = self.img.resize(size, Image.LANCZOS)
+        cropped = ImageProcessor.crop_image_to_borda(resized, pos, size, borda_pos)
+        rendered = ImageProcessor.render_image_to_borda(self.img, pos, size, borda_pos)
+
+        self.assertEqual(list(cropped.getdata()), list(rendered.getdata()))
 
 if __name__ == "__main__":
     unittest.main()

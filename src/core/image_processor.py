@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
-from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH, FACE_CASCADE_FILE
+from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH, BORDER_THICKNESS, FACE_CASCADE_FILE
 
 
 logger = logging.getLogger(__name__)
@@ -71,11 +71,37 @@ class ImageProcessor:
         return final_custom_area
 
     @staticmethod
+    def render_image_to_borda(original_image, image_pos_on_canvas, image_current_size, borda_pos):
+        """
+        Renders the visible border area using the same logic as the legacy UI:
+        resize first, crop after.
+
+        The previous optimized path was faster but produced positional drift
+        versus the editor preview, especially on non-uniform images.
+        """
+        if original_image is None:
+            return Image.new("RGBA", (BORDA_WIDTH, BORDA_HEIGHT), (0, 0, 0, 0))
+        img_w, img_h = image_current_size
+        if img_w <= 0 or img_h <= 0:
+            return Image.new("RGBA", (BORDA_WIDTH, BORDA_HEIGHT), (0, 0, 0, 0))
+        resized = original_image.resize((int(img_w), int(img_h)), Image.LANCZOS)
+        return ImageProcessor.crop_image_to_borda(
+            resized,
+            image_pos_on_canvas,
+            (int(img_w), int(img_h)),
+            borda_pos,
+        )
+
+    @staticmethod
     def add_borda_to_image(image_content_pil, border_hex_color):
         """Adds a visual border to the PIL image."""
         image_with_border = image_content_pil.copy()
         draw = ImageDraw.Draw(image_with_border)
-        draw.rectangle([0, 0, BORDA_WIDTH - 1, BORDA_HEIGHT - 1], outline=border_hex_color, width=2)
+        draw.rectangle(
+            [0, 0, BORDA_WIDTH - 1, BORDA_HEIGHT - 1],
+            outline=border_hex_color,
+            width=BORDER_THICKNESS,
+        )
         return image_with_border
 
     @staticmethod

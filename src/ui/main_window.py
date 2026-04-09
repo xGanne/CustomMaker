@@ -142,6 +142,7 @@ class CustomMakerApp:
         self.image_cache_limit_bytes = self._resolve_image_cache_limit_bytes()
         self.image_cache_current_bytes = 0
         self.images = {}
+        self.edited_source_images = {}
         self.image_cache_sizes = {}
         self.image_access_order = []
         self.image_states = {}
@@ -223,6 +224,12 @@ class CustomMakerApp:
             self.original_image.close()
         if self.user_image:
             self.user_image.close()
+        for image in self.edited_source_images.values():
+            try:
+                image.close()
+            except Exception:
+                pass
+        self.edited_source_images.clear()
         self._clear_image_cache()
         if hasattr(self, "danbooru_tab"):
             try:
@@ -640,6 +647,12 @@ class CustomMakerApp:
         self.individual_bordas.clear()
         self.custom_borda_hex_individual.clear()
         self.undo_stack.clear()
+        for image in self.edited_source_images.values():
+            try:
+                image.close()
+            except Exception:
+                pass
+        self.edited_source_images.clear()
         if self.original_image:
             self.original_image.close()
             self.original_image = None
@@ -1368,26 +1381,45 @@ class CustomMakerApp:
         self.save_current_image_state()
 
     def save_state_for_undo(self):
-        if self.user_image:
-            self.undo_stack.append((self.user_image.copy(), self.user_image_pos, self.user_image_size))
+        if self.user_image and self.original_image:
+            self.undo_stack.append(
+                (
+                    self.user_image.copy(),
+                    self.user_image_pos,
+                    self.user_image_size,
+                    self.original_image.copy(),
+                )
+            )
             if len(self.undo_stack) > 20:
                 old = self.undo_stack.pop(0)
                 old[0].close()
+                old[3].close()
 
     def undo(self, _=None):
         if self.undo_stack:
             # Pop the last state
-            prev_img, prev_pos, prev_size = self.undo_stack.pop()
+            prev_img, prev_pos, prev_size, prev_original = self.undo_stack.pop()
             
             # Close current user_image to free memory (if it exists and is distinct)
             # We don't close self.original_image here, just the modified user instance
             if self.user_image and self.user_image != prev_img:
                 self.user_image.close()
+            if self.original_image and self.original_image != prev_original:
+                self.original_image.close()
 
             # Restore state
             self.user_image = prev_img
             self.user_image_pos = prev_pos
             self.user_image_size = prev_size
+            self.original_image = prev_original
+            if self.image_path:
+                previous_override = self.edited_source_images.pop(self.image_path, None)
+                if previous_override is not None:
+                    try:
+                        previous_override.close()
+                    except Exception:
+                        pass
+                self.edited_source_images[self.image_path] = self.original_image.copy()
             
             # Update state cache and canvas
             self.save_current_image_state() # Updates the 'current' persistent state
@@ -1402,6 +1434,14 @@ class CustomMakerApp:
         
         # Rotate original to maintain source of truth for subsequent resizes
         self.original_image = self.original_image.rotate(angle, expand=True)
+        if self.image_path:
+            previous_override = self.edited_source_images.pop(self.image_path, None)
+            if previous_override is not None:
+                try:
+                    previous_override.close()
+                except Exception:
+                    pass
+            self.edited_source_images[self.image_path] = self.original_image.copy()
         
         # Rotate user_image to match
         self.user_image = self.user_image.rotate(angle, expand=True)
@@ -1844,6 +1884,12 @@ class CustomMakerApp:
             del self.individual_bordas[path]
         if path in self.custom_borda_hex_individual:
             del self.custom_borda_hex_individual[path]
+        override = self.edited_source_images.pop(path, None)
+        if override is not None:
+            try:
+                override.close()
+            except Exception:
+                pass
 
         if not self.image_list:
             self.current_image_index = None

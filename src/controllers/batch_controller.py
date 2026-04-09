@@ -6,39 +6,133 @@ import tempfile
 import zipfile
 from typing import List
 
+from PIL import Image
+
 from src.core.batch_worker import process_image_task
 
 
 logger = logging.getLogger(__name__)
 
 
-class BatchController:
-    def __init__(self, app_context):
-        self.app = app_context
+def _resolve_value(value, default=None):
+    if value is None:
+        return default
+    getter = getattr(value, "get", None)
+    if callable(getter):
+        try:
+            return getter()
+        except TypeError:
+            return value
+    return value
 
-    def _get_task_data(self, path, output_path=None):
-        state = self.app.image_states.get(path)
+
+class BatchController:
+    def __init__(
+        self,
+        app_context=None,
+        *,
+        editor_state=None,
+        app_config=None,
+        uploader=None,
+        borda_hex=None,
+        borda_pos=None,
+        edited_source_images=None,
+    ):
+        self.app = app_context
+        self.editor_state = editor_state
+        self.app_config = app_config or getattr(app_context, "app_config", None)
+        self.uploader = uploader or getattr(app_context, "uploader", None)
+        self._borda_hex = borda_hex or getattr(app_context, "borda_hex", {})
+        self._borda_pos = borda_pos
+        if edited_source_images is None:
+            edited_source_images = getattr(app_context, "edited_source_images", {})
+        self._edited_source_images = edited_source_images
+
+    def _get_task_data(self, path, output_path=None, source_dir=None):
+        state = self._image_states().get(path)
         if not state:
             return None
 
-        anim_type = self.app.animation_type.get()
-        b_name = self.app.individual_bordas.get(path, self.app.selected_borda.get())
+        anim_type = self._animation_type()
+        b_name = self._individual_bordas().get(path, self._selected_borda())
         if b_name == "Cor Personalizada":
-            b_hex = self.app.custom_borda_hex_individual.get(path, self.app.custom_borda_hex)
+            b_hex = self._custom_borda_hex_individual().get(path, self._custom_borda_hex())
         else:
-            b_hex = self.app.borda_hex.get(b_name, "#FFFFFF")
+            b_hex = self._borda_hex.get(b_name, "#FFFFFF")
 
-        return {
+        data = {
             "path": path,
             "state": state,
-            "borda_pos": self.app.borda_pos,
+            "borda_pos": self._resolve_borda_pos(),
             "anim_type": anim_type,
             "border_color": b_hex,
             "output_path": output_path,
         }
+        source_image = self._edited_source_images.get(path)
+        if source_image is not None:
+            data["source_path"] = self._save_source_override(path, source_image, source_dir)
+        return data
+
+    @staticmethod
+    def _save_source_override(path, image, source_dir):
+        if source_dir is None:
+            raise ValueError("source_dir is required when exporting edited source images.")
+        if not isinstance(image, Image.Image):
+            raise TypeError("Edited source image must be a PIL image.")
+        os.makedirs(source_dir, exist_ok=True)
+        stem = os.path.splitext(os.path.basename(path))[0]
+        source_path = os.path.join(source_dir, f"{stem}_{next(tempfile._get_candidate_names())}.png")
+        image.save(source_path, format="PNG")
+        return source_path
+
+    def _config_get(self, key, default=None):
+        if not self.app_config:
+            return default
+        try:
+            return self.app_config.get(key, default)
+        except TypeError:
+            try:
+                value = self.app_config.get(key)
+            except Exception:
+                return default
+            return default if value is None else value
+
+    def _state_attr(self, name, default=None):
+        if self.editor_state is not None:
+            return getattr(self.editor_state, name, default)
+        if self.app is None:
+            return default
+        return getattr(self.app, name, default)
+
+    def _image_states(self):
+        return self._state_attr("image_states", {}) or {}
+
+    def _image_list(self):
+        return self._state_attr("image_list", []) or []
+
+    def _individual_bordas(self):
+        return self._state_attr("individual_bordas", {}) or {}
+
+    def _custom_borda_hex_individual(self):
+        return self._state_attr("custom_borda_hex_individual", {}) or {}
+
+    def _custom_borda_hex(self):
+        return _resolve_value(self._state_attr("custom_borda_hex", "#FFFFFF"), "#FFFFFF")
+
+    def _selected_borda(self):
+        return _resolve_value(self._state_attr("selected_borda", "White"), "White")
+
+    def _animation_type(self):
+        return _resolve_value(self._state_attr("animation_type", "Nenhuma"), "Nenhuma")
+
+    def _resolve_borda_pos(self):
+        if self._borda_pos is not None:
+            return self._borda_pos
+        resolved = self._state_attr("borda_pos", (0, 0))
+        return _resolve_value(resolved, (0, 0))
 
     def _resolve_max_workers(self):
-        configured = self.app.app_config.get("max_workers")
+        configured = self._config_get("max_workers")
         cpu_count = os.cpu_count() or 1
         cpu_default = max(1, min(4, cpu_count))
         max_allowed = max(1, min(8, cpu_count))
@@ -94,33 +188,38 @@ class BatchController:
         return {"results": results, "cancelled": False}
 
     def save_all_images(self, target_dir, progress_callback=None, cancel_event=None):
+        source_dir = tempfile.mkdtemp()
         tasks = []
-        is_anim = self.app.animation_type.get() != "Nenhuma"
+        is_anim = self._animation_type() != "Nenhuma"
         ext = "_custom.gif" if is_anim else "_custom.png"
 
-        for path in self.app.image_list:
-            out = os.path.join(target_dir, os.path.splitext(os.path.basename(path))[0] + ext)
-            data = self._get_task_data(path, out)
-            if data:
-                tasks.append(data)
+        try:
+            for path in self._image_list():
+                out = os.path.join(target_dir, os.path.splitext(os.path.basename(path))[0] + ext)
+                data = self._get_task_data(path, out, source_dir=source_dir)
+                if data:
+                    tasks.append(data)
 
-        batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
-        return {
-            "cancelled": batch["cancelled"],
-            "processed": len(batch["results"]),
-            "errors": len([r for r in batch["results"] if r.get("status") != "success"]),
-        }
+            batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
+            return {
+                "cancelled": batch["cancelled"],
+                "processed": len(batch["results"]),
+                "errors": len([r for r in batch["results"] if r.get("status") != "success"]),
+            }
+        finally:
+            shutil.rmtree(source_dir, ignore_errors=True)
 
     def save_zip(self, target_file, progress_callback=None, cancel_event=None):
         tmp_dir = tempfile.mkdtemp()
+        source_dir = os.path.join(tmp_dir, "_sources")
         tasks = []
-        is_anim = self.app.animation_type.get() != "Nenhuma"
+        is_anim = self._animation_type() != "Nenhuma"
         ext = ".gif" if is_anim else ".png"
 
-        for path in self.app.image_list:
+        for path in self._image_list():
             fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
             out = os.path.join(tmp_dir, fname)
-            data = self._get_task_data(path, out)
+            data = self._get_task_data(path, out, source_dir=source_dir)
             if data:
                 tasks.append(data)
 
@@ -141,14 +240,15 @@ class BatchController:
 
     def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None):
         tmp_dir = tempfile.mkdtemp()
+        source_dir = os.path.join(tmp_dir, "_sources")
         tasks = []
-        is_anim = self.app.animation_type.get() != "Nenhuma"
+        is_anim = self._animation_type() != "Nenhuma"
         ext = ".gif" if is_anim else ".png"
 
-        for path in self.app.image_list:
+        for path in self._image_list():
             fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
             out = os.path.join(tmp_dir, fname)
-            data = self._get_task_data(path, out)
+            data = self._get_task_data(path, out, source_dir=source_dir)
             if data:
                 tasks.append(data)
 
@@ -166,7 +266,9 @@ class BatchController:
             if progress_callback:
                 progress_callback(0, len(files), "Enviando...")
 
-            links, errors = self.app.uploader.upload_images(
+            if not self.uploader:
+                raise ValueError("Uploader nao configurado.")
+            links, errors = self.uploader.upload_images(
                 files,
                 title,
                 progress_callback=progress_callback,

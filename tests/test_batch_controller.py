@@ -1,5 +1,8 @@
 import unittest
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
+
+from PIL import Image
 
 from src.controllers.batch_controller import BatchController
 
@@ -44,6 +47,7 @@ class DummyApp:
         self.borda_hex = {"White": "#FFFFFF"}
         self.borda_pos = (0, 0)
         self.uploader = DummyUploader()
+        self.edited_source_images = {}
 
 
 class TestBatchController(unittest.TestCase):
@@ -81,3 +85,17 @@ class TestBatchController(unittest.TestCase):
             app_invalid = DummyApp(max_workers="abc")
             controller_invalid = BatchController(app_invalid)
             self.assertEqual(controller_invalid._resolve_max_workers(), 4)
+
+    def test_get_task_data_uses_edited_source_override(self):
+        app = DummyApp()
+        app.edited_source_images["image.png"] = Image.new("RGBA", (32, 32), "red")
+        controller = BatchController(app)
+        try:
+            with TemporaryDirectory() as temp_dir:
+                data = controller._get_task_data("image.png", output_path="out.png", source_dir=temp_dir)
+
+                self.assertIsNotNone(data)
+                self.assertIn("source_path", data)
+                self.assertTrue(data["source_path"].startswith(temp_dir))
+        finally:
+            app.edited_source_images["image.png"].close()

@@ -166,6 +166,5 @@ class ImgChestUploader:
                 total_processed += len(batch_items)
                 if progress_callback:
                     progress_callback(total_processed, total_images, "Processando...")
-                time.sleep(0.2)
 
         return all_uploaded_links, errors

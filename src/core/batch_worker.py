@@ -1,5 +1,5 @@
-
 import os
+
 from PIL import Image
 from src.core.image_processor import ImageProcessor
 from src.core.animation_processor import AnimationProcessor
@@ -16,6 +16,7 @@ def process_image_task(task_data):
     - output_format: 'gif' or 'png'
     """
     path = task_data['path']
+    source_path = task_data.get('source_path') or path
     state = task_data['state']
     borda_pos = task_data['borda_pos']
     anim_type = task_data['anim_type']
@@ -24,15 +25,14 @@ def process_image_task(task_data):
     output_path = task_data.get('output_path')
     
     try:
-        orig = Image.open(path).convert("RGBA")
-        resized = orig.resize(state['size'], Image.LANCZOS)
-        cropped = ImageProcessor.crop_image_to_borda(resized, state['pos'], state['size'], borda_pos)
-        
+        with Image.open(source_path) as source:
+            orig = source.convert("RGBA")
+
+        cropped = ImageProcessor.render_image_to_borda(orig, state['pos'], state['size'], borda_pos)
         frames = []
         duration = 50
-        
+
         if anim_type != "Nenhuma":
-            # Animated
             if anim_type == "Rainbow":
                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=BORDER_THICKNESS)
             elif anim_type == "Neon Pulsante":
@@ -46,17 +46,14 @@ def process_image_task(task_data):
             elif anim_type == "Flow":
                 frames, duration = AnimationProcessor.generate_flow_frames(cropped, border_color, total_frames=30, border_width=BORDER_THICKNESS)
             else:
-                 frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=BORDER_THICKNESS)
-            
-            # Enforce dimensions
+                frames, duration = AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=BORDER_THICKNESS)
+
             final_frames = []
             for f in frames:
                 if f.size != (BORDA_WIDTH, BORDA_HEIGHT):
                     f = f.resize((BORDA_WIDTH, BORDA_HEIGHT), Image.LANCZOS)
                 final_frames.append(f)
-            
-            orig.close()
-            
+
             if output_path:
                 if str(output_path).lower().endswith(".gif"):
                     gif_frames = [frame.convert("P", palette=Image.ADAPTIVE) for frame in final_frames]
@@ -82,17 +79,14 @@ def process_image_task(task_data):
                 return {'status': 'success', 'path': path, 'saved_to': output_path}
             else:
                 return {'status': 'success', 'frames': final_frames, 'duration': duration, 'path': path, 'type': 'anim'}
-            
+
         else:
-            # Static
             final = ImageProcessor.add_borda_to_image(cropped, border_color)
-            orig.close()
-            
             if output_path:
                 final.save(output_path)
                 return {'status': 'success', 'path': path, 'saved_to': output_path}
             else:
                 return {'status': 'success', 'image': final, 'path': path, 'type': 'static'}
-            
+
     except Exception as e:
         return {'status': 'error', 'path': path, 'error': str(e)}
