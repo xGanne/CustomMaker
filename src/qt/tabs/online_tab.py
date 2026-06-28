@@ -17,7 +17,6 @@ if QT_AVAILABLE:
         QLabel,
         QLineEdit,
         QPushButton,
-        QSplitter,
         QVBoxLayout,
         QWidget,
         Qt,
@@ -103,11 +102,10 @@ if QT_AVAILABLE:
             search_layout.addLayout(filter_row)
             search_layout.addLayout(blacklist_row)
 
-            # ── Resultados + painel de detalhe (A4) ───────────────────────
+            # ── Resultados ─────────────────────────────────────────────────
             result_group = QGroupBox("Resultados")
-            result_outer = QHBoxLayout(result_group)
-
-            result_left = QVBoxLayout()
+            result_layout = QVBoxLayout(result_group)
+            result_layout.setSpacing(4)
 
             self.results_grid = DanbooruResultsGrid(
                 self.main_window.app_config,
@@ -124,49 +122,51 @@ if QT_AVAILABLE:
 
             pagination_row = QHBoxLayout()
             pagination_row.addWidget(self.summary_label, 1)
-            self.prev_button = QPushButton("Anterior")
+            self.prev_button = QPushButton("←")
+            self.prev_button.setFixedWidth(36)
             self.prev_button.clicked.connect(lambda: self.change_page(-1))
-            self.page_label = QLabel("Pagina 1")
-            self.next_button = QPushButton("Proxima")
+            self.page_label = QLabel("Pág. 1")
+            self.next_button = QPushButton("→")
+            self.next_button.setFixedWidth(36)
             self.next_button.clicked.connect(lambda: self.change_page(1))
             pagination_row.addWidget(self.prev_button)
             pagination_row.addWidget(self.page_label)
             pagination_row.addWidget(self.next_button)
 
-            actions_row = QHBoxLayout()
-            self.download_button = QPushButton("Baixar Selecionados")
+            # Row 1: main actions
+            actions_row1 = QHBoxLayout()
+            self.download_button = QPushButton("Baixar")
             self.download_button.clicked.connect(self.download_selected)
-            self.import_button = QPushButton("Importar para Lista")
+            self.import_button = QPushButton("Importar")
             self.import_button.clicked.connect(self.import_selected)
             self.expand_button = QPushButton("Expandir")
             self.expand_button.clicked.connect(self.open_expanded_gallery)
-            # A3: select all / clear selection
-            self.select_all_button = QPushButton("Sel. Todos")
+            actions_row1.addWidget(self.download_button)
+            actions_row1.addWidget(self.import_button)
+            actions_row1.addWidget(self.expand_button)
+
+            # Row 2: A3 selection controls
+            actions_row2 = QHBoxLayout()
+            self.select_all_button = QPushButton("Selecionar Todos")
             self.select_all_button.clicked.connect(self._select_all_on_page)
             self.clear_sel_button = QPushButton("Limpar Seleção")
             self.clear_sel_button.clicked.connect(self._clear_selection)
+            actions_row2.addWidget(self.select_all_button)
+            actions_row2.addWidget(self.clear_sel_button)
 
-            actions_row.addWidget(self.download_button)
-            actions_row.addWidget(self.import_button)
-            actions_row.addWidget(self.expand_button)
-            actions_row.addStretch(1)
-            actions_row.addWidget(self.select_all_button)
-            actions_row.addWidget(self.clear_sel_button)
+            result_layout.addWidget(self.results_grid, 1)
+            result_layout.addLayout(pagination_row)
+            result_layout.addLayout(actions_row1)
+            result_layout.addLayout(actions_row2)
 
-            result_left.addWidget(self.results_grid)
-            result_left.addLayout(pagination_row)
-            result_left.addLayout(actions_row)
-
-            # A4: detail panel (right side, collapsible)
+            # A4: detail panel — below the grid, hidden until something is selected
             self.detail_panel = _PostDetailPanel(self)
-            self.detail_panel.setFixedWidth(210)
             self.detail_panel.tag_clicked.connect(self._add_tag_from_detail)
-
-            result_outer.addLayout(result_left, 1)
-            result_outer.addWidget(self.detail_panel)
+            self.detail_panel.setVisible(False)
+            result_layout.addWidget(self.detail_panel)
 
             layout.addWidget(search_group)
-            layout.addWidget(result_group)
+            layout.addWidget(result_group, 1)
 
             # bind autocomplete to the combo's line edit
             self.search_edit = self.search_combo.lineEdit()
@@ -239,7 +239,7 @@ if QT_AVAILABLE:
                 self.summary_label.setText("Nenhuma busca executada.")
 
         def _update_page_controls(self):
-            self.page_label.setText(f"Pagina {self.current_page}")
+            self.page_label.setText(f"Pág. {self.current_page}")
             has_search = bool(self._active_search_tags)
             self.prev_button.setEnabled(has_search and self.current_page > 1)
             self.next_button.setEnabled(has_search and self._has_next_page)
@@ -264,13 +264,15 @@ if QT_AVAILABLE:
         # ── A4: detail panel integration ───────────────────────────────────
         def _on_selection_count_changed(self, count):
             self._update_selection_summary(count)
-            # update detail panel with the last selected post
             selected = list(self.selection_state.selected_posts_details.values())
             if len(selected) == 1:
                 self.detail_panel.show_post(selected[0])
+                self.detail_panel.setVisible(True)
             elif selected:
                 self.detail_panel.show_multi(len(selected))
+                self.detail_panel.setVisible(True)
             else:
+                self.detail_panel.setVisible(False)
                 self.detail_panel.clear()
 
         def _add_tag_from_detail(self, tag):
@@ -555,44 +557,47 @@ if QT_AVAILABLE:
 
 
     class _PostDetailPanel(QWidget):
-        """A4: sidebar showing details of the currently selected post."""
-        if QT_AVAILABLE:
-            from src.qt.compat import Signal
-            tag_clicked = Signal(str)
+        """A4: compact info + tags shown below the grid when exactly 1 post is selected."""
+        from src.qt.compat import Signal
+        tag_clicked = Signal(str)
 
         def __init__(self, parent=None):
             super().__init__(parent)
-            layout = QVBoxLayout(self)
-            layout.setContentsMargins(6, 6, 6, 6)
-            layout.setSpacing(4)
+            from src.qt.compat import QScrollArea
 
-            self._title = QLabel("<b>Detalhe</b>")
-            self._title.setWordWrap(True)
-            self._info = QLabel("")
-            self._info.setWordWrap(True)
-            self._info.setAlignment(Qt.AlignTop)
-            self._tags_label = QLabel("<b>Tags:</b>")
-            self._tags_container = QWidget()
-            self._tags_layout = QVBoxLayout(self._tags_container)
-            self._tags_layout.setContentsMargins(0, 0, 0, 0)
+            outer = QHBoxLayout(self)
+            outer.setContentsMargins(4, 2, 4, 2)
+            outer.setSpacing(8)
+
+            # Left column: compact post info
+            self._info_label = QLabel()
+            self._info_label.setWordWrap(True)
+            self._info_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            self._info_label.setFixedWidth(130)
+            self._info_label.setStyleSheet("font-size: 11px;")
+            outer.addWidget(self._info_label, 0, Qt.AlignTop)
+
+            # Right column: scrollable tag buttons
+            self._tags_widget = QWidget()
+            self._tags_layout = QVBoxLayout(self._tags_widget)
+            self._tags_layout.setContentsMargins(0, 0, 4, 0)
             self._tags_layout.setSpacing(2)
+            self._tags_layout.addStretch(1)
 
-            layout.addWidget(self._title)
-            layout.addWidget(self._info)
-            layout.addWidget(self._tags_label)
-            layout.addWidget(self._tags_container)
-            layout.addStretch(1)
+            self._scroll = QScrollArea()
+            self._scroll.setWidget(self._tags_widget)
+            self._scroll.setWidgetResizable(True)
+            self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            self._scroll.setFixedHeight(90)
+            outer.addWidget(self._scroll, 1)
 
         def clear(self):
-            self._title.setText("<b>Detalhe</b>")
-            self._info.setText("")
-            self._tags_label.hide()
+            self._info_label.setText("")
             self._clear_tags()
 
         def show_multi(self, count):
-            self._title.setText(f"<b>{count} selecionados</b>")
-            self._info.setText("")
-            self._tags_label.hide()
+            self._info_label.setText(f"<b>{count} selecionados</b>")
             self._clear_tags()
 
         def show_post(self, post):
@@ -602,25 +607,27 @@ if QT_AVAILABLE:
             w = post.get("image_width", "?")
             h = post.get("image_height", "?")
             uploader = post.get("uploader_name") or post.get("uploader_id", "?")
-            self._title.setText(f"<b>#{post_id}</b>")
-            self._info.setText(
-                f"⭐ Score: {score}\n"
-                f"Rating: {rating}\n"
-                f"Tamanho: {w}×{h}\n"
-                f"Upload: {uploader}"
+            self._info_label.setText(
+                f"<b>#{post_id}</b><br>"
+                f"⭐ {score} · {rating}<br>"
+                f"{w}×{h}<br>"
+                f"↑ {uploader}"
             )
-            self._tags_label.show()
             self._clear_tags()
             tags = (post.get("tag_string", "") or "").split()
-            for tag in tags[:12]:
+            # insert before the stretch at the end
+            stretch_idx = self._tags_layout.count() - 1
+            for i, tag in enumerate(tags[:20]):
                 btn = QPushButton(tag)
-                btn.setFlat(True)
+                btn.setFixedHeight(20)
                 btn.setCursor(Qt.PointingHandCursor)
+                btn.setStyleSheet("font-size: 10px; padding: 1px 4px; text-align: left;")
                 btn.clicked.connect(lambda _checked, t=tag: self.tag_clicked.emit(t))
-                self._tags_layout.addWidget(btn)
+                self._tags_layout.insertWidget(stretch_idx + i, btn)
 
         def _clear_tags(self):
-            while self._tags_layout.count():
+            # remove all except the last stretch item
+            while self._tags_layout.count() > 1:
                 child = self._tags_layout.takeAt(0)
                 if child.widget():
                     child.widget().deleteLater()
