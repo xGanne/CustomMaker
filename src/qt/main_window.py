@@ -170,32 +170,38 @@ if QT_AVAILABLE:
             splitter.setSizes([1020, 420])
 
         def _build_toolbar(self):
+            from src.qt.icons import make_icon
+            from src.qt.compat import QSize
+
             toolbar = QToolBar("Ferramentas", self)
             toolbar.setMovable(False)
             toolbar.setFloatable(False)
             toolbar.setOrientation(Qt.Vertical)
+            toolbar.setIconSize(QSize(22, 22))
             self.addToolBar(Qt.LeftToolBarArea, toolbar)
 
-            def _tool_btn(label, tip, handler, shortcut="", checkable=False):
+            def _tool_btn(icon_name, tip, handler, shortcut="", checkable=False):
                 btn = QToolButton()
-                btn.setText(label)
+                icon = make_icon(icon_name)
+                if icon:
+                    btn.setIcon(icon)
                 btn.setToolTip(f"{tip}  {shortcut}".strip())
                 btn.setCheckable(checkable)
                 btn.clicked.connect(handler)
                 return btn
 
-            toolbar.addWidget(_tool_btn("📁", "Selecionar Pasta", self.load_folder, "Ctrl+O"))
-            toolbar.addWidget(_tool_btn("📋", "Colar Imagem", self.paste_image, "Ctrl+V"))
-            toolbar.addWidget(_tool_btn("↩", "Desfazer", self.undo_current_image, "Ctrl+Z"))
+            toolbar.addWidget(_tool_btn("folder-open", "Selecionar Pasta", self.load_folder, "Ctrl+O"))
+            toolbar.addWidget(_tool_btn("clipboard", "Colar Imagem", self.paste_image, "Ctrl+V"))
+            toolbar.addWidget(_tool_btn("arrow-uturn-left", "Desfazer", self.undo_current_image, "Ctrl+Z"))
             toolbar.addSeparator()
-            toolbar.addWidget(_tool_btn("⊡", "Auto Fit", self.apply_auto_fit, "Alt+B"))
-            toolbar.addWidget(_tool_btn("◎", "Ajuste Inteligente", self.apply_intelligent_fit, "Alt+F"))
+            toolbar.addWidget(_tool_btn("arrows-pointing-out", "Auto Fit", self.apply_auto_fit, "Alt+B"))
+            toolbar.addWidget(_tool_btn("face-smile", "Ajuste Inteligente", self.apply_intelligent_fit, "Alt+F"))
             toolbar.addSeparator()
-            self._toolbar_pick_btn = _tool_btn("⊕", "Pick Color", self._toggle_color_picker_btn, checkable=True)
+            self._toolbar_pick_btn = _tool_btn("eye-dropper", "Pick Color", self._toggle_color_picker_btn, checkable=True)
             toolbar.addWidget(self._toolbar_pick_btn)
             toolbar.addSeparator()
-            toolbar.addWidget(_tool_btn("↺", "Rotacionar Esquerda", lambda: self.rotate_current_image("left"), "Ctrl+Q"))
-            toolbar.addWidget(_tool_btn("↻", "Rotacionar Direita", lambda: self.rotate_current_image("right"), "Ctrl+E"))
+            toolbar.addWidget(_tool_btn("rotate-left", "Rotacionar Esquerda", lambda: self.rotate_current_image("left"), "Ctrl+Q"))
+            toolbar.addWidget(_tool_btn("rotate-right", "Rotacionar Direita", lambda: self.rotate_current_image("right"), "Ctrl+E"))
 
         def _toggle_color_picker_btn(self):
             self.toggle_color_picker()

@@ -112,8 +112,7 @@ QToolButton {{
     color: {UI_TOKENS["text_secondary"]};
     min-width: 38px;
     min-height: 38px;
-    font-size: 18px;
-    padding: 2px;
+    padding: 4px;
 }}
 QToolButton:hover {{
     background-color: {UI_TOKENS["surface_muted"]};
