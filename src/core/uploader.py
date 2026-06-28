@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import mimetypes
 import time
@@ -106,32 +107,40 @@ class ImgChestUploader:
                         break
 
                     files_payload = []
-                    open_files = []
                     try:
-                        for item in batch_items:
-                            f = open(item["path"], "rb")
-                            open_files.append(f)
-                            filename = item["filename"]
-                            content_type = item.get("content_type") or self._guess_content_type(filename)
-                            files_payload.append(("images[]", (filename, f, content_type)))
+                        with contextlib.ExitStack() as stack:
+                            for item in batch_items:
+                                f = stack.enter_context(open(item["path"], "rb"))
+                                filename = item["filename"]
+                                content_type = item.get("content_type") or self._guess_content_type(filename)
+                                files_payload.append(("images[]", (filename, f, content_type)))
 
-                        response = self.session.post(
-                            "https://api.imgchest.com/v1/post",
-                            headers=headers,
-                            files=files_payload,
-                            data=payload,
-                            timeout=120,
-                        )
+                            response = self.session.post(
+                                "https://api.imgchest.com/v1/post",
+                                headers=headers,
+                                files=files_payload,
+                                data=payload,
+                                timeout=120,
+                            )
 
                         if response.status_code == 200:
-                            data = response.json()
-                            if "data" in data and "images" in data["data"]:
-                                batch_links = [img["link"] for img in data["data"]["images"] if "link" in img]
+                            try:
+                                data = response.json()
+                            except ValueError:
+                                err = f"Lote {batch_num}: resposta não é JSON válido."
+                                logger.warning("%s body=%s", err, response.text[:200])
+                                errors.append(err)
+                                batch_uploaded = True
+                                break
+
+                            images = (data.get("data") or {}).get("images") or []
+                            batch_links = [img["link"] for img in images if "link" in img]
+                            if batch_links:
                                 all_uploaded_links.extend(batch_links)
                                 batch_uploaded = True
                                 break
 
-                            err = f"Lote {batch_num}: resposta JSON inesperada."
+                            err = f"Lote {batch_num}: upload aceito mas nenhum link retornado."
                             logger.warning("%s data=%s", err, data)
                             errors.append(err)
                             batch_uploaded = True
@@ -147,12 +156,6 @@ class ImgChestUploader:
                     except Exception as exc:
                         last_exc = exc
                         logger.warning("Erro no lote %s tentativa %s/%s: %s", batch_num, attempt + 1, retries + 1, exc)
-                    finally:
-                        for f in open_files:
-                            try:
-                                f.close()
-                            except Exception:
-                                pass
 
                     if attempt < retries:
                         time.sleep(1.0 * (attempt + 1))

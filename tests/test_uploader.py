@@ -142,6 +142,72 @@ class TestUploader(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertEqual(session.calls, 2)
 
+    def test_upload_malformed_response_returns_error(self):
+        """200 OK but body has no 'images' key — should report error, not silent success."""
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = f"{tmp}/img.png"
+            with open(image_path, "wb") as f:
+                f.write(b"bytes")
+
+            session = DummySession([DummyResponse(status_code=200, payload={"data": {}})])
+            uploader = ImgChestUploader(api_token="token", session=session)
+            links, errors = uploader.upload_images(
+                [{"path": image_path, "filename": "img.png"}],
+                album_title="album",
+                retries=0,
+            )
+
+        self.assertEqual(links, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Lote 1", errors[0])
+
+    def test_upload_200_with_empty_images_list_returns_error(self):
+        """200 OK with images: [] — no links returned, must report error."""
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = f"{tmp}/img.png"
+            with open(image_path, "wb") as f:
+                f.write(b"bytes")
+
+            session = DummySession([DummyResponse(status_code=200, payload={"data": {"images": []}})])
+            uploader = ImgChestUploader(api_token="token", session=session)
+            links, errors = uploader.upload_images(
+                [{"path": image_path, "filename": "img.png"}],
+                album_title="album",
+                retries=0,
+            )
+
+        self.assertEqual(links, [])
+        self.assertEqual(len(errors), 1)
+
+    def test_upload_non_json_response_returns_error(self):
+        """200 OK but body is not JSON — should return error, not crash."""
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = f"{tmp}/img.png"
+            with open(image_path, "wb") as f:
+                f.write(b"bytes")
+
+            class NonJsonResponse:
+                status_code = 200
+                text = "<html>error</html>"
+
+                def json(self):
+                    raise ValueError("No JSON")
+
+            class NonJsonSession:
+                def post(self, *a, **kw):
+                    return NonJsonResponse()
+
+            uploader = ImgChestUploader(api_token="token", session=NonJsonSession())
+            links, errors = uploader.upload_images(
+                [{"path": image_path, "filename": "img.png"}],
+                album_title="album",
+                retries=0,
+            )
+
+        self.assertEqual(links, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("JSON", errors[0])
+
     def test_does_not_retry_for_http_400(self):
         with tempfile.TemporaryDirectory() as tmp:
             image_path = f"{tmp}/image.png"

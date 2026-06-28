@@ -1,6 +1,7 @@
 import concurrent.futures
 import logging
 import os
+import secrets
 import shutil
 import tempfile
 import zipfile
@@ -81,7 +82,7 @@ class BatchController:
             raise TypeError("Edited source image must be a PIL image.")
         os.makedirs(source_dir, exist_ok=True)
         stem = os.path.splitext(os.path.basename(path))[0]
-        source_path = os.path.join(source_dir, f"{stem}_{next(tempfile._get_candidate_names())}.png")
+        source_path = os.path.join(source_dir, f"{stem}_{secrets.token_hex(4)}.png")
         image.save(source_path, format="PNG")
         return source_path
 
@@ -213,20 +214,20 @@ class BatchController:
             shutil.rmtree(source_dir, ignore_errors=True)
 
     def save_zip(self, target_file, progress_callback=None, cancel_event=None):
-        tmp_dir = tempfile.mkdtemp()
-        source_dir = os.path.join(tmp_dir, "_sources")
-        tasks = []
         is_anim = self._animation_type() != "Nenhuma"
         ext = ".gif" if is_anim else ".png"
 
-        for path in self._image_list():
-            fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
-            out = os.path.join(tmp_dir, fname)
-            data = self._get_task_data(path, out, source_dir=source_dir)
-            if data:
-                tasks.append(data)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_dir = os.path.join(tmp_dir, "_sources")
+            tasks = []
 
-        try:
+            for path in self._image_list():
+                fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
+                out = os.path.join(tmp_dir, fname)
+                data = self._get_task_data(path, out, source_dir=source_dir)
+                if data:
+                    tasks.append(data)
+
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
             errors = [r for r in batch["results"] if r.get("status") != "success"]
             if batch["cancelled"]:
@@ -253,24 +254,22 @@ class BatchController:
                 "errors": len(errors),
                 "total": len(tasks),
             }
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None):
-        tmp_dir = tempfile.mkdtemp()
-        source_dir = os.path.join(tmp_dir, "_sources")
-        tasks = []
         is_anim = self._animation_type() != "Nenhuma"
         ext = ".gif" if is_anim else ".png"
 
-        for path in self._image_list():
-            fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
-            out = os.path.join(tmp_dir, fname)
-            data = self._get_task_data(path, out, source_dir=source_dir)
-            if data:
-                tasks.append(data)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_dir = os.path.join(tmp_dir, "_sources")
+            tasks = []
 
-        try:
+            for path in self._image_list():
+                fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
+                out = os.path.join(tmp_dir, fname)
+                data = self._get_task_data(path, out, source_dir=source_dir)
+                if data:
+                    tasks.append(data)
+
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
             process_errors = [r for r in batch["results"] if r.get("status") != "success"]
             if batch["cancelled"]:
@@ -310,5 +309,3 @@ class BatchController:
                 "uploaded": len(files),
                 "total": len(tasks),
             }
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)

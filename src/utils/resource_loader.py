@@ -1,25 +1,24 @@
-import os
 import sys
+from pathlib import Path
+
+# Root of the project — works regardless of the working directory at launch time.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """Return absolute path to a resource, compatible with dev mode and PyInstaller."""
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        # In dev mode, we want to look in the 'assets' folder for assets
-        # OR the current directory if it's a file relative to the script?
-        # Since we moved assets to /assets, we should handle that.
-        # Check if the file exists in 'assets' folder first.
-        base_path = os.path.abspath(".")
-        
-    possible_path = os.path.join(base_path, relative_path)
-    if os.path.exists(possible_path):
-        return possible_path
-        
-    # Check in assets submodule if not found
-    assets_path = os.path.join(base_path, "assets", relative_path)
-    if os.path.exists(assets_path):
-        return assets_path
-        
-    return possible_path
+        # PyInstaller bundles assets into a temp folder stored in sys._MEIPASS
+        base_path = Path(sys._MEIPASS)
+    except AttributeError:
+        base_path = _PROJECT_ROOT
+
+    candidate = base_path / relative_path
+    if candidate.exists():
+        return str(candidate)
+
+    assets_candidate = base_path / "assets" / relative_path
+    if assets_candidate.exists():
+        return str(assets_candidate)
+
+    return str(candidate)

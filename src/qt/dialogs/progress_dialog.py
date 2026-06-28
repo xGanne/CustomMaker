@@ -1,7 +1,7 @@
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 
 if QT_AVAILABLE:
-    from src.qt.compat import QDialog, QProgressBar, QPushButton, QVBoxLayout, QLabel
+    from src.qt.compat import QDialog, QLabel, QProgressBar, QPushButton, QVBoxLayout
 
 
 if QT_AVAILABLE:
@@ -13,6 +13,7 @@ if QT_AVAILABLE:
             self.setMinimumWidth(360)
             self.maximum = max(1, maximum)
             self._on_cancel = on_cancel
+            self._task_running = True
 
             layout = QVBoxLayout(self)
             self.label = QLabel("Iniciando...", self)
@@ -32,6 +33,15 @@ if QT_AVAILABLE:
         def _handle_cancel(self):
             if self._on_cancel:
                 self._on_cancel()
+
+        def mark_done(self):
+            self._task_running = False
+
+        def closeEvent(self, event):
+            if self._task_running and self._on_cancel:
+                self._on_cancel()
+            self._task_running = False
+            super().closeEvent(event)
 
         def update_progress(self, current, total=None, text=None):
             if total is not None:

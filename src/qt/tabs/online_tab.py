@@ -71,11 +71,11 @@ if QT_AVAILABLE:
             self.rating_combo.addItems(list(RATING_TAGS.keys()))
             self.sort_combo = QComboBox()
             self.sort_combo.addItems(list(SORT_TAGS.keys()))
-            search_button = QPushButton("Buscar")
-            search_button.clicked.connect(self.search)
+            self.search_button = QPushButton("Buscar")
+            self.search_button.clicked.connect(self.search)
             filter_row.addWidget(self.rating_combo)
             filter_row.addWidget(self.sort_combo)
-            filter_row.addWidget(search_button)
+            filter_row.addWidget(self.search_button)
             search_layout.addWidget(self.search_edit)
             search_layout.addLayout(filter_row)
 
@@ -187,6 +187,7 @@ if QT_AVAILABLE:
                 self.results_grid.clear_selection()
 
             self._has_next_page = False
+            self.search_button.setEnabled(False)
             self._update_page_controls()
             self.results_grid.display_loading()
             self.summary_label.setText(f"Buscando pagina {self.current_page}...")
@@ -206,6 +207,7 @@ if QT_AVAILABLE:
                 return {"task_id": task_id, "page": active_page, "posts": posts}
 
             def on_done(result):
+                self.search_button.setEnabled(True)
                 if result.get("task_id") != self._active_search_task_id:
                     return
                 self._active_search_task_id = None
@@ -220,16 +222,17 @@ if QT_AVAILABLE:
                 )
 
             def on_error(exc):
+                self.search_button.setEnabled(True)
                 if task_id != self._active_search_task_id:
                     return
                 self._active_search_task_id = None
                 self.posts = []
                 self._has_next_page = False
                 self.results_grid.display_posts(self._posts_with_selected_thumbnails([]))
-                self.summary_label.setText(f"Erro ao buscar pagina {self.current_page}.")
+                self.summary_label.setText(f"Erro na página {self.current_page}: {exc}")
                 self._update_page_controls()
                 logger.exception("Erro na busca Danbooru Qt: %s", exc)
-                self.main_window.show_warning("Danbooru", f"Erro ao buscar imagens: {exc}")
+                self.main_window.show_warning("Danbooru", str(exc))
 
             handle = self.main_window.task_runner.submit(task_id, task_fn)
             if handle is None:

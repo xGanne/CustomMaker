@@ -44,8 +44,18 @@ class GeminiTextOnlyProvider(AIProvider):
             # Safe mode: return text result explicitly; do not pretend we edited the image.
             return AIResult(kind="text", text=text)
         except Exception as exc:
-            logger.exception("Falha na chamada Gemini: %s", exc)
-            return AIResult(kind="error", error_message=f"Falha ao processar IA: {exc}")
+            exc_type = type(exc).__name__
+            exc_str = str(exc).lower()
+            if "resourceexhausted" in exc_type or "quota" in exc_str or "429" in exc_str:
+                msg = "Quota da API Gemini excedida. Aguarde alguns minutos e tente novamente."
+            elif "permissiondenied" in exc_type or "403" in exc_str or "permission" in exc_str:
+                msg = "Acesso negado pela API Gemini. Verifique se a GEMINI_API_KEY é válida e tem permissão."
+            elif "invalidargument" in exc_type or "400" in exc_str:
+                msg = "Requisição inválida para o Gemini. A imagem pode ser grande demais ou o prompt inválido."
+            else:
+                msg = f"Falha ao processar IA: {exc}"
+            logger.exception("Falha na chamada Gemini (%s): %s", exc_type, exc)
+            return AIResult(kind="error", error_message=msg)
 
 
 class AIPipelineManager:

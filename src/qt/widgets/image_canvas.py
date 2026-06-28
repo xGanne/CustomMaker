@@ -203,13 +203,16 @@ if QT_AVAILABLE:
                 x = int(local_pos.x())
                 y = int(local_pos.y())
                 if 0 <= x < self._base_image.width and 0 <= y < self._base_image.height:
-                    pixel = self._base_image.getpixel((x, y))
-                    if isinstance(pixel, int):
-                        color = "#{0:02x}{0:02x}{0:02x}".format(pixel)
-                    else:
-                        r, g, b = pixel[:3]
-                        color = f"#{r:02x}{g:02x}{b:02x}"
-                    self.color_picked.emit(color)
+                    try:
+                        pixel = self._base_image.getpixel((x, y))
+                        if isinstance(pixel, int):
+                            color = "#{0:02x}{0:02x}{0:02x}".format(pixel)
+                        else:
+                            r, g, b = pixel[:3]
+                            color = f"#{r:02x}{g:02x}{b:02x}"
+                        self.color_picked.emit(color)
+                    except Exception:
+                        pass
                     event.accept()
                     return
             super().mousePressEvent(event)

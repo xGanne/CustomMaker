@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+import requests
+
 from src.core.danbooru import DanbooruClient
 
 
@@ -21,7 +23,9 @@ class FakeResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise RuntimeError(f"http {self.status_code}")
+            raise requests.exceptions.HTTPError(
+                f"http {self.status_code}", response=self
+            )
 
     def json(self):
         return self._payload
@@ -112,4 +116,40 @@ class TestDanbooruClient(unittest.TestCase):
             data = client.download_image("https://example.com/page")
 
         self.assertIsNone(data)
+        client.close()
+
+    def test_search_posts_raises_permission_error_on_403(self):
+        client = DanbooruClient()
+        with patch.object(
+            client.session,
+            "get",
+            return_value=FakeResponse(status_code=403),
+        ):
+            with self.assertRaises(PermissionError) as ctx:
+                client.search_posts("restricted_tag")
+        self.assertIn("403", str(ctx.exception))
+        client.close()
+
+    def test_search_posts_raises_lookup_error_on_404(self):
+        client = DanbooruClient()
+        with patch.object(
+            client.session,
+            "get",
+            return_value=FakeResponse(status_code=404),
+        ):
+            with self.assertRaises(LookupError) as ctx:
+                client.search_posts("missing_tag")
+        self.assertIn("404", str(ctx.exception))
+        client.close()
+
+    def test_search_posts_raises_runtime_error_on_429(self):
+        client = DanbooruClient()
+        with patch.object(
+            client.session,
+            "get",
+            return_value=FakeResponse(status_code=429),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                client.search_posts("popular_tag")
+        self.assertIn("429", str(ctx.exception))
         client.close()

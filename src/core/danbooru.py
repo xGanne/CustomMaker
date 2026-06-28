@@ -117,9 +117,17 @@ class DanbooruClient:
             status_code = response.status_code if response is not None else None
             if status_code == 429:
                 logger.warning("Danbooru rate limit atingido.")
-                return []
+                raise RuntimeError("Danbooru: limite de requisições atingido (429). Aguarde alguns segundos.") from exc
+            if status_code == 403:
+                logger.warning("Danbooru: acesso negado (403) para tags='%s'.", tags)
+                raise PermissionError(
+                    "Danbooru: acesso negado (403). O conteúdo pode estar restrito por rating ou sua conta não tem permissão."
+                ) from exc
+            if status_code == 404:
+                logger.warning("Danbooru: recurso não encontrado (404) para tags='%s'.", tags)
+                raise LookupError("Danbooru: página ou recurso não encontrado (404).") from exc
             logger.warning("HTTP Error Danbooru (status=%s): %s", status_code, exc)
-            return []
+            raise RuntimeError(f"Danbooru: erro HTTP {status_code}.") from exc
         except requests.exceptions.RequestException as exc:
             logger.warning("Erro ao buscar posts Danbooru: %s", exc)
             return []

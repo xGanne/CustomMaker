@@ -190,6 +190,7 @@ if QT_AVAILABLE:
                 return None
 
             def close_dialog(*_args):
+                dialog.mark_done()
                 dialog.close()
 
             handle.progress.connect(lambda current, total, text: dialog.update_progress(current, total, text))
