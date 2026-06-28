@@ -54,9 +54,9 @@ if QT_AVAILABLE:
             self.setViewMode(QListView.IconMode)
             self.setResizeMode(QListView.Adjust)
             self.setMovement(QListView.Static)
-            self.setSpacing(10)
+            self.setSpacing(8)
             self.setIconSize(QSize(180, 180))
-            self.setGridSize(QSize(196, 256))  # taller to fit score line
+            self.setGridSize(QSize(200, 230))
             self.setSelectionMode(QAbstractItemView.MultiSelection)
             self.itemSelectionChanged.connect(self._sync_selection_state)
             self.itemDoubleClicked.connect(self._on_double_click)  # A2

@@ -117,47 +117,58 @@ if QT_AVAILABLE:
             self.results_grid.image_open_requested.connect(self.open_image_viewer)
             self.results_grid.image_import_requested.connect(self._import_single_post)  # A2
 
-            self.summary_label = QLabel("Nenhuma busca executada.")
-            self.summary_label.setWordWrap(True)
-
+            # Pagination + summary in one compact row
             pagination_row = QHBoxLayout()
-            pagination_row.addWidget(self.summary_label, 1)
+            pagination_row.setSpacing(4)
+            self.summary_label = QLabel("Nenhuma busca executada.")
+            self.summary_label.setWordWrap(False)
+            self.summary_label.setStyleSheet("color: #7B879D; font-size: 11px;")
             self.prev_button = QPushButton("←")
-            self.prev_button.setFixedWidth(36)
+            self.prev_button.setFixedWidth(32)
             self.prev_button.clicked.connect(lambda: self.change_page(-1))
             self.page_label = QLabel("Pág. 1")
+            self.page_label.setStyleSheet("font-size: 11px; padding: 0 2px;")
             self.next_button = QPushButton("→")
-            self.next_button.setFixedWidth(36)
+            self.next_button.setFixedWidth(32)
             self.next_button.clicked.connect(lambda: self.change_page(1))
+            pagination_row.addWidget(self.summary_label, 1)
             pagination_row.addWidget(self.prev_button)
             pagination_row.addWidget(self.page_label)
             pagination_row.addWidget(self.next_button)
 
-            # Row 1: main actions
-            actions_row1 = QHBoxLayout()
-            self.download_button = QPushButton("Baixar")
-            self.download_button.clicked.connect(self.download_selected)
+            # Single actions row with hierarchy (primary + secondary)
+            actions_row = QHBoxLayout()
+            actions_row.setSpacing(6)
             self.import_button = QPushButton("Importar")
+            self.import_button.setToolTip("Baixar e adicionar à lista de edição")
             self.import_button.clicked.connect(self.import_selected)
+            self.download_button = QPushButton("Baixar")
+            self.download_button.setProperty("class", "secondary")
+            self.download_button.setToolTip("Baixar para uma pasta")
+            self.download_button.clicked.connect(self.download_selected)
             self.expand_button = QPushButton("Expandir")
+            self.expand_button.setProperty("class", "secondary")
+            self.expand_button.setToolTip("Abrir galeria em janela maior")
             self.expand_button.clicked.connect(self.open_expanded_gallery)
-            actions_row1.addWidget(self.download_button)
-            actions_row1.addWidget(self.import_button)
-            actions_row1.addWidget(self.expand_button)
-
-            # Row 2: A3 selection controls
-            actions_row2 = QHBoxLayout()
-            self.select_all_button = QPushButton("Selecionar Todos")
+            self.select_all_button = QPushButton("✓ Todos")
+            self.select_all_button.setProperty("class", "secondary")
+            self.select_all_button.setToolTip("Selecionar todos os resultados da página")
             self.select_all_button.clicked.connect(self._select_all_on_page)
-            self.clear_sel_button = QPushButton("Limpar Seleção")
+            self.clear_sel_button = QPushButton("✗ Seleção")
+            self.clear_sel_button.setProperty("class", "secondary")
+            self.clear_sel_button.setToolTip("Limpar seleção")
             self.clear_sel_button.clicked.connect(self._clear_selection)
-            actions_row2.addWidget(self.select_all_button)
-            actions_row2.addWidget(self.clear_sel_button)
+
+            actions_row.addWidget(self.import_button)
+            actions_row.addWidget(self.download_button)
+            actions_row.addWidget(self.expand_button)
+            actions_row.addStretch(1)
+            actions_row.addWidget(self.select_all_button)
+            actions_row.addWidget(self.clear_sel_button)
 
             result_layout.addWidget(self.results_grid, 1)
             result_layout.addLayout(pagination_row)
-            result_layout.addLayout(actions_row1)
-            result_layout.addLayout(actions_row2)
+            result_layout.addLayout(actions_row)
 
             # A4: detail panel — below the grid, hidden until something is selected
             self.detail_panel = _PostDetailPanel(self)
@@ -230,11 +241,9 @@ if QT_AVAILABLE:
 
         def _set_results_summary(self):
             if self.posts:
-                self.summary_label.setText(
-                    f"{len(self.posts)} resultado(s) encontrados na pagina {self.current_page}."
-                )
+                self.summary_label.setText(f"{len(self.posts)} resultado(s) · pág. {self.current_page}")
             elif self._active_search_tags:
-                self.summary_label.setText(f"Nenhum resultado encontrado na pagina {self.current_page}.")
+                self.summary_label.setText(f"Sem resultados · pág. {self.current_page}")
             else:
                 self.summary_label.setText("Nenhuma busca executada.")
 
@@ -432,10 +441,8 @@ if QT_AVAILABLE:
             if not posts:
                 self._set_results_summary()
                 return
-            sample = posts[0]
-            self.summary_label.setText(
-                f"{count or len(posts)} selecionado(s). Primeiro item: #{sample.get('id')} com rating {sample.get('rating', '?')}."
-            )
+            n = count or len(posts)
+            self.summary_label.setText(f"{n} selecionado(s)")
 
         def _handle_expanded_selection_changed(self, count):
             self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
@@ -557,7 +564,7 @@ if QT_AVAILABLE:
 
 
     class _PostDetailPanel(QWidget):
-        """A4: compact info + tags shown below the grid when exactly 1 post is selected."""
+        """A4: compact detail shown below the grid when exactly 1 post is selected."""
         from src.qt.compat import Signal
         tag_clicked = Signal(str)
 
@@ -565,68 +572,71 @@ if QT_AVAILABLE:
             super().__init__(parent)
             from src.qt.compat import QScrollArea
 
-            outer = QHBoxLayout(self)
-            outer.setContentsMargins(4, 2, 4, 2)
-            outer.setSpacing(8)
+            root = QVBoxLayout(self)
+            root.setContentsMargins(4, 4, 4, 4)
+            root.setSpacing(4)
 
-            # Left column: compact post info
+            # Single-line info bar
             self._info_label = QLabel()
-            self._info_label.setWordWrap(True)
-            self._info_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-            self._info_label.setFixedWidth(130)
-            self._info_label.setStyleSheet("font-size: 11px;")
-            outer.addWidget(self._info_label, 0, Qt.AlignTop)
+            self._info_label.setWordWrap(False)
+            self._info_label.setStyleSheet("font-size: 11px; color: #7B879D;")
+            root.addWidget(self._info_label)
 
-            # Right column: scrollable tag buttons
+            # Horizontal scrollable chip strip
             self._tags_widget = QWidget()
-            self._tags_layout = QVBoxLayout(self._tags_widget)
-            self._tags_layout.setContentsMargins(0, 0, 4, 0)
-            self._tags_layout.setSpacing(2)
+            self._tags_layout = QHBoxLayout(self._tags_widget)
+            self._tags_layout.setContentsMargins(0, 0, 0, 0)
+            self._tags_layout.setSpacing(4)
             self._tags_layout.addStretch(1)
 
             self._scroll = QScrollArea()
             self._scroll.setWidget(self._tags_widget)
             self._scroll.setWidgetResizable(True)
-            self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-            self._scroll.setFixedHeight(90)
-            outer.addWidget(self._scroll, 1)
+            self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self._scroll.setFixedHeight(34)
+            root.addWidget(self._scroll)
 
         def clear(self):
             self._info_label.setText("")
             self._clear_tags()
 
         def show_multi(self, count):
-            self._info_label.setText(f"<b>{count} selecionados</b>")
+            self._info_label.setText(f"{count} selecionados")
             self._clear_tags()
 
         def show_post(self, post):
             post_id = post.get("id", "?")
-            score = post.get("score", "?")
+            score = post.get("score")
             rating = post.get("rating", "?")
-            w = post.get("image_width", "?")
-            h = post.get("image_height", "?")
-            uploader = post.get("uploader_name") or post.get("uploader_id", "?")
-            self._info_label.setText(
-                f"<b>#{post_id}</b><br>"
-                f"⭐ {score} · {rating}<br>"
-                f"{w}×{h}<br>"
-                f"↑ {uploader}"
-            )
+            w = post.get("image_width")
+            h = post.get("image_height")
+            uploader = post.get("uploader_name") or post.get("uploader_id", "")
+
+            parts = [f"#{post_id}"]
+            if score is not None:
+                parts.append(f"⭐ {score}")
+            parts.append(rating)
+            if w and h:
+                parts.append(f"{w}×{h}")
+            if uploader:
+                parts.append(f"↑ {uploader}")
+            self._info_label.setText("  ·  ".join(str(p) for p in parts))
+
             self._clear_tags()
             tags = (post.get("tag_string", "") or "").split()
-            # insert before the stretch at the end
-            stretch_idx = self._tags_layout.count() - 1
-            for i, tag in enumerate(tags[:20]):
+            insert_pos = 0
+            for tag in tags[:30]:
                 btn = QPushButton(tag)
-                btn.setFixedHeight(20)
+                btn.setProperty("class", "tag-chip")
                 btn.setCursor(Qt.PointingHandCursor)
-                btn.setStyleSheet("font-size: 10px; padding: 1px 4px; text-align: left;")
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
                 btn.clicked.connect(lambda _checked, t=tag: self.tag_clicked.emit(t))
-                self._tags_layout.insertWidget(stretch_idx + i, btn)
+                self._tags_layout.insertWidget(insert_pos, btn)
+                insert_pos += 1
 
         def _clear_tags(self):
-            # remove all except the last stretch item
             while self._tags_layout.count() > 1:
                 child = self._tags_layout.takeAt(0)
                 if child.widget():

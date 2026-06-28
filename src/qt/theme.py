@@ -92,6 +92,22 @@ QPushButton[class="secondary"]:disabled {{
     background-color: transparent;
     color: {UI_TOKENS["text_muted"]};
 }}
+QPushButton[class="tag-chip"] {{
+    background-color: transparent;
+    border: 1px solid {UI_TOKENS["border_soft"]};
+    color: {UI_TOKENS["text_muted"]};
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 400;
+    min-height: 22px;
+    max-height: 22px;
+    padding: 0 8px;
+}}
+QPushButton[class="tag-chip"]:hover {{
+    background-color: {UI_TOKENS["surface_muted"]};
+    border-color: {UI_TOKENS["border_strong"]};
+    color: {UI_TOKENS["text_primary"]};
+}}
 
 /* ── Toolbar ──────────────────────────────────────────────── */
 QToolBar {{

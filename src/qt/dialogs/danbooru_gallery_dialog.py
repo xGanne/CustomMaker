@@ -3,7 +3,7 @@ from src.qt.task_runner import QtTaskRunner
 from src.qt.widgets.danbooru_grid import DanbooruResultsGrid
 
 if QT_AVAILABLE:
-    from src.qt.compat import QDialog, QEvent, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, Qt
+    from src.qt.compat import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, Qt
 
 
 if QT_AVAILABLE:
@@ -41,9 +41,7 @@ if QT_AVAILABLE:
             self._task_runner = QtTaskRunner(self)
 
             layout = QVBoxLayout(self)
-            self.info_label = QLabel("Clique duplo para abrir a imagem em tela cheia.")
-            self.info_label.setWordWrap(True)
-            layout.addWidget(self.info_label)
+            layout.setSpacing(6)
 
             self.grid = DanbooruResultsGrid(app_config, client, self, selection_state=selection_state)
             self.grid.setIconSize(self.grid.iconSize() * 1.2)
@@ -51,38 +49,43 @@ if QT_AVAILABLE:
             self.grid.selection_count_changed.connect(self._update_selection_label)
             layout.addWidget(self.grid, 1)
 
+            # Status + pagination row
             status_row = QHBoxLayout()
             self.results_label = QLabel()
             self.results_label.setWordWrap(True)
+            self.results_label.setStyleSheet("color: #7B879D; font-size: 11px;")
             status_row.addWidget(self.results_label, 1)
-            self.prev_button = QPushButton("Anterior")
+
+            self.selection_label = QLabel("0 selecionados")
+            self.selection_label.setStyleSheet("color: #7B879D; font-size: 11px;")
+            status_row.addWidget(self.selection_label)
+
+            self.prev_button = QPushButton("←")
+            self.prev_button.setFixedWidth(36)
             self.prev_button.clicked.connect(lambda: self.change_page(-1))
             self.page_label = QLabel()
-            self.next_button = QPushButton("Proxima")
+            self.page_label.setStyleSheet("font-size: 11px; padding: 0 4px;")
+            self.next_button = QPushButton("→")
+            self.next_button.setFixedWidth(36)
             self.next_button.clicked.connect(lambda: self.change_page(1))
-            self.selection_label = QLabel("0 selecionados")
             status_row.addWidget(self.prev_button)
             status_row.addWidget(self.page_label)
             status_row.addWidget(self.next_button)
-            status_row.addWidget(self.selection_label)
             layout.addLayout(status_row)
 
+            # Action buttons
             buttons_row = QHBoxLayout()
-            self.download_button = QPushButton("Baixar Selecionados")
-            self.download_button.clicked.connect(self._download_selected)
             self.import_button = QPushButton("Importar para Lista")
             self.import_button.clicked.connect(self._import_selected)
-            buttons_row.addWidget(self.download_button)
-            buttons_row.addWidget(self.import_button)
-            buttons_row.addStretch(1)
-            minimize_button = QPushButton("Minimizar")
-            minimize_button.clicked.connect(self.showMinimized)
-            self.maximize_button = QPushButton("Maximizar")
-            self.maximize_button.clicked.connect(self._toggle_maximized)
+            self.download_button = QPushButton("Baixar Selecionados")
+            self.download_button.setProperty("class", "secondary")
+            self.download_button.clicked.connect(self._download_selected)
             close_button = QPushButton("Fechar")
+            close_button.setProperty("class", "secondary")
             close_button.clicked.connect(self.close)
-            buttons_row.addWidget(minimize_button)
-            buttons_row.addWidget(self.maximize_button)
+            buttons_row.addWidget(self.import_button)
+            buttons_row.addWidget(self.download_button)
+            buttons_row.addStretch(1)
             buttons_row.addWidget(close_button)
             layout.addLayout(buttons_row)
 
@@ -90,15 +93,14 @@ if QT_AVAILABLE:
             self._set_results_summary()
             self._update_page_controls()
             self._update_action_buttons()
-            self._update_window_button_text()
 
         def _set_results_summary(self):
             if self.posts:
                 self.results_label.setText(
-                    f"{len(self.posts)} resultado(s) encontrados na pagina {self.current_page}."
+                    f"{len(self.posts)} resultado(s) · pág. {self.current_page}"
                 )
             elif self.tags:
-                self.results_label.setText(f"Nenhum resultado encontrado na pagina {self.current_page}.")
+                self.results_label.setText(f"Nenhum resultado · pág. {self.current_page}")
             else:
                 self.results_label.setText("Nenhum resultado para exibir.")
 
@@ -115,19 +117,6 @@ if QT_AVAILABLE:
             self.download_button.setEnabled(has_selection)
             self.import_button.setEnabled(has_selection)
 
-        def _update_window_button_text(self):
-            if self.isMaximized():
-                self.maximize_button.setText("Restaurar")
-            else:
-                self.maximize_button.setText("Maximizar")
-
-        def _toggle_maximized(self):
-            if self.isMaximized():
-                self.showNormal()
-            else:
-                self.showMaximized()
-            self._update_window_button_text()
-
         def _download_selected(self):
             parent = self.parent()
             if parent is not None and hasattr(parent, "download_selected"):
@@ -139,7 +128,7 @@ if QT_AVAILABLE:
                 parent.import_selected()
 
         def _update_page_controls(self):
-            self.page_label.setText(f"Pagina {self.current_page}")
+            self.page_label.setText(f"Pág. {self.current_page}")
             has_search = bool(self.tags)
             self.prev_button.setEnabled(has_search and self.current_page > 1)
             self.next_button.setEnabled(has_search and self._has_next_page)
@@ -163,7 +152,7 @@ if QT_AVAILABLE:
             self._has_next_page = False
             self._update_page_controls()
             self.grid.display_loading()
-            self.results_label.setText(f"Buscando pagina {self.current_page}...")
+            self.results_label.setText(f"Buscando pág. {self.current_page}...")
 
             self._search_seq += 1
             task_id = f"qt_gallery_search_{id(self)}_{self._search_seq}"
@@ -206,10 +195,6 @@ if QT_AVAILABLE:
             self.grid.close()
             super().closeEvent(event)
 
-        def changeEvent(self, event):
-            super().changeEvent(event)
-            if event.type() == QEvent.WindowStateChange:
-                self._update_window_button_text()
 else:
     class DanbooruGalleryDialog:
         def __init__(self, *_args, **_kwargs):
