@@ -32,7 +32,7 @@ class FakeTextProvider(AIProvider):
 class TestAIPipeline(unittest.TestCase):
     def test_pipeline_reports_safe_mode(self):
         provider = FakeTextProvider()
-        manager = AIPipelineManager(provider=provider)
+        manager = AIPipelineManager(provider=provider, base_prompt="descreva mantendo pose")
         messages = []
 
         manager.load_pipeline(status_callback=messages.append)
@@ -42,7 +42,7 @@ class TestAIPipeline(unittest.TestCase):
 
     def test_pipeline_forward_prompt_and_strength(self):
         provider = FakeTextProvider()
-        manager = AIPipelineManager(provider=provider)
+        manager = AIPipelineManager(provider=provider, base_prompt="descreva mantendo pose")
 
         result = manager.apply_uniform(
             image=Image.new("RGBA", (10, 10), "white"),
@@ -51,5 +51,6 @@ class TestAIPipeline(unittest.TestCase):
         )
 
         self.assertEqual(result.kind, "text")
-        self.assertEqual(provider.last_args["prompt"], "cabelo azul")
+        self.assertEqual(provider.last_args["prompt"], "descreva mantendo pose cabelo azul")
+        self.assertNotIn("Flamengo", provider.last_args["prompt"])
         self.assertEqual(provider.last_args["options"]["strength"], 0.33)

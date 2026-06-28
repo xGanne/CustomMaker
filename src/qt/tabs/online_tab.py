@@ -105,15 +105,15 @@ if QT_AVAILABLE:
             pagination_row.addWidget(self.next_button)
 
             actions_row = QHBoxLayout()
-            download_button = QPushButton("Baixar Selecionados")
-            download_button.clicked.connect(self.download_selected)
-            import_button = QPushButton("Importar para Lista")
-            import_button.clicked.connect(self.import_selected)
-            expand_button = QPushButton("Expandir")
-            expand_button.clicked.connect(self.open_expanded_gallery)
-            actions_row.addWidget(download_button)
-            actions_row.addWidget(import_button)
-            actions_row.addWidget(expand_button)
+            self.download_button = QPushButton("Baixar Selecionados")
+            self.download_button.clicked.connect(self.download_selected)
+            self.import_button = QPushButton("Importar para Lista")
+            self.import_button.clicked.connect(self.import_selected)
+            self.expand_button = QPushButton("Expandir")
+            self.expand_button.clicked.connect(self.open_expanded_gallery)
+            actions_row.addWidget(self.download_button)
+            actions_row.addWidget(self.import_button)
+            actions_row.addWidget(self.expand_button)
 
             result_layout.addWidget(self.results_grid)
             result_layout.addLayout(pagination_row)
@@ -162,6 +162,15 @@ if QT_AVAILABLE:
             self.prev_button.setEnabled(has_search and self.current_page > 1)
             self.next_button.setEnabled(has_search and self._has_next_page)
 
+        def _posts_with_selected_thumbnails(self, posts):
+            selected_posts = list(self.selection_state.selected_posts_details.values())
+            selected_ids = {post.get("id") for post in selected_posts}
+            merged = list(selected_posts)
+            for post in posts or []:
+                if post.get("id") not in selected_ids:
+                    merged.append(post)
+            return merged
+
         def search(self, page=1, use_active_tags=False):
             tags = self._active_search_tags if use_active_tags else self._build_tags()
             if not tags:
@@ -203,7 +212,7 @@ if QT_AVAILABLE:
                 self.current_page = result.get("page") or self.current_page
                 self.posts = result.get("posts") or []
                 self._has_next_page = len(self.posts) >= self._page_size
-                self.results_grid.display_posts(self.posts)
+                self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
                 self._set_results_summary()
                 self._update_page_controls()
                 self.main_window.show_status(
@@ -216,7 +225,7 @@ if QT_AVAILABLE:
                 self._active_search_task_id = None
                 self.posts = []
                 self._has_next_page = False
-                self.results_grid.display_posts([])
+                self.results_grid.display_posts(self._posts_with_selected_thumbnails([]))
                 self.summary_label.setText(f"Erro ao buscar pagina {self.current_page}.")
                 self._update_page_controls()
                 logger.exception("Erro na busca Danbooru Qt: %s", exc)
@@ -238,7 +247,7 @@ if QT_AVAILABLE:
             self.search(page=new_page, use_active_tags=True)
 
         def _selected_posts(self):
-            return self.results_grid.get_selected_items()
+            return list(self.selection_state.selected_posts_details.values())
 
         def _resolve_import_directory(self):
             image_paths = list(self.main_window.editor_state.image_list or [])
@@ -272,6 +281,10 @@ if QT_AVAILABLE:
             self.summary_label.setText(
                 f"{count or len(posts)} selecionado(s). Primeiro item: #{sample.get('id')} com rating {sample.get('rating', '?')}."
             )
+
+        def _handle_expanded_selection_changed(self, count):
+            self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
+            self._update_selection_summary(count)
 
         def _download_posts(self, target_dir, import_after=False):
             selected_posts = self._selected_posts()
@@ -374,6 +387,8 @@ if QT_AVAILABLE:
                 title=f"Galeria Expandida - {self._active_query_label or 'Danbooru'}",
             )
             dialog.grid.image_open_requested.connect(self.open_image_viewer)
+            dialog.grid.selection_count_changed.connect(self._handle_expanded_selection_changed)
+            dialog.destroyed.connect(lambda *_args: setattr(self, "_expanded_dialog", None))
             dialog.showMaximized()
             dialog.show()
             self._expanded_dialog = dialog

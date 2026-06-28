@@ -129,7 +129,7 @@ if QT_AVAILABLE:
             self.ai_tab = AiTab(self, self.tabs)
             self.tabs.addTab(self.editor_tab, "Edição")
             self.tabs.addTab(self.online_tab, "Online")
-            self.tabs.addTab(self.ai_tab, "AI")
+            self.tabs.addTab(self.ai_tab, "IA")
             self.image_list_panel = ImageListPanel(self)
             self.image_list_panel.selection_changed.connect(self.load_image)
             self.image_list_panel.remove_requested.connect(self.remove_image_at)
@@ -201,6 +201,28 @@ if QT_AVAILABLE:
             handle.cancelled.connect(lambda: (close_dialog(), self.show_status("Operação cancelada.")))
             dialog.show()
             return handle
+
+        @staticmethod
+        def _format_count(label, value):
+            return f"{label}: {int(value or 0)}"
+
+        @staticmethod
+        def _format_path(label, path):
+            return f"{label}: {path}" if path else None
+
+        def _show_result_summary(self, title, lines, details=None, warning=False):
+            message = "\n".join(line for line in lines if line)
+            if warning:
+                self.show_warning(title, message)
+            elif details:
+                box = QMessageBox(self)
+                box.setIcon(QMessageBox.Information)
+                box.setWindowTitle(title)
+                box.setText(message)
+                box.setDetailedText("\n".join(details))
+                box.exec()
+            else:
+                self.show_info(title, message)
 
         def _close_current_original(self):
             if self.current_original_image is not None:
@@ -871,11 +893,11 @@ if QT_AVAILABLE:
             try:
                 clipboard_content = ImageGrab.grabclipboard()
             except Exception as exc:
-                self.show_error("Colar imagem", f"Falha ao acessar a area de transferencia: {exc}")
+                self.show_error("Colar imagem", f"Falha ao acessar a área de transferência: {exc}")
                 return
 
             if not isinstance(clipboard_content, Image.Image):
-                self.show_warning("Colar imagem", "Nenhuma imagem encontrada na area de transferencia.")
+                self.show_warning("Colar imagem", "Nenhuma imagem encontrada na área de transferência.")
                 return
 
             temp_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Temp", "CustomMakerPaste")
@@ -884,7 +906,7 @@ if QT_AVAILABLE:
             path = os.path.join(temp_dir, filename)
             clipboard_content.save(path)
             self.add_images([path], replace=False, select_last=True)
-            self.show_status("Imagem colada da area de transferencia.")
+            self.show_status("Imagem colada da área de transferência.")
 
         def save_all_images(self):
             if not self.editor_state.image_list:
@@ -902,7 +924,13 @@ if QT_AVAILABLE:
                 )
 
             def on_done(result):
-                self.show_info("Salvar", f"Exportação concluída. Erros: {result.get('errors', 0)}")
+                lines = [
+                    "Exportação concluída.",
+                    self._format_count("Processadas", result.get("processed")),
+                    self._format_count("Erros", result.get("errors")),
+                    self._format_path("Destino", result.get("target_dir") or target_dir),
+                ]
+                self._show_result_summary("Salvar", lines, warning=bool(result.get("errors")))
 
             self.run_task(
                 "qt_save_all_images",
@@ -928,7 +956,14 @@ if QT_AVAILABLE:
                 )
 
             def on_done(result):
-                self.show_info("ZIP", f"ZIP salvo com {result.get('written', 0)} arquivo(s).")
+                lines = [
+                    "ZIP gerado com sucesso.",
+                    self._format_count("Arquivos escritos", result.get("written")),
+                    self._format_count("Processadas", result.get("processed")),
+                    self._format_count("Erros", result.get("errors")),
+                    self._format_path("Arquivo", result.get("zip_path") or file_path),
+                ]
+                self._show_result_summary("ZIP", lines, warning=bool(result.get("errors")))
 
             self.run_task(
                 "qt_save_zip",
@@ -957,11 +992,20 @@ if QT_AVAILABLE:
             def on_done(result):
                 links = result.get("links") or []
                 errors = result.get("errors") or []
+                lines = [
+                    "Upload finalizado.",
+                    self._format_count("Processadas", result.get("processed")),
+                    self._format_count("Arquivos enviados", result.get("uploaded")),
+                    self._format_count("Links retornados", len(links)),
+                    self._format_count("Erros", len(errors)),
+                ]
                 if errors:
-                    self.show_warning("Upload", "\n".join(errors[:10]))
+                    self._show_result_summary("Upload", lines, details=errors[:20], warning=not links)
                 if links:
                     self._show_links_dialog(album_title, links)
-                else:
+                    if not errors:
+                        self._show_result_summary("Upload", lines)
+                elif not errors:
                     self.show_warning("Upload", "Nenhum link retornado.")
 
             self.run_task(

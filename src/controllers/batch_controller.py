@@ -201,10 +201,13 @@ class BatchController:
                     tasks.append(data)
 
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
+            errors = [r for r in batch["results"] if r.get("status") != "success"]
             return {
                 "cancelled": batch["cancelled"],
                 "processed": len(batch["results"]),
-                "errors": len([r for r in batch["results"] if r.get("status") != "success"]),
+                "errors": len(errors),
+                "target_dir": target_dir,
+                "total": len(tasks),
             }
         finally:
             shutil.rmtree(source_dir, ignore_errors=True)
@@ -225,8 +228,16 @@ class BatchController:
 
         try:
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
+            errors = [r for r in batch["results"] if r.get("status") != "success"]
             if batch["cancelled"]:
-                return {"cancelled": True, "zip_path": target_file, "written": 0}
+                return {
+                    "cancelled": True,
+                    "zip_path": target_file,
+                    "written": 0,
+                    "processed": len(batch["results"]),
+                    "errors": len(errors),
+                    "total": len(tasks),
+                }
 
             written = 0
             with zipfile.ZipFile(target_file, "w") as z:
@@ -234,7 +245,14 @@ class BatchController:
                     if result.get("status") == "success" and "saved_to" in result:
                         z.write(result["saved_to"], os.path.basename(result["saved_to"]))
                         written += 1
-            return {"cancelled": False, "zip_path": target_file, "written": written}
+            return {
+                "cancelled": False,
+                "zip_path": target_file,
+                "written": written,
+                "processed": len(batch["results"]),
+                "errors": len(errors),
+                "total": len(tasks),
+            }
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -254,8 +272,16 @@ class BatchController:
 
         try:
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
+            process_errors = [r for r in batch["results"] if r.get("status") != "success"]
             if batch["cancelled"]:
-                return {"cancelled": True, "links": [], "errors": ["Operacao cancelada pelo usuario."]}
+                return {
+                    "cancelled": True,
+                    "links": [],
+                    "errors": ["Operação cancelada pelo usuário."],
+                    "processed": len(batch["results"]),
+                    "uploaded": 0,
+                    "total": len(tasks),
+                }
 
             files = []
             for result in batch["results"]:
@@ -267,13 +293,22 @@ class BatchController:
                 progress_callback(0, len(files), "Enviando...")
 
             if not self.uploader:
-                raise ValueError("Uploader nao configurado.")
+                raise ValueError("Uploader não configurado.")
             links, errors = self.uploader.upload_images(
                 files,
                 title,
                 progress_callback=progress_callback,
                 cancel_event=cancel_event,
             )
-            return {"cancelled": bool(cancel_event and cancel_event.is_set()), "links": links, "errors": errors}
+            all_errors = [r.get("error") or r.get("path") or "Erro ao processar imagem." for r in process_errors]
+            all_errors.extend(errors)
+            return {
+                "cancelled": bool(cancel_event and cancel_event.is_set()),
+                "links": links,
+                "errors": all_errors,
+                "processed": len(batch["results"]),
+                "uploaded": len(files),
+                "total": len(tasks),
+            }
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)

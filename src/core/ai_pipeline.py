@@ -3,8 +3,8 @@ import os
 from typing import Optional
 
 import google.generativeai as genai
-from PIL import Image
 from dotenv import load_dotenv
+from PIL import Image
 
 from src.core.ai_provider import AICapabilities, AIProvider, AIResult
 
@@ -34,14 +34,8 @@ class GeminiTextOnlyProvider(AIProvider):
             status_callback("Enviando para Gemini...")
 
         try:
-            base_prompt = (
-                "You are an expert image stylist. Analyze the image and describe the character wearing "
-                "a Flamengo soccer team uniform (red and black horizontal stripes jersey, black shorts, red socks), "
-                "keeping the same pose and art style. Return only the visual description."
-            )
-            merged_prompt = f"{base_prompt} {prompt}".strip()
             model = genai.GenerativeModel(self.model_name)
-            response = model.generate_content([merged_prompt, image])
+            response = model.generate_content([prompt.strip(), image])
 
             text = (getattr(response, "text", "") or "").strip()
             if not text:
@@ -55,8 +49,14 @@ class GeminiTextOnlyProvider(AIProvider):
 
 
 class AIPipelineManager:
-    def __init__(self, provider: Optional[AIProvider] = None):
+    DEFAULT_BASE_PROMPT = (
+        "Analyze the image and describe the requested visual edit while preserving the original pose, "
+        "composition, character identity, and art style. Return only the visual description."
+    )
+
+    def __init__(self, provider: Optional[AIProvider] = None, base_prompt: Optional[str] = None):
         self.provider = provider or GeminiTextOnlyProvider()
+        self.base_prompt = (base_prompt or self.DEFAULT_BASE_PROMPT).strip()
 
     def get_capabilities(self) -> AICapabilities:
         return self.provider.get_capabilities()
@@ -79,4 +79,5 @@ class AIPipelineManager:
         status_callback=None,
     ) -> AIResult:
         options = {"strength": strength}
-        return self.provider.apply(image=image, prompt=prompt_suffix, options=options, status_callback=status_callback)
+        merged_prompt = f"{self.base_prompt} {prompt_suffix}".strip()
+        return self.provider.apply(image=image, prompt=merged_prompt, options=options, status_callback=status_callback)

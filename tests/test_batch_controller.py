@@ -60,6 +60,7 @@ class TestBatchController(unittest.TestCase):
         self.assertEqual(result["cancelled"], True)
         self.assertEqual(result["processed"], 0)
         self.assertEqual(result["errors"], 0)
+        self.assertEqual(result["target_dir"], "unused")
 
     def test_upload_returns_cancelled_without_calling_uploader(self):
         app = DummyApp()
@@ -70,6 +71,7 @@ class TestBatchController(unittest.TestCase):
         self.assertTrue(result["cancelled"])
         self.assertEqual(result["links"], [])
         self.assertTrue(result["errors"])
+        self.assertEqual(result["uploaded"], 0)
         self.assertFalse(app.uploader.called)
 
     def test_resolve_max_workers_clamps_configured_value(self):
@@ -99,3 +101,22 @@ class TestBatchController(unittest.TestCase):
                 self.assertTrue(data["source_path"].startswith(temp_dir))
         finally:
             app.edited_source_images["image.png"].close()
+
+    def test_save_zip_summary_includes_written_processed_and_errors(self):
+        app = DummyApp()
+        controller = BatchController(app)
+        batch_result = {
+            "cancelled": False,
+            "results": [
+                {"status": "success", "saved_to": "C:/tmp/ok.png"},
+                {"status": "error", "path": "bad.png", "error": "boom"},
+            ],
+        }
+        with patch.object(controller, "_run_batch", return_value=batch_result), patch("zipfile.ZipFile"):
+            result = controller.save_zip("out.zip")
+
+        self.assertFalse(result["cancelled"])
+        self.assertEqual(result["written"], 1)
+        self.assertEqual(result["processed"], 2)
+        self.assertEqual(result["errors"], 1)
+        self.assertEqual(result["zip_path"], "out.zip")

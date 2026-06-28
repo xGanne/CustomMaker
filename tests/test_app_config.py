@@ -29,6 +29,7 @@ class TestAppConfig(unittest.TestCase):
             self.assertEqual(cfg.get("ui_theme_variant"), "editorial_dark_v1")
             self.assertEqual(cfg.get("ui_density"), "comfortable")
             self.assertEqual(cfg.get("ui_show_tips"), True)
+            self.assertEqual(cfg.get("ai_base_prompt"), DEFAULT_CONFIG["ai_base_prompt"])
             self.assertEqual(cfg.get("danbooru_pool_connections"), DEFAULT_CONFIG["danbooru_pool_connections"])
             self.assertEqual(cfg.get("thumbnail_batch_size"), DEFAULT_CONFIG["thumbnail_batch_size"])
             self.assertEqual(cfg.get("image_cache_max_mb"), DEFAULT_CONFIG["image_cache_max_mb"])
@@ -44,6 +45,7 @@ class TestAppConfig(unittest.TestCase):
 
             self.assertEqual(cfg.get("config_version"), CURRENT_CONFIG_VERSION)
             self.assertEqual(cfg.get("ai_mode"), "safe")
+            self.assertEqual(cfg.get("ai_base_prompt"), DEFAULT_CONFIG["ai_base_prompt"])
             self.assertEqual(cfg.get("ui_language"), "pt-BR")
             self.assertEqual(cfg.get("ui_theme_variant"), "editorial_dark_v1")
             self.assertEqual(cfg.get("ui_density"), "comfortable")

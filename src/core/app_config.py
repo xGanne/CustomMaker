@@ -23,7 +23,7 @@ from src.config.settings import (
 logger = logging.getLogger(__name__)
 
 
-CURRENT_CONFIG_VERSION = 3
+CURRENT_CONFIG_VERSION = 4
 
 
 DEFAULT_CONFIG = {
@@ -38,6 +38,10 @@ DEFAULT_CONFIG = {
     "log_level": "INFO",
     "max_workers": None,
     "ai_mode": "safe",
+    "ai_base_prompt": (
+        "Analyze the image and describe the requested visual edit while preserving the original pose, "
+        "composition, character identity, and art style. Return only the visual description."
+    ),
     "ui_language": "pt-BR",
     "feature_flags": {},
     "danbooru_pool_connections": DANBOORU_POOL_CONNECTIONS_DEFAULT,
@@ -123,6 +127,9 @@ class AppConfig:
 
         if migrated.get("ai_mode") not in {"safe", "off", "provider_default"}:
             migrated["ai_mode"] = DEFAULT_CONFIG["ai_mode"]
+
+        if not isinstance(migrated.get("ai_base_prompt"), str) or not migrated.get("ai_base_prompt").strip():
+            migrated["ai_base_prompt"] = DEFAULT_CONFIG["ai_base_prompt"]
 
         if not isinstance(migrated.get("ui_language"), str):
             migrated["ui_language"] = DEFAULT_CONFIG["ui_language"]
@@ -211,7 +218,7 @@ class AppConfig:
                 loaded = json.load(f)
             self.config_data = self._migrate(loaded)
         except json.JSONDecodeError:
-            logger.warning("Erro ao ler %s (JSON invalido). Usando padrao.", CONFIG_FILE)
+            logger.warning("Erro ao ler %s (JSON inválido). Usando padrão.", CONFIG_FILE)
             self.config_data = deepcopy(DEFAULT_CONFIG)
         except OSError as exc:
             logger.error("Falha ao abrir %s: %s", CONFIG_FILE, exc)
@@ -222,7 +229,7 @@ class AppConfig:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.config_data, f, indent=4, ensure_ascii=False)
         except OSError as exc:
-            logger.error("Nao foi possivel salvar config em %s: %s", CONFIG_FILE, exc)
+            logger.error("Não foi possível salvar config em %s: %s", CONFIG_FILE, exc)
 
     def get(self, key, default=None):
         return self.config_data.get(key, default)

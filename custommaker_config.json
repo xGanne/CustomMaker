@@ -1,6 +1,6 @@
 {
-    "config_version": 3,
-    "last_folder": "C:/Users/lipea/Desktop/Customs/A_Fazer/Boku no Kokoro/Anna Yamada",
+    "config_version": 4,
+    "last_folder": "C:/Users/lipea/Desktop/Customs/A_Fazer/Nikke/Anis",
     "last_global_borda": "Cor Personalizada",
     "appearance_mode": "Dark",
     "color_theme": "blue",
@@ -10,6 +10,7 @@
     "log_level": "INFO",
     "max_workers": null,
     "ai_mode": "safe",
+    "ai_base_prompt": "Analyze the image and describe the requested visual edit while preserving the original pose, composition, character identity, and art style. Return only the visual description.",
     "ui_language": "pt-BR",
     "feature_flags": {},
     "danbooru_pool_connections": 16,

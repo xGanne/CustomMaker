@@ -3,7 +3,7 @@ from src.qt.task_runner import QtTaskRunner
 from src.qt.widgets.danbooru_grid import DanbooruResultsGrid
 
 if QT_AVAILABLE:
-    from src.qt.compat import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+    from src.qt.compat import QDialog, QEvent, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, Qt
 
 
 if QT_AVAILABLE:
@@ -23,6 +23,12 @@ if QT_AVAILABLE:
             self.setWindowTitle(title)
             self.resize(1280, 860)
             self.setModal(False)
+            self.setWindowFlags(
+                self.windowFlags()
+                | Qt.WindowMinimizeButtonHint
+                | Qt.WindowMaximizeButtonHint
+                | Qt.WindowCloseButtonHint
+            )
 
             self.client = client
             self.tags = tags or ""
@@ -69,8 +75,14 @@ if QT_AVAILABLE:
             buttons_row.addWidget(self.download_button)
             buttons_row.addWidget(self.import_button)
             buttons_row.addStretch(1)
+            minimize_button = QPushButton("Minimizar")
+            minimize_button.clicked.connect(self.showMinimized)
+            self.maximize_button = QPushButton("Maximizar")
+            self.maximize_button.clicked.connect(self._toggle_maximized)
             close_button = QPushButton("Fechar")
             close_button.clicked.connect(self.close)
+            buttons_row.addWidget(minimize_button)
+            buttons_row.addWidget(self.maximize_button)
             buttons_row.addWidget(close_button)
             layout.addLayout(buttons_row)
 
@@ -78,6 +90,7 @@ if QT_AVAILABLE:
             self._set_results_summary()
             self._update_page_controls()
             self._update_action_buttons()
+            self._update_window_button_text()
 
         def _set_results_summary(self):
             if self.posts:
@@ -101,6 +114,19 @@ if QT_AVAILABLE:
             has_selection = self._selected_count() > 0
             self.download_button.setEnabled(has_selection)
             self.import_button.setEnabled(has_selection)
+
+        def _update_window_button_text(self):
+            if self.isMaximized():
+                self.maximize_button.setText("Restaurar")
+            else:
+                self.maximize_button.setText("Maximizar")
+
+        def _toggle_maximized(self):
+            if self.isMaximized():
+                self.showNormal()
+            else:
+                self.showMaximized()
+            self._update_window_button_text()
 
         def _download_selected(self):
             parent = self.parent()
@@ -179,6 +205,11 @@ if QT_AVAILABLE:
                 self._task_runner.cancel(self._active_search_task_id)
             self.grid.close()
             super().closeEvent(event)
+
+        def changeEvent(self, event):
+            super().changeEvent(event)
+            if event.type() == QEvent.WindowStateChange:
+                self._update_window_button_text()
 else:
     class DanbooruGalleryDialog:
         def __init__(self, *_args, **_kwargs):

@@ -54,7 +54,7 @@ if QT_AVAILABLE:
 
             load_button = QPushButton("Selecionar Pasta")
             load_button.clicked.connect(self.main_window.load_folder)
-            paste_button = QPushButton("Colar da Area de Transferencia")
+            paste_button = QPushButton("Colar da Área de Transferência")
             paste_button.clicked.connect(self.main_window.paste_image)
             undo_button = QPushButton("Desfazer")
             undo_button.clicked.connect(self.main_window.undo_current_image)
@@ -75,7 +75,7 @@ if QT_AVAILABLE:
             flow_layout.addWidget(smart_fit_button)
             flow_layout.addWidget(smart_fit_all_button)
 
-            style_group = QGroupBox("Borda e Animacao")
+            style_group = QGroupBox("Borda e Animação")
             style_layout = QVBoxLayout(style_group)
             style_layout.setSpacing(6)
             style_layout.addWidget(QLabel("Borda"))
@@ -90,13 +90,13 @@ if QT_AVAILABLE:
             style_layout.addWidget(self.border_combo)
             style_layout.addWidget(self.custom_color_edit)
             style_layout.addWidget(self.pick_color_button)
-            style_layout.addWidget(QLabel("Animacao"))
+            style_layout.addWidget(QLabel("Animação"))
             self.animation_combo = QComboBox()
             self.animation_combo.addItems(ANIMATION_OPTIONS)
             self.animation_combo.currentTextChanged.connect(self._on_animation_changed)
             style_layout.addWidget(self.animation_combo)
 
-            save_group = QGroupBox("Saida")
+            save_group = QGroupBox("Saída")
             save_layout = QVBoxLayout(save_group)
             save_layout.setSpacing(8)
             save_images_button = QPushButton("Salvar Imagens")
@@ -135,7 +135,7 @@ if QT_AVAILABLE:
             preset_layout.addLayout(row_save)
             preset_layout.addLayout(row_load)
 
-            self.hint_label = QLabel("Fluxo: selecionar pasta, ajustar, exportar, enviar ou aplicar AI.")
+            self.hint_label = QLabel("Fluxo: selecionar pasta, ajustar, exportar, enviar ou gerar descrição com IA.")
             self.hint_label.setWordWrap(True)
 
             layout.addWidget(flow_group)
@@ -187,7 +187,7 @@ if QT_AVAILABLE:
         def _on_animation_changed(self, value):
             self.main_window.editor_state.animation_type = value
             self.main_window.refresh_current_canvas()
-            self.main_window.show_status(f"Animacao selecionada: {value}")
+            self.main_window.show_status(f"Animação selecionada: {value}")
 
         def _save_preset(self):
             name = self.preset_name_edit.text().strip()
