@@ -38,6 +38,8 @@ try:
         QStatusBar,
         QTabWidget,
         QTextEdit,
+        QToolBar,
+        QToolButton,
         QVBoxLayout,
         QWidget,
     )

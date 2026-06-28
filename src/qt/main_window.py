@@ -24,11 +24,15 @@ if QT_AVAILABLE:
     from src.qt.compat import (
         QAction,
         QApplication,
+        QComboBox,
         QFileDialog,
         QGuiApplication,
+        QHBoxLayout,
         QIcon,
         QInputDialog,
         QKeySequence,
+        QLabel,
+        QLineEdit,
         QMainWindow,
         QMessageBox,
         QPlainTextEdit,
@@ -36,6 +40,8 @@ if QT_AVAILABLE:
         QSplitter,
         QTabWidget,
         QTimer,
+        QToolBar,
+        QToolButton,
         QVBoxLayout,
         QWidget,
         Qt,
@@ -97,38 +103,50 @@ if QT_AVAILABLE:
                     break
 
         def _build_ui(self):
+            self._build_toolbar()
+
             central = QWidget(self)
             self.setCentralWidget(central)
             root_layout = QVBoxLayout(central)
-            root_layout.setContentsMargins(10, 10, 10, 10)
-            root_layout.setSpacing(10)
+            root_layout.setContentsMargins(8, 8, 8, 8)
+            root_layout.setSpacing(0)
 
             splitter = QSplitter(Qt.Horizontal, self)
             root_layout.addWidget(splitter)
 
+            # ── Left: options bar + canvas ─────────────────────────────────
             left_widget = QWidget(self)
             left_layout = QVBoxLayout(left_widget)
             left_layout.setContentsMargins(0, 0, 0, 0)
+            left_layout.setSpacing(0)
+
+            self._build_options_bar(left_widget, left_layout)
+
             self.image_canvas = ImageCanvas(self)
             self.image_canvas.state_changed.connect(self.on_canvas_state_changed)
             self.image_canvas.border_pos_changed.connect(self.on_border_pos_changed)
             self.image_canvas.interaction_started.connect(self.save_state_for_undo)
             self.image_canvas.color_picked.connect(self.on_canvas_color_picked)
-            self.image_canvas.zoom_changed.connect(self._on_zoom_changed)  # B4
+            self.image_canvas.zoom_changed.connect(self._on_zoom_changed)
             left_layout.addWidget(self.image_canvas)
-            # B1: image counter label below canvas
-            from src.qt.compat import QLabel as _QLabel
-            self._image_counter_label = _QLabel("")
+
+            # B1: compact counter below canvas
+            self._image_counter_label = QLabel("")
             self._image_counter_label.setAlignment(Qt.AlignCenter)
-            self._image_counter_label.setStyleSheet("color: #888; font-size: 11px; padding: 2px;")
+            self._image_counter_label.setStyleSheet(
+                "color: #555; font-size: 11px; padding: 2px 0; background: transparent;"
+            )
             left_layout.addWidget(self._image_counter_label)
             splitter.addWidget(left_widget)
 
+            # ── Right: tabs (top) + image list (bottom), resizable ─────────
             right_widget = QWidget(self)
-            right_layout = QVBoxLayout(right_widget)
-            right_layout.setContentsMargins(0, 0, 0, 0)
-            right_layout.setSpacing(10)
-            right_widget.setMinimumWidth(420)
+            right_outer = QVBoxLayout(right_widget)
+            right_outer.setContentsMargins(0, 0, 0, 0)
+            right_outer.setSpacing(0)
+            right_widget.setMinimumWidth(380)
+
+            right_splitter = QSplitter(Qt.Vertical, right_widget)
             self.tabs = QTabWidget(self)
             self.tabs.setDocumentMode(True)
             self.editor_tab = EditorTab(self, self.tabs)
@@ -137,15 +155,157 @@ if QT_AVAILABLE:
             self.tabs.addTab(self.editor_tab, "Edição")
             self.tabs.addTab(self.online_tab, "Online")
             self.tabs.addTab(self.ai_tab, "IA")
+
             self.image_list_panel = ImageListPanel(self)
             self.image_list_panel.selection_changed.connect(self.load_image)
             self.image_list_panel.remove_requested.connect(self.remove_image_at)
             self.image_list_panel.toggle_individual_requested.connect(self.toggle_individual_border)
-            self.image_list_panel.order_changed.connect(self._on_image_list_reordered)  # C1
-            right_layout.addWidget(self.tabs, 3)
-            right_layout.addWidget(self.image_list_panel, 2)
+            self.image_list_panel.order_changed.connect(self._on_image_list_reordered)
+
+            right_splitter.addWidget(self.tabs)
+            right_splitter.addWidget(self.image_list_panel)
+            right_splitter.setSizes([380, 220])
+            right_outer.addWidget(right_splitter)
             splitter.addWidget(right_widget)
-            splitter.setSizes([960, 420])
+            splitter.setSizes([1020, 420])
+
+        def _build_toolbar(self):
+            toolbar = QToolBar("Ferramentas", self)
+            toolbar.setMovable(False)
+            toolbar.setFloatable(False)
+            toolbar.setOrientation(Qt.Vertical)
+            self.addToolBar(Qt.LeftToolBarArea, toolbar)
+
+            def _tool_btn(label, tip, handler, shortcut="", checkable=False):
+                btn = QToolButton()
+                btn.setText(label)
+                btn.setToolTip(f"{tip}  {shortcut}".strip())
+                btn.setCheckable(checkable)
+                btn.clicked.connect(handler)
+                return btn
+
+            toolbar.addWidget(_tool_btn("📁", "Selecionar Pasta", self.load_folder, "Ctrl+O"))
+            toolbar.addWidget(_tool_btn("📋", "Colar Imagem", self.paste_image, "Ctrl+V"))
+            toolbar.addWidget(_tool_btn("↩", "Desfazer", self.undo_current_image, "Ctrl+Z"))
+            toolbar.addSeparator()
+            toolbar.addWidget(_tool_btn("⊡", "Auto Fit", self.apply_auto_fit, "Alt+B"))
+            toolbar.addWidget(_tool_btn("◎", "Ajuste Inteligente", self.apply_intelligent_fit, "Alt+F"))
+            toolbar.addSeparator()
+            self._toolbar_pick_btn = _tool_btn("⊕", "Pick Color", self._toggle_color_picker_btn, checkable=True)
+            toolbar.addWidget(self._toolbar_pick_btn)
+            toolbar.addSeparator()
+            toolbar.addWidget(_tool_btn("↺", "Rotacionar Esquerda", lambda: self.rotate_current_image("left"), "Ctrl+Q"))
+            toolbar.addWidget(_tool_btn("↻", "Rotacionar Direita", lambda: self.rotate_current_image("right"), "Ctrl+E"))
+
+        def _toggle_color_picker_btn(self):
+            self.toggle_color_picker()
+            if hasattr(self, "_toolbar_pick_btn"):
+                self._toolbar_pick_btn.setChecked(self._color_picker_enabled)
+
+        def _build_options_bar(self, parent_widget, parent_layout):
+            bar = QWidget(parent_widget)
+            bar.setObjectName("OptionsBar")
+            bar.setFixedHeight(44)
+            bar_layout = QHBoxLayout(bar)
+            bar_layout.setContentsMargins(8, 4, 8, 4)
+            bar_layout.setSpacing(6)
+
+            bar_layout.addWidget(QLabel("Borda:"))
+            self.options_border_combo = QComboBox()
+            self.options_border_combo.addItems(sorted(BORDA_HEX.keys()) + ["Cor Personalizada"])
+            self.options_border_combo.setMaximumWidth(140)
+            self.options_border_combo.currentTextChanged.connect(self._on_options_border_changed)
+            bar_layout.addWidget(self.options_border_combo)
+
+            self.options_color_swatch = QPushButton()
+            self.options_color_swatch.setFixedSize(28, 28)
+            self.options_color_swatch.setToolTip("Pick Color / Cor personalizada")
+            self.options_color_swatch.clicked.connect(self._on_options_color_swatch_clicked)
+            bar_layout.addWidget(self.options_color_swatch)
+
+            self.options_color_edit = QLineEdit()
+            self.options_color_edit.setPlaceholderText("#FFFFFF")
+            self.options_color_edit.setMaximumWidth(72)
+            self.options_color_edit.textChanged.connect(self._on_options_custom_color_changed)
+            bar_layout.addWidget(self.options_color_edit)
+
+            bar_layout.addWidget(QLabel("Animação:"))
+            self.options_anim_combo = QComboBox()
+            from src.qt.tabs.editor_tab import ANIMATION_OPTIONS
+            self.options_anim_combo.addItems(ANIMATION_OPTIONS)
+            self.options_anim_combo.setMaximumWidth(130)
+            self.options_anim_combo.currentTextChanged.connect(self._on_options_anim_changed)
+            bar_layout.addWidget(self.options_anim_combo)
+
+            bar_layout.addStretch(1)
+
+            apply_all_btn = QPushButton("Aplicar a Todas")
+            apply_all_btn.setToolTip("Aplica borda e animação atuais a todas as imagens")
+            apply_all_btn.clicked.connect(self.apply_style_to_all)
+            bar_layout.addWidget(apply_all_btn)
+
+            parent_layout.addWidget(bar)
+            self._update_options_color_swatch()
+
+        # ── Options bar handlers ───────────────────────────────────────────
+
+        def _on_options_border_changed(self, value):
+            self.editor_state.selected_borda = value
+            self.ui_preferences.last_global_borda = value
+            is_custom = value == "Cor Personalizada"
+            self.options_color_edit.setEnabled(is_custom)
+            self.options_color_swatch.setEnabled(True)
+            self._update_options_color_swatch()
+            if hasattr(self, "editor_tab"):
+                self.editor_tab.sync_from_options_bar()
+            self.refresh_current_canvas()
+
+        def _on_options_custom_color_changed(self, value):
+            if value.startswith("#") and len(value) == 7:
+                self.editor_state.custom_borda_hex = value
+                self._update_options_color_swatch()
+                self.refresh_current_canvas()
+
+        def _on_options_anim_changed(self, value):
+            self.editor_state.animation_type = value
+            if hasattr(self, "editor_tab"):
+                self.editor_tab.sync_from_options_bar()
+            self.refresh_current_canvas()
+            self.show_status(f"Animação: {value}")
+
+        def _on_options_color_swatch_clicked(self):
+            self.toggle_color_picker()
+            if hasattr(self, "_toolbar_pick_btn"):
+                self._toolbar_pick_btn.setChecked(self._color_picker_enabled)
+
+        def _update_options_color_swatch(self):
+            if not hasattr(self, "options_color_swatch"):
+                return
+            color = self.editor_state.custom_borda_hex or "#FFFFFF"
+            self.options_color_swatch.setStyleSheet(
+                f"background-color: {color}; border: 1px solid #334056; border-radius: 4px;"
+            )
+
+        def refresh_options_bar(self):
+            """Called by EditorTab.refresh_from_state() to sync options bar widgets."""
+            if not hasattr(self, "options_border_combo"):
+                return
+            state = self.editor_state
+            self.options_border_combo.blockSignals(True)
+            self.options_anim_combo.blockSignals(True)
+            self.options_color_edit.blockSignals(True)
+
+            idx = self.options_border_combo.findText(state.selected_borda)
+            if idx >= 0:
+                self.options_border_combo.setCurrentIndex(idx)
+            self.options_anim_combo.setCurrentText(state.animation_type)
+            self.options_color_edit.setText(state.custom_borda_hex or "")
+            self.options_color_edit.setEnabled(state.selected_borda == "Cor Personalizada")
+            self._update_options_color_swatch()
+
+            self.options_border_combo.blockSignals(False)
+            self.options_anim_combo.blockSignals(False)
+            self.options_color_edit.blockSignals(False)
 
         def _register_shortcuts(self):
             shortcuts = [
@@ -863,11 +1023,14 @@ if QT_AVAILABLE:
         def on_canvas_color_picked(self, color):
             self._color_picker_enabled = False
             self.image_canvas.set_color_pick_enabled(False)
+            if hasattr(self, "_toolbar_pick_btn"):
+                self._toolbar_pick_btn.setChecked(False)
             self.editor_state.selected_borda = "Cor Personalizada"
             self.editor_state.custom_borda_hex = color
             self.ui_preferences.last_global_borda = "Cor Personalizada"
             QApplication.clipboard().setText(color)
             self.editor_tab.refresh_from_state()
+            self.refresh_options_bar()
             self.refresh_current_canvas()
             self.show_info("Pick Color", f"Cor copiada: {color}")
 
