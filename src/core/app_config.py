@@ -56,6 +56,8 @@ DEFAULT_CONFIG = {
     "thumbnail_memory_cache_mb": THUMBNAIL_MEMORY_CACHE_MB_DEFAULT,
     "thumbnail_disk_cache_mb": THUMBNAIL_DISK_CACHE_MB_DEFAULT,
     "image_cache_max_mb": IMAGE_CACHE_MAX_MB_DEFAULT,
+    "danbooru_search_history": [],
+    "danbooru_tag_blacklist": "",
 }
 
 

@@ -54,6 +54,7 @@ if QT_AVAILABLE:
         border_pos_changed = Signal(tuple)
         interaction_started = Signal()
         color_picked = Signal(str)
+        zoom_changed = Signal(float)  # B4: emits zoom factor (1.0 = original size)
 
         def __init__(self, parent=None):
             super().__init__(parent)
@@ -81,6 +82,10 @@ if QT_AVAILABLE:
             self._border_pos = (0, 0)
             self._border_color = "#FFFFFF"
             self._color_pick_enabled = False
+            self._zoom_factor = 1.0  # B4
+            # C2: before/after toggle state
+            self._before_after_active = False
+            self._original_image = None
             self._layout_border(initial=True)
 
         @property
@@ -119,6 +124,7 @@ if QT_AVAILABLE:
             self._base_image = None
             self._base_pixmap = None
             self._current_size = None
+            self._original_image = None
 
         def set_border_color(self, color_hex):
             self._border_color = color_hex
@@ -152,10 +158,13 @@ if QT_AVAILABLE:
             transform = QTransform.fromScale(width / base_width, height / base_height)
             self.image_item.setTransform(transform)
             self._current_size = (width, height)
+            # B4: derive and emit zoom factor relative to natural image size
+            self._zoom_factor = width / max(1, self._base_image.width) if self._base_image else 1.0
 
         def set_image(self, pil_image, state=None, border_color="#FFFFFF"):
             self.clear_image()
             self._base_image = pil_image.convert("RGBA")
+            self._original_image = self._base_image.copy()  # C2: keep original
             self._base_pixmap = _pil_to_qpixmap(self._base_image)
             self.set_border_color(border_color)
 
@@ -180,6 +189,41 @@ if QT_AVAILABLE:
             self._apply_size_transform(size)
             self._emit_state_changed()
 
+        # ── C2: before/after toggle ────────────────────────────────────────
+
+        def show_original_preview(self):
+            """C2: temporarily show the original unedited image filling the border."""
+            if self._original_image is None or self.image_item is None:
+                return
+            self._before_after_active = True
+            orig_pixmap = _pil_to_qpixmap(self._original_image)
+            # fit the original inside the border box
+            bx, by = self._border_pos
+            self.image_item.setPixmap(orig_pixmap)
+            self.image_item.resetTransform()
+            scale_x = BORDA_WIDTH / max(1, orig_pixmap.width())
+            scale_y = BORDA_HEIGHT / max(1, orig_pixmap.height())
+            scale = min(scale_x, scale_y)
+            transform = QTransform.fromScale(scale, scale)
+            self.image_item.setTransform(transform)
+            self.image_item.setPos(bx, by)
+            self.border_item.setVisible(False)
+            self.preview_item.setVisible(False)
+
+        def restore_edit_preview(self):
+            """C2: restore the edited state after before/after toggle."""
+            if not self._before_after_active or self._base_image is None:
+                return
+            self._before_after_active = False
+            self.image_item.setPixmap(self._base_pixmap)
+            self._apply_size_transform(self._current_size)
+            self.image_item.setPos(*self._current_size and (
+                int(self.image_item.pos().x()), int(self.image_item.pos().y())
+            ))
+            self.border_item.setVisible(True)
+
+        # ── B4: zoom via wheel ─────────────────────────────────────────────
+
         def wheelEvent(self, event):
             if self.image_item is None or self._base_image is None:
                 super().wheelEvent(event)
@@ -194,6 +238,7 @@ if QT_AVAILABLE:
                 (int(self.image_item.pos().x()), int(self.image_item.pos().y())),
                 (width, height),
             )
+            self.zoom_changed.emit(self._zoom_factor)  # B4
             event.accept()
 
         def mousePressEvent(self, event):
@@ -222,6 +267,7 @@ if QT_AVAILABLE:
                 return
             pos = (int(self.image_item.pos().x()), int(self.image_item.pos().y()))
             self.state_changed.emit(pos, self._current_size)
+            self.zoom_changed.emit(self._zoom_factor)  # B4: emit on any state change too
 else:
     class ImageCanvas:
         def __init__(self, *_args, **_kwargs):

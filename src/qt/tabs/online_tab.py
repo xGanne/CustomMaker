@@ -17,8 +17,10 @@ if QT_AVAILABLE:
         QLabel,
         QLineEdit,
         QPushButton,
+        QSplitter,
         QVBoxLayout,
         QWidget,
+        Qt,
     )
 
 
@@ -38,6 +40,8 @@ SORT_TAGS = {
     "Melhor avaliados": "order:score",
     "Mais favoritos": "order:favcount",
 }
+
+_HISTORY_MAX = 15
 
 
 if QT_AVAILABLE:
@@ -60,11 +64,17 @@ if QT_AVAILABLE:
 
             layout = QVBoxLayout(self)
 
+            # ── Busca ──────────────────────────────────────────────────────
             search_group = QGroupBox("Busca Online")
             search_layout = QVBoxLayout(search_group)
-            self.search_edit = QLineEdit()
-            self.search_edit.setPlaceholderText("Tags (ex: hatsune_miku)")
-            self.search_edit.returnPressed.connect(self.search)
+
+            # A5: search history combo instead of plain QLineEdit
+            self.search_combo = QComboBox()
+            self.search_combo.setEditable(True)
+            self.search_combo.setInsertPolicy(QComboBox.NoInsert)
+            self.search_combo.lineEdit().setPlaceholderText("Tags (ex: hatsune_miku)")
+            self.search_combo.lineEdit().returnPressed.connect(self.search)
+            self._load_search_history()
 
             filter_row = QHBoxLayout()
             self.rating_combo = QComboBox()
@@ -76,19 +86,38 @@ if QT_AVAILABLE:
             filter_row.addWidget(self.rating_combo)
             filter_row.addWidget(self.sort_combo)
             filter_row.addWidget(self.search_button)
-            search_layout.addWidget(self.search_edit)
-            search_layout.addLayout(filter_row)
 
+            # A6: blacklist row
+            blacklist_row = QHBoxLayout()
+            blacklist_label = QLabel("Excluir tags:")
+            blacklist_label.setFixedWidth(70)
+            self.blacklist_edit = QLineEdit()
+            self.blacklist_edit.setPlaceholderText("gore violence nsfw (separadas por espaço)")
+            saved_blacklist = self.main_window.app_config.get("danbooru_tag_blacklist", "")
+            self.blacklist_edit.setText(saved_blacklist)
+            self.blacklist_edit.editingFinished.connect(self._save_blacklist)
+            blacklist_row.addWidget(blacklist_label)
+            blacklist_row.addWidget(self.blacklist_edit)
+
+            search_layout.addWidget(self.search_combo)
+            search_layout.addLayout(filter_row)
+            search_layout.addLayout(blacklist_row)
+
+            # ── Resultados + painel de detalhe (A4) ───────────────────────
             result_group = QGroupBox("Resultados")
-            result_layout = QVBoxLayout(result_group)
+            result_outer = QHBoxLayout(result_group)
+
+            result_left = QVBoxLayout()
+
             self.results_grid = DanbooruResultsGrid(
                 self.main_window.app_config,
                 self.client,
                 result_group,
                 selection_state=self.selection_state,
             )
-            self.results_grid.selection_count_changed.connect(self._update_selection_summary)
+            self.results_grid.selection_count_changed.connect(self._on_selection_count_changed)
             self.results_grid.image_open_requested.connect(self.open_image_viewer)
+            self.results_grid.image_import_requested.connect(self._import_single_post)  # A2
 
             self.summary_label = QLabel("Nenhuma busca executada.")
             self.summary_label.setWordWrap(True)
@@ -111,19 +140,66 @@ if QT_AVAILABLE:
             self.import_button.clicked.connect(self.import_selected)
             self.expand_button = QPushButton("Expandir")
             self.expand_button.clicked.connect(self.open_expanded_gallery)
+            # A3: select all / clear selection
+            self.select_all_button = QPushButton("Sel. Todos")
+            self.select_all_button.clicked.connect(self._select_all_on_page)
+            self.clear_sel_button = QPushButton("Limpar Seleção")
+            self.clear_sel_button.clicked.connect(self._clear_selection)
+
             actions_row.addWidget(self.download_button)
             actions_row.addWidget(self.import_button)
             actions_row.addWidget(self.expand_button)
+            actions_row.addStretch(1)
+            actions_row.addWidget(self.select_all_button)
+            actions_row.addWidget(self.clear_sel_button)
 
-            result_layout.addWidget(self.results_grid)
-            result_layout.addLayout(pagination_row)
-            result_layout.addLayout(actions_row)
+            result_left.addWidget(self.results_grid)
+            result_left.addLayout(pagination_row)
+            result_left.addLayout(actions_row)
+
+            # A4: detail panel (right side, collapsible)
+            self.detail_panel = _PostDetailPanel(self)
+            self.detail_panel.setFixedWidth(210)
+            self.detail_panel.tag_clicked.connect(self._add_tag_from_detail)
+
+            result_outer.addLayout(result_left, 1)
+            result_outer.addWidget(self.detail_panel)
 
             layout.addWidget(search_group)
             layout.addWidget(result_group)
 
+            # bind autocomplete to the combo's line edit
+            self.search_edit = self.search_combo.lineEdit()
             self.autocomplete = DanbooruAutocomplete(self.search_edit, self.client)
             self._update_page_controls()
+
+        # ── A5: history helpers ────────────────────────────────────────────
+        def _load_search_history(self):
+            history = self.main_window.app_config.get("danbooru_search_history") or []
+            self.search_combo.blockSignals(True)
+            self.search_combo.clear()
+            for entry in history:
+                self.search_combo.addItem(entry)
+            self.search_combo.setCurrentIndex(-1)
+            self.search_combo.lineEdit().clear()
+            self.search_combo.blockSignals(False)
+
+        def _push_search_history(self, query):
+            if not query:
+                return
+            history = list(self.main_window.app_config.get("danbooru_search_history") or [])
+            if query in history:
+                history.remove(query)
+            history.insert(0, query)
+            history = history[:_HISTORY_MAX]
+            self.main_window.app_config.set("danbooru_search_history", history)
+            self.main_window.app_config.save()
+            self._load_search_history()
+
+        # ── A6: blacklist ─────────────────────────────────────────────────
+        def _save_blacklist(self):
+            self.main_window.app_config.set("danbooru_tag_blacklist", self.blacklist_edit.text().strip())
+            self.main_window.app_config.save()
 
         def close(self):
             if self._active_search_task_id and self.main_window.task_runner.is_running(self._active_search_task_id):
@@ -144,6 +220,12 @@ if QT_AVAILABLE:
                 parts.append(rating_tag)
             if sort_tag:
                 parts.append(sort_tag)
+            # A6: inject blacklist exclusions
+            blacklist = self.blacklist_edit.text().strip()
+            for tag in blacklist.split():
+                tag = tag.strip()
+                if tag and not tag.startswith("-"):
+                    parts.append(f"-{tag}")
             return " ".join(part for part in parts if part).strip()
 
         def _set_results_summary(self):
@@ -171,6 +253,69 @@ if QT_AVAILABLE:
                     merged.append(post)
             return merged
 
+        # ── A3: select all / clear ─────────────────────────────────────────
+        def _select_all_on_page(self):
+            self.results_grid.select_all_on_page()
+
+        def _clear_selection(self):
+            self.results_grid.clear_selection()
+            self.detail_panel.clear()
+
+        # ── A4: detail panel integration ───────────────────────────────────
+        def _on_selection_count_changed(self, count):
+            self._update_selection_summary(count)
+            # update detail panel with the last selected post
+            selected = list(self.selection_state.selected_posts_details.values())
+            if len(selected) == 1:
+                self.detail_panel.show_post(selected[0])
+            elif selected:
+                self.detail_panel.show_multi(len(selected))
+            else:
+                self.detail_panel.clear()
+
+        def _add_tag_from_detail(self, tag):
+            """A4: clicking a tag in the detail panel appends it to search."""
+            current = self.search_edit.text().strip()
+            if tag not in current.split():
+                self.search_edit.setText((current + " " + tag).strip())
+
+        # ── A2: single-post import via double-click ────────────────────────
+        def _import_single_post(self, post):
+            target_dir = self._resolve_import_directory()
+            if not target_dir:
+                self.main_window.show_warning("Importar", "Abra uma pasta na edição antes de importar imagens.")
+                return
+
+            file_url = post.get("file_url") or post.get("large_file_url") or post.get("sample_url")
+            if not file_url:
+                self.main_window.show_warning("Importar", f"Post #{post.get('id')}: URL não encontrada.")
+                return
+
+            def task_fn(_cancel_event, on_progress):
+                if on_progress:
+                    on_progress(0, 1, f"Baixando #{post.get('id')}...")
+                data = self.client.download_image(file_url)
+                if not data:
+                    raise RuntimeError(f"Post #{post.get('id')}: download falhou.")
+                filename = f"{post.get('id')}.{post.get('file_ext', 'png')}"
+                path = os.path.join(target_dir, filename)
+                with open(path, "wb") as f:
+                    f.write(data)
+                if on_progress:
+                    on_progress(1, 1, "Concluído.")
+                return {"path": path}
+
+            def on_done(result):
+                self.main_window.add_images([result["path"]], replace=False, select_last=True)
+                self.main_window.show_status(f"Importado: {os.path.basename(result['path'])}")
+
+            self.main_window.run_task(
+                f"qt_import_single_{post.get('id')}",
+                f"Importando #{post.get('id')}",
+                task_fn,
+                on_done=on_done,
+            )
+
         def search(self, page=1, use_active_tags=False):
             tags = self._active_search_tags if use_active_tags else self._build_tags()
             if not tags:
@@ -185,6 +330,11 @@ if QT_AVAILABLE:
                 self._active_search_tags = tags
                 self._active_query_label = self.search_edit.text().strip() or tags
                 self.results_grid.clear_selection()
+                self.detail_panel.clear()
+                # A5: save to history (raw query without filters/blacklist)
+                raw_query = self.search_edit.text().strip()
+                if raw_query:
+                    self._push_search_history(raw_query)
 
             self._has_next_page = False
             self.search_button.setEnabled(False)
@@ -390,6 +540,7 @@ if QT_AVAILABLE:
                 title=f"Galeria Expandida - {self._active_query_label or 'Danbooru'}",
             )
             dialog.grid.image_open_requested.connect(self.open_image_viewer)
+            dialog.grid.image_import_requested.connect(self._import_single_post)
             dialog.grid.selection_count_changed.connect(self._handle_expanded_selection_changed)
             dialog.destroyed.connect(lambda *_args: setattr(self, "_expanded_dialog", None))
             dialog.showMaximized()
@@ -401,6 +552,79 @@ if QT_AVAILABLE:
             viewer.showMaximized()
             viewer.show()
             self._image_viewer = viewer
+
+
+    class _PostDetailPanel(QWidget):
+        """A4: sidebar showing details of the currently selected post."""
+        if QT_AVAILABLE:
+            from src.qt.compat import Signal
+            tag_clicked = Signal(str)
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(6, 6, 6, 6)
+            layout.setSpacing(4)
+
+            self._title = QLabel("<b>Detalhe</b>")
+            self._title.setWordWrap(True)
+            self._info = QLabel("")
+            self._info.setWordWrap(True)
+            self._info.setAlignment(Qt.AlignTop)
+            self._tags_label = QLabel("<b>Tags:</b>")
+            self._tags_container = QWidget()
+            self._tags_layout = QVBoxLayout(self._tags_container)
+            self._tags_layout.setContentsMargins(0, 0, 0, 0)
+            self._tags_layout.setSpacing(2)
+
+            layout.addWidget(self._title)
+            layout.addWidget(self._info)
+            layout.addWidget(self._tags_label)
+            layout.addWidget(self._tags_container)
+            layout.addStretch(1)
+
+        def clear(self):
+            self._title.setText("<b>Detalhe</b>")
+            self._info.setText("")
+            self._tags_label.hide()
+            self._clear_tags()
+
+        def show_multi(self, count):
+            self._title.setText(f"<b>{count} selecionados</b>")
+            self._info.setText("")
+            self._tags_label.hide()
+            self._clear_tags()
+
+        def show_post(self, post):
+            post_id = post.get("id", "?")
+            score = post.get("score", "?")
+            rating = post.get("rating", "?")
+            w = post.get("image_width", "?")
+            h = post.get("image_height", "?")
+            uploader = post.get("uploader_name") or post.get("uploader_id", "?")
+            self._title.setText(f"<b>#{post_id}</b>")
+            self._info.setText(
+                f"⭐ Score: {score}\n"
+                f"Rating: {rating}\n"
+                f"Tamanho: {w}×{h}\n"
+                f"Upload: {uploader}"
+            )
+            self._tags_label.show()
+            self._clear_tags()
+            tags = (post.get("tag_string", "") or "").split()
+            for tag in tags[:12]:
+                btn = QPushButton(tag)
+                btn.setFlat(True)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.clicked.connect(lambda _checked, t=tag: self.tag_clicked.emit(t))
+                self._tags_layout.addWidget(btn)
+
+        def _clear_tags(self):
+            while self._tags_layout.count():
+                child = self._tags_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+
 else:
     class OnlineTab:
         def __init__(self, *_args, **_kwargs):

@@ -95,6 +95,11 @@ if QT_AVAILABLE:
             self.animation_combo.addItems(ANIMATION_OPTIONS)
             self.animation_combo.currentTextChanged.connect(self._on_animation_changed)
             style_layout.addWidget(self.animation_combo)
+            # B5: apply style to all images
+            apply_all_button = QPushButton("Aplicar a Todas")
+            apply_all_button.setToolTip("Aplica a borda e animação atuais a todas as imagens da lista")
+            apply_all_button.clicked.connect(self.main_window.apply_style_to_all)
+            style_layout.addWidget(apply_all_button)
 
             save_group = QGroupBox("Saída")
             save_layout = QVBoxLayout(save_group)

@@ -30,6 +30,7 @@ if QT_AVAILABLE:
         selection_count_changed = Signal(int)
         thumbnail_ready = Signal(int, object, object)
         image_open_requested = Signal(object)
+        image_import_requested = Signal(object)  # A2: double-click to import
 
         def __init__(self, app_config, client, parent=None, selection_state=None):
             super().__init__(parent)
@@ -55,10 +56,10 @@ if QT_AVAILABLE:
             self.setMovement(QListView.Static)
             self.setSpacing(10)
             self.setIconSize(QSize(180, 180))
-            self.setGridSize(QSize(196, 236))
+            self.setGridSize(QSize(196, 256))  # taller to fit score line
             self.setSelectionMode(QAbstractItemView.MultiSelection)
             self.itemSelectionChanged.connect(self._sync_selection_state)
-            self.itemDoubleClicked.connect(self._open_item)
+            self.itemDoubleClicked.connect(self._on_double_click)  # A2
             self.setContextMenuPolicy(Qt.CustomContextMenu)
             self.customContextMenuRequested.connect(self._show_context_menu)
             self.thumbnail_ready.connect(self._apply_thumbnail)
@@ -144,6 +145,24 @@ if QT_AVAILABLE:
             pixmap.fill(Qt.transparent)
             return pixmap
 
+        @staticmethod
+        def _build_item_text(post):
+            """A1: show id, rating, score and dimensions."""
+            post_id = post.get("id", "?")
+            rating = post.get("rating", "?")
+            score = post.get("score")
+            width = post.get("image_width")
+            height = post.get("image_height")
+
+            line1 = f"#{post_id}  {rating}"
+            parts = []
+            if score is not None:
+                parts.append(f"⭐{score}")
+            if width and height:
+                parts.append(f"{width}×{height}")
+            line2 = "  ".join(parts) if parts else ""
+            return f"{line1}\n{line2}" if line2 else line1
+
         def display_loading(self):
             self._generation += 1
             self._syncing_selection = True
@@ -175,8 +194,7 @@ if QT_AVAILABLE:
                     or post.get("file_url")
                     or post.get("large_file_url")
                 )
-                rating = post.get("rating", "?")
-                item = QListWidgetItem(QIcon(self._placeholder_pixmap()), f"#{post.get('id')}\n{rating}")
+                item = QListWidgetItem(QIcon(self._placeholder_pixmap()), self._build_item_text(post))
                 item.setData(Qt.UserRole, post)
                 item.setToolTip((post.get("tag_string", "") or "").replace(" ", ", "))
                 self.addItem(item)
@@ -255,10 +273,21 @@ if QT_AVAILABLE:
             self._syncing_selection = False
             self.selection_count_changed.emit(0)
 
-        def _open_item(self, item):
+        def select_all_on_page(self):
+            """A3: select every selectable item on the current page."""
+            self._syncing_selection = True
+            for i in range(self.count()):
+                item = self.item(i)
+                if item and (item.flags() & Qt.ItemIsSelectable):
+                    item.setSelected(True)
+            self._syncing_selection = False
+            self._sync_selection_state()
+
+        def _on_double_click(self, item):
+            """A2: double-click imports the post directly."""
             post = item.data(Qt.UserRole)
             if post:
-                self.image_open_requested.emit(post)
+                self.image_import_requested.emit(post)
 
         def _show_context_menu(self, pos):
             item = self.itemAt(pos)
@@ -268,9 +297,12 @@ if QT_AVAILABLE:
             if not post:
                 return
             menu = QMenu(self)
+            import_action = menu.addAction("Importar para Lista")
             open_action = menu.addAction("Abrir em Tela Cheia")
             chosen = menu.exec(self.mapToGlobal(pos))
-            if chosen == open_action:
+            if chosen == import_action:
+                self.image_import_requested.emit(post)
+            elif chosen == open_action:
                 self.image_open_requested.emit(post)
 else:
     class DanbooruResultsGrid:

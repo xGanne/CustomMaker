@@ -114,7 +114,14 @@ if QT_AVAILABLE:
             self.image_canvas.border_pos_changed.connect(self.on_border_pos_changed)
             self.image_canvas.interaction_started.connect(self.save_state_for_undo)
             self.image_canvas.color_picked.connect(self.on_canvas_color_picked)
+            self.image_canvas.zoom_changed.connect(self._on_zoom_changed)  # B4
             left_layout.addWidget(self.image_canvas)
+            # B1: image counter label below canvas
+            from src.qt.compat import QLabel as _QLabel
+            self._image_counter_label = _QLabel("")
+            self._image_counter_label.setAlignment(Qt.AlignCenter)
+            self._image_counter_label.setStyleSheet("color: #888; font-size: 11px; padding: 2px;")
+            left_layout.addWidget(self._image_counter_label)
             splitter.addWidget(left_widget)
 
             right_widget = QWidget(self)
@@ -134,6 +141,7 @@ if QT_AVAILABLE:
             self.image_list_panel.selection_changed.connect(self.load_image)
             self.image_list_panel.remove_requested.connect(self.remove_image_at)
             self.image_list_panel.toggle_individual_requested.connect(self.toggle_individual_border)
+            self.image_list_panel.order_changed.connect(self._on_image_list_reordered)  # C1
             right_layout.addWidget(self.tabs, 3)
             right_layout.addWidget(self.image_list_panel, 2)
             splitter.addWidget(right_widget)
@@ -149,12 +157,50 @@ if QT_AVAILABLE:
                 ("Ctrl+E", lambda: self.rotate_current_image("right")),
                 ("Ctrl+Z", self.undo_current_image),
                 ("Ctrl+V", self.paste_image),
+                # B2: navigate images with arrow keys
+                ("Left", lambda: self.navigate_images(-1)),
+                ("Right", lambda: self.navigate_images(1)),
             ]
             for sequence, handler in shortcuts:
                 action = QAction(self)
                 action.setShortcut(QKeySequence(sequence))
                 action.triggered.connect(handler)
                 self.addAction(action)
+
+        # B2: image navigation
+        def navigate_images(self, delta):
+            image_list = self.editor_state.image_list or []
+            if not image_list:
+                return
+            current = self.current_path
+            try:
+                idx = image_list.index(current)
+            except ValueError:
+                idx = 0
+            new_idx = max(0, min(len(image_list) - 1, idx + delta))
+            if new_idx != idx:
+                self.image_list_panel.set_current_index(new_idx)
+                self.load_image(new_idx)
+
+        # B1: update image counter label
+        def _update_image_counter(self):
+            image_list = self.editor_state.image_list or []
+            total = len(image_list)
+            if total == 0:
+                self._image_counter_label.setText("")
+                return
+            current = self.current_path
+            try:
+                idx = image_list.index(current) + 1
+            except ValueError:
+                idx = 0
+            filename = os.path.basename(current) if current else ""
+            self._image_counter_label.setText(f"{filename}  ·  {idx} / {total}")
+
+        # B4: zoom indicator
+        def _on_zoom_changed(self, factor):
+            pct = int(round(factor * 100))
+            self.show_status(f"Zoom: {pct}%", timeout_ms=2000)
 
         def show_status(self, message, timeout_ms=5000):
             self.statusBar().showMessage(message, timeout_ms)
@@ -500,6 +546,7 @@ if QT_AVAILABLE:
             self.current_path = path
             self.editor_state.current_image_index = index
             self.image_list_panel.set_current_index(index)
+            self._update_image_counter()  # B1
             self.editor_state.borda_pos = self.image_canvas.border_pos
             self.editor_tab.refresh_from_state()
             display_image = self.edited_images.get(path) or self._get_preview_cache_copy(path)
@@ -778,6 +825,40 @@ if QT_AVAILABLE:
                 self.show_status("Modo Pick Color ativo. Clique sobre a imagem.")
             else:
                 self.show_status("Modo Pick Color desativado.")
+
+        # C2: before/after toggle (hold backtick key)
+        def keyPressEvent(self, event):
+            if event.key() == Qt.Key_QuoteLeft and not event.isAutoRepeat():
+                self.image_canvas.show_original_preview()
+                self.show_status("Antes (original) — solte a tecla para voltar.", timeout_ms=10000)
+            else:
+                super().keyPressEvent(event)
+
+        def keyReleaseEvent(self, event):
+            if event.key() == Qt.Key_QuoteLeft and not event.isAutoRepeat():
+                self.image_canvas.restore_edit_preview()
+                self.show_status("Depois (editado).", timeout_ms=2000)
+            else:
+                super().keyReleaseEvent(event)
+
+        # C1: sync editor_state after drag-reorder in image list
+        def _on_image_list_reordered(self, new_paths):
+            self.editor_state.image_list = list(new_paths)
+            self._update_image_counter()
+
+        # B5: apply current border/animation to all images
+        def apply_style_to_all(self):
+            image_list = self.editor_state.image_list or []
+            if not image_list:
+                self.show_warning("Aplicar a Todas", "Nenhuma imagem na lista.")
+                return
+            state = self.editor_state
+            for path in image_list:
+                state.individual_bordas[path] = state.selected_borda
+                if state.selected_borda == "Cor Personalizada":
+                    state.custom_borda_hex_individual[path] = state.custom_borda_hex
+            self.refresh_current_canvas()
+            self.show_status(f"Borda '{state.selected_borda}' aplicada a {len(image_list)} imagem(ns).")
 
         def on_canvas_color_picked(self, color):
             self._color_picker_enabled = False
