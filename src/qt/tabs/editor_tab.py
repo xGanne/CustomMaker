@@ -49,20 +49,23 @@ if QT_AVAILABLE:
 
             # ── Ajuste em lote ─────────────────────────────────────────────
             fit_group = QGroupBox("Ajuste em Lote")
-            fit_layout = QHBoxLayout(fit_group)
+            fit_layout = QVBoxLayout(fit_group)
             fit_layout.setSpacing(6)
 
+            fit_row1 = QHBoxLayout()
             auto_fit_all_btn = QPushButton("Auto Fit — Todas")
             auto_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("auto_fit"))
             smart_fit_all_btn = QPushButton("Inteligente — Todas")
             smart_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("intelligent_fit"))
-            copy_frame_btn = QPushButton("Copiar Enquadramento")
+            fit_row1.addWidget(auto_fit_all_btn)
+            fit_row1.addWidget(smart_fit_all_btn)
+
+            copy_frame_btn = QPushButton("Copiar Enquadramento para Todas")
             copy_frame_btn.setProperty("class", "secondary")
             copy_frame_btn.setToolTip("Aplica o enquadramento (pos+tamanho) da imagem atual a todas as outras")
             copy_frame_btn.clicked.connect(self.main_window.copy_framing_to_all)
 
-            fit_layout.addWidget(auto_fit_all_btn)
-            fit_layout.addWidget(smart_fit_all_btn)
+            fit_layout.addLayout(fit_row1)
             fit_layout.addWidget(copy_frame_btn)
 
             # ── Saída ──────────────────────────────────────────────────────
