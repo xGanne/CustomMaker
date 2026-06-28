@@ -34,6 +34,7 @@ try:
         QDialogButtonBox,
         QScrollArea,
         QSizePolicy,
+        QSlider,
         QSplitter,
         QStatusBar,
         QTabWidget,

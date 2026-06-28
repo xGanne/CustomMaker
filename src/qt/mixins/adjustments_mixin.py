@@ -93,9 +93,14 @@ class AdjustmentsMixin:
                 working = self.edited_images.get(path)
                 should_close = False
                 if working is None:
-                    with Image.open(path) as source:
-                        working = source.convert("RGBA")
-                    should_close = True
+                    cached = self._get_preview_cache_copy(path)
+                    if cached is not None:
+                        working = cached
+                        should_close = True
+                    else:
+                        with Image.open(path) as source:
+                            working = source.convert("RGBA")
+                        should_close = True
 
                 try:
                     if adjustment_name == "auto_fit":
@@ -138,6 +143,25 @@ class AdjustmentsMixin:
             on_done=on_done,
             maximum=max(1, len(self.editor_state.image_list)),
         )
+
+    def copy_framing_to_all(self):
+        if not self.current_path:
+            self.show_warning("Enquadramento", "Nenhuma imagem selecionada.")
+            return
+        state = self.editor_state.image_states.get(self.current_path)
+        if not state:
+            self.show_warning("Enquadramento", "A imagem atual não tem enquadramento definido.")
+            return
+        image_list = self.editor_state.image_list or []
+        if len(image_list) <= 1:
+            self.show_warning("Enquadramento", "Não há outras imagens na lista.")
+            return
+        pos = state["pos"]
+        size = state["size"]
+        for path in image_list:
+            if path != self.current_path:
+                self.editor_state.set_image_state(path, pos, size)
+        self.show_status(f"Enquadramento copiado para {len(image_list) - 1} imagem(ns).")
 
     def apply_style_to_all(self):
         image_list = self.editor_state.image_list or []

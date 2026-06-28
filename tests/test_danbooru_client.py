@@ -77,7 +77,7 @@ class TestDanbooruClient(unittest.TestCase):
             image = client.download_image("https://example.com/test.png")
 
         self.assertEqual(posts, [{"id": 1}])
-        self.assertEqual(tags, ["miku"])
+        self.assertEqual([t["name"] for t in tags], ["miku"])
         self.assertEqual(image, b"image-bytes")
         self.assertEqual(calls[0]["timeout"], 12)
         self.assertEqual(calls[1]["timeout"], 7)

@@ -147,6 +147,11 @@ if QT_AVAILABLE:
             self.maximize_button = QPushButton("Maximizar")
             self.maximize_button.clicked.connect(self._toggle_maximized)
 
+            import_button = QPushButton("Importar para Lista")
+            import_button.setToolTip("Adicionar esta imagem à lista de edição")
+            import_button.clicked.connect(self._import_to_list)
+
+            controls.addWidget(import_button)
             controls.addWidget(self.copy_url_button)
             controls.addWidget(zoom_out_button)
             controls.addWidget(fit_button)
@@ -213,6 +218,11 @@ if QT_AVAILABLE:
                 self.rotate_left()
             elif chosen == right_action:
                 self.rotate_right()
+
+        def _import_to_list(self):
+            parent = self.parent()
+            if parent is not None and hasattr(parent, "_import_single_post"):
+                parent._import_single_post(self.post)
 
         def _copy_image_url(self):
             file_url = self.post.get("file_url") or self.post.get("large_file_url") or self.post.get("preview_file_url")

@@ -160,7 +160,11 @@ class DanbooruClient:
             )
             if response.status_code == 200:
                 data = response.json()
-                return [t["name"] for t in data if "name" in t]
+                return [
+                    {"name": t["name"], "post_count": t.get("post_count", 0)}
+                    for t in data
+                    if "name" in t
+                ]
             return []
         except requests.exceptions.RequestException as exc:
             logger.debug("Falha ao buscar tags Danbooru para query='%s': %s", query, exc)

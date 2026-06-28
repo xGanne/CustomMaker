@@ -24,5 +24,10 @@
     "thumbnail_batch_interval_ms": 40,
     "thumbnail_memory_cache_mb": 64,
     "thumbnail_disk_cache_mb": 512,
-    "image_cache_max_mb": 256
+    "image_cache_max_mb": 256,
+    "danbooru_search_history": [
+        "pandora_(kid_icarus)",
+        "lacrimosa_(nte)"
+    ],
+    "danbooru_tag_blacklist": ""
 }

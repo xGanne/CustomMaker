@@ -192,8 +192,9 @@ class ImageLoaderMixin:
             target_index = 0
         self.load_image(target_index)
 
-    def load_folder(self):
-        folder = self.choose_directory("Selecione a pasta de imagens")
+    def load_folder(self, folder=None):
+        if not folder:
+            folder = self.choose_directory("Selecione a pasta de imagens")
         if not folder:
             return
         paths = [
@@ -202,7 +203,18 @@ class ImageLoaderMixin:
             if os.path.isfile(os.path.join(folder, name)) and name.lower().endswith(SUPPORTED_EXTENSIONS)
         ]
         self.add_images(paths, replace=True)
+        self._push_recent_folder(folder)
         self.show_status(f"{len(paths)} imagem(ns) carregada(s).")
+
+    def _push_recent_folder(self, folder):
+        recent = list(self.app_config.get("recent_folders") or [])
+        if folder in recent:
+            recent.remove(folder)
+        recent.insert(0, folder)
+        self.app_config.set("recent_folders", recent[:8])
+        self.app_config.save()
+        if hasattr(self, "_update_recent_folders_menu"):
+            self._update_recent_folders_menu()
 
     def get_active_image_copy(self):
         if not self.current_path:
@@ -224,6 +236,7 @@ class ImageLoaderMixin:
         if not self.current_path:
             return
         self.edited_images[self.current_path] = image.copy()
+        self.editor_state.mark_pixels_edited(self.current_path)
         self._remember_preview_cache(self.current_path, self.edited_images[self.current_path])
         state = self.editor_state.image_states.get(self.current_path)
         self.image_canvas.set_image(
@@ -232,6 +245,8 @@ class ImageLoaderMixin:
             border_color=self.editor_state.resolve_border_hex(BORDA_HEX, self.current_path),
         )
         self._update_preview_animation()
+        if hasattr(self, "refresh_list_indicators"):
+            self.refresh_list_indicators()
 
     def load_image(self, index):
         if index is None or index < 0 or index >= len(self.editor_state.image_list):

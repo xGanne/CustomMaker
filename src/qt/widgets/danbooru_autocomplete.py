@@ -121,6 +121,14 @@ if QT_AVAILABLE:
 
             future.add_done_callback(on_done)
 
+        @staticmethod
+        def _fmt_count(n):
+            if n >= 1_000_000:
+                return f"{n / 1_000_000:.1f}M"
+            if n >= 1_000:
+                return f"{n / 1_000:.1f}k"
+            return str(n)
+
         def _apply_suggestions(self, query_seq, suggestions):
             if query_seq != self._active_query_seq:
                 return
@@ -129,7 +137,16 @@ if QT_AVAILABLE:
                 return
             self.popup.clear()
             for suggestion in suggestions:
-                self.popup.addItem(QListWidgetItem(suggestion))
+                if isinstance(suggestion, dict):
+                    name = suggestion["name"]
+                    count = suggestion.get("post_count", 0)
+                    label = f"{name}  ({self._fmt_count(count)})" if count else name
+                    item = QListWidgetItem(label)
+                    item.setData(Qt.UserRole, name)
+                else:
+                    item = QListWidgetItem(suggestion)
+                    item.setData(Qt.UserRole, suggestion)
+                self.popup.addItem(item)
             self.popup.setCurrentRow(0)
             self._show_popup()
 
@@ -143,7 +160,7 @@ if QT_AVAILABLE:
             self.popup.raise_()
 
         def _apply_item(self, item):
-            selection = item.text()
+            selection = item.data(Qt.UserRole) or item.text()
             cursor_pos = self.entry.cursorPosition()
             full_text = self.entry.text()
             text_before = full_text[:cursor_pos]

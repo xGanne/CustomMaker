@@ -51,6 +51,7 @@ if QT_AVAILABLE:
         QLabel,
         QLineEdit,
         QMainWindow,
+        QMenu,
         QMessageBox,
         QPushButton,
         QSplitter,
@@ -224,7 +225,11 @@ if QT_AVAILABLE:
                 btn.clicked.connect(handler)
                 return btn
 
-            toolbar.addWidget(_tool_btn("folder-open", "Selecionar Pasta", self.load_folder, "Ctrl+O"))
+            from src.qt.compat import QMenu
+            self._folder_btn = _tool_btn("folder-open", "Selecionar Pasta  (clique direito: recentes)", self.load_folder, "Ctrl+O")
+            self._folder_btn.setContextMenuPolicy(Qt.CustomContextMenu)
+            self._folder_btn.customContextMenuRequested.connect(self._show_recent_folders_menu)
+            toolbar.addWidget(self._folder_btn)
             toolbar.addWidget(_tool_btn("clipboard", "Colar Imagem", self.paste_image, "Ctrl+V"))
             toolbar.addWidget(_tool_btn("arrow-uturn-left", "Desfazer", self.undo_current_image, "Ctrl+Z"))
             toolbar.addSeparator()
@@ -238,6 +243,8 @@ if QT_AVAILABLE:
             toolbar.addSeparator()
             toolbar.addWidget(_tool_btn("rotate-left", "Rotacionar Esquerda", lambda: self.rotate_current_image("left"), "Ctrl+Q"))
             toolbar.addWidget(_tool_btn("rotate-right", "Rotacionar Direita", lambda: self.rotate_current_image("right"), "Ctrl+E"))
+            toolbar.addSeparator()
+            toolbar.addWidget(_tool_btn("cog", "Configurações", self._open_settings))
 
         def _build_options_bar(self, parent_widget, parent_layout):
             bar = QWidget(parent_widget)
@@ -540,6 +547,32 @@ if QT_AVAILABLE:
         def _on_image_list_reordered(self, new_paths):
             self.editor_state.image_list = list(new_paths)
             self._update_image_counter()
+
+        def _open_settings(self):
+            from src.qt.dialogs.settings_dialog import SettingsDialog
+            dialog = SettingsDialog(self.app_config, parent=self)
+            dialog.exec()
+
+        def _show_recent_folders_menu(self, pos):
+            from src.qt.compat import QMenu
+            recent = self.app_config.get("recent_folders") or []
+            if not recent:
+                self.show_status("Nenhuma pasta recente.")
+                return
+            menu = QMenu(self)
+            for folder in recent:
+                action = menu.addAction(folder)
+                action.triggered.connect(lambda _checked, f=folder: self.load_folder(f))
+            menu.exec(self._folder_btn.mapToGlobal(pos))
+
+        def _update_recent_folders_menu(self):
+            pass  # menu is built dynamically on each right-click
+
+        def refresh_list_indicators(self):
+            self.image_list_panel.update_indicators(
+                set(self.edited_images.keys()),
+                set(self.editor_state.image_states.keys()),
+            )
 
         # ── Colar da área de transferência ────────────────────────────────
 

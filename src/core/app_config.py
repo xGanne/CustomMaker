@@ -58,6 +58,7 @@ DEFAULT_CONFIG = {
     "image_cache_max_mb": IMAGE_CACHE_MAX_MB_DEFAULT,
     "danbooru_search_history": [],
     "danbooru_tag_blacklist": "",
+    "recent_folders": [],
 }
 
 

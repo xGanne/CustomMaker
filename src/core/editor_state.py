@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from src.core.app_config import DEFAULT_CONFIG
 
@@ -19,6 +19,7 @@ class EditorState:
     animation_type: str = "Nenhuma"
     uploaded_links: List[str] = field(default_factory=list)
     borda_pos: Tuple[int, int] = (0, 0)
+    image_dirty: Set[str] = field(default_factory=set)
 
     @property
     def current_image_path(self) -> Optional[str]:
@@ -47,9 +48,14 @@ class EditorState:
 
     def set_image_state(self, path: str, pos: Tuple[int, int], size: Tuple[int, int]) -> None:
         self.image_states[path] = {"pos": pos, "size": size}
+        self.image_dirty.add(path)
+
+    def mark_pixels_edited(self, path: str) -> None:
+        self.image_dirty.add(path)
 
     def remove_image(self, path: str) -> None:
         self.image_states.pop(path, None)
+        self.image_dirty.discard(path)
         self.individual_bordas.pop(path, None)
         self.custom_borda_hex_individual.pop(path, None)
         self.uploaded_links = [link for link in self.uploaded_links if path not in link]
@@ -71,6 +77,7 @@ class EditorState:
         self.individual_bordas.clear()
         self.custom_borda_hex_individual.clear()
         self.uploaded_links.clear()
+        self.image_dirty.clear()
 
 
 @dataclass

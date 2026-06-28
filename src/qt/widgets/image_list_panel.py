@@ -60,7 +60,7 @@ if QT_AVAILABLE:
             )
             self._generation = 0
 
-        def set_paths(self, paths):
+        def set_paths(self, paths, edited_set=None, adjusted_set=None):
             self._generation += 1
             generation = self._generation
             self._paths = list(paths)
@@ -73,6 +73,25 @@ if QT_AVAILABLE:
                 self.list_widget.addItem(item)
                 self._load_thumb_async(item, path, generation)
             self.title.setText(f"Lista de Imagens ({len(paths)})")
+            if edited_set is not None or adjusted_set is not None:
+                self.update_indicators(edited_set or set(), adjusted_set or set())
+
+        def update_indicators(self, edited_set, adjusted_set):
+            from src.qt.compat import QColor
+            for i in range(self.list_widget.count()):
+                item = self.list_widget.item(i)
+                if item is None:
+                    continue
+                path = item.data(Qt.UserRole)
+                if path in edited_set:
+                    item.setForeground(QColor("#1FA971"))
+                    item.setToolTip(f"{path}\n● Pixels editados")
+                elif path in adjusted_set:
+                    item.setForeground(QColor("#E7A83D"))
+                    item.setToolTip(f"{path}\n◉ Enquadramento ajustado")
+                else:
+                    item.setForeground(QColor("#E9EEF8"))
+                    item.setToolTip(path)
 
         def set_current_index(self, index):
             self.list_widget.blockSignals(True)

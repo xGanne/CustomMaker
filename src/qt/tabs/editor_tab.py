@@ -56,9 +56,14 @@ if QT_AVAILABLE:
             auto_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("auto_fit"))
             smart_fit_all_btn = QPushButton("Inteligente — Todas")
             smart_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("intelligent_fit"))
+            copy_frame_btn = QPushButton("Copiar Enquadramento")
+            copy_frame_btn.setProperty("class", "secondary")
+            copy_frame_btn.setToolTip("Aplica o enquadramento (pos+tamanho) da imagem atual a todas as outras")
+            copy_frame_btn.clicked.connect(self.main_window.copy_framing_to_all)
 
             fit_layout.addWidget(auto_fit_all_btn)
             fit_layout.addWidget(smart_fit_all_btn)
+            fit_layout.addWidget(copy_frame_btn)
 
             # ── Saída ──────────────────────────────────────────────────────
             save_group = QGroupBox("Saída")
