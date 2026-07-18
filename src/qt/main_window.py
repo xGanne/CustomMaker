@@ -126,7 +126,16 @@ if QT_AVAILABLE:
             self.setAcceptDrops(True)
             self._build_ui()
             self._register_shortcuts()
-            self.show_status("UI Qt pronta.")
+            if self.face_cascade is None:
+                # M17: sem o cascade, "Ajuste Inteligente" silenciosamente vira
+                # auto fit — avisar uma vez em vez de esconder a degradação
+                self.show_status(
+                    "Detecção de rosto indisponível (lbpcascade_animeface.xml não carregado) — "
+                    "o Ajuste Inteligente usará auto fit.",
+                    timeout_ms=10000,
+                )
+            else:
+                self.show_status("UI Qt pronta.")
 
         # ── Ícone da janela ────────────────────────────────────────────────
 
