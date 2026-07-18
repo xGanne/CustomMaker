@@ -387,11 +387,17 @@ if QT_AVAILABLE:
                 self.current_page = result.get("page") or self.current_page
                 self.posts = result.get("posts") or []
                 self._has_next_page = len(self.posts) >= self._page_size
+                # F22: página vazia após avançar = fim dos resultados; volta
+                # automaticamente para a última página com conteúdo
+                if not self.posts and self.current_page > 1:
+                    self.main_window.show_status("Fim dos resultados — voltando para a página anterior.")
+                    self.search(page=self.current_page - 1, use_active_tags=True)
+                    return
                 self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
                 self._set_results_summary()
                 self._update_page_controls()
                 self.main_window.show_status(
-                    f"Busca concluida: pagina {self.current_page} com {len(self.posts)} resultado(s)."
+                    f"Busca concluída: página {self.current_page} com {len(self.posts)} resultado(s)."
                 )
 
             def on_error(exc):
