@@ -126,6 +126,14 @@ class ExportMixin:
         if not self.editor_state.image_list:
             self.show_warning("Upload", "Nenhuma imagem carregada.")
             return
+        if not getattr(self.uploader, "api_token", None):
+            self.show_warning(
+                "Upload",
+                "Token da API ImgChest não configurado.\n\n"
+                "Edite o arquivo .env na pasta do programa e defina IMG_CHEST_API_TOKEN "
+                "com o seu token real (o valor 'seu_token_aqui' é apenas um modelo).",
+            )
+            return
         from src.qt.compat import QInputDialog
         album_title, ok = QInputDialog.getText(self, "Upload ImgChest", "Título do álbum:")
         if not ok:

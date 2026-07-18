@@ -12,9 +12,20 @@ from src.config.settings import IMG_CHEST_API_TOKEN, UPLOAD_BATCH_SIZE
 logger = logging.getLogger(__name__)
 
 
+# Valor escrito no .env criado automaticamente — não é um token real (F6)
+_PLACEHOLDER_TOKENS = {"seu_token_aqui"}
+
+
+def _normalize_token(token):
+    token = (token or "").strip()
+    if not token or token.lower() in _PLACEHOLDER_TOKENS:
+        return None
+    return token
+
+
 class ImgChestUploader:
     def __init__(self, api_token=None, session: requests.Session = None):
-        self.api_token = api_token or IMG_CHEST_API_TOKEN
+        self.api_token = _normalize_token(api_token) or _normalize_token(IMG_CHEST_API_TOKEN)
         self.session = session or requests.Session()
 
     @staticmethod
@@ -57,7 +68,10 @@ class ImgChestUploader:
         Returns: (uploaded_links, errors)
         """
         if not self.api_token:
-            raise ValueError("Token da API ImgChest nao configurado.")
+            raise ValueError(
+                "Token da API ImgChest não configurado. "
+                "Edite o arquivo .env na pasta do programa e defina IMG_CHEST_API_TOKEN."
+            )
 
         headers = {"Authorization": f"Bearer {self.api_token}"}
         total_images = len(images_data)
