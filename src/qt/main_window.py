@@ -614,7 +614,8 @@ if QT_AVAILABLE:
             # Estas teclas chegam aqui apenas quando o widget focado não as
             # consumiu (ex.: QLineEdit trata Ctrl+V/Ctrl+Z/setas sozinho), então
             # não roubam a edição de texto (F3).
-            if event.key() == Qt.Key_QuoteLeft and not event.isAutoRepeat():
+            # F17: a crase é dead key no teclado ABNT — B (de "before") também funciona
+            if event.key() in (Qt.Key_QuoteLeft, Qt.Key_B) and event.modifiers() == Qt.NoModifier and not event.isAutoRepeat():
                 self.image_canvas.show_original_preview()
                 self.show_status("Antes (original) — solte a tecla para voltar.", timeout_ms=10000)
             elif event.matches(QKeySequence.Paste):
@@ -631,7 +632,7 @@ if QT_AVAILABLE:
                 super().keyPressEvent(event)
 
         def keyReleaseEvent(self, event):
-            if event.key() == Qt.Key_QuoteLeft and not event.isAutoRepeat():
+            if event.key() in (Qt.Key_QuoteLeft, Qt.Key_B) and not event.isAutoRepeat():
                 self.image_canvas.restore_edit_preview()
                 self.show_status("Depois (editado).", timeout_ms=2000)
             else:
