@@ -256,6 +256,13 @@ if QT_AVAILABLE:
             self.zoom_changed.emit(self._zoom_factor)  # B4
             event.accept()
 
+        def keyPressEvent(self, event):
+            # deixa ←/→ subirem até a janela para navegar entre imagens (F3)
+            if event.key() in (Qt.Key_Left, Qt.Key_Right) and event.modifiers() == Qt.NoModifier:
+                event.ignore()
+                return
+            super().keyPressEvent(event)
+
         def mousePressEvent(self, event):
             if self._color_pick_enabled and self.image_item is not None and self._base_image is not None:
                 scene_pos = self.mapToScene(event.position().toPoint())

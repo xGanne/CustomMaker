@@ -352,6 +352,8 @@ if QT_AVAILABLE:
         # ── Atalhos de teclado ─────────────────────────────────────────────
 
         def _register_shortcuts(self):
+            # Ctrl+Z / Ctrl+V / Left / Right são tratados em keyPressEvent para
+            # não roubar as teclas de campos de texto focados (F3).
             shortcuts = [
                 ("Ctrl+O", self.load_folder),
                 ("Ctrl+S", self.save_all_images),
@@ -359,10 +361,6 @@ if QT_AVAILABLE:
                 ("Alt+B", self.apply_auto_fit),
                 ("Ctrl+Q", lambda: self.rotate_current_image("left")),
                 ("Ctrl+E", lambda: self.rotate_current_image("right")),
-                ("Ctrl+Z", self.undo_current_image),
-                ("Ctrl+V", self.paste_image),
-                ("Left", lambda: self.navigate_images(-1)),
-                ("Right", lambda: self.navigate_images(1)),
             ]
             for sequence, handler in shortcuts:
                 action = QAction(self)
@@ -596,9 +594,20 @@ if QT_AVAILABLE:
         # ── Eventos de teclado e drag-drop ────────────────────────────────
 
         def keyPressEvent(self, event):
+            # Estas teclas chegam aqui apenas quando o widget focado não as
+            # consumiu (ex.: QLineEdit trata Ctrl+V/Ctrl+Z/setas sozinho), então
+            # não roubam a edição de texto (F3).
             if event.key() == Qt.Key_QuoteLeft and not event.isAutoRepeat():
                 self.image_canvas.show_original_preview()
                 self.show_status("Antes (original) — solte a tecla para voltar.", timeout_ms=10000)
+            elif event.matches(QKeySequence.Paste):
+                self.paste_image()
+            elif event.matches(QKeySequence.Undo):
+                self.undo_current_image()
+            elif event.key() == Qt.Key_Left and event.modifiers() == Qt.NoModifier:
+                self.navigate_images(-1)
+            elif event.key() == Qt.Key_Right and event.modifiers() == Qt.NoModifier:
+                self.navigate_images(1)
             else:
                 super().keyPressEvent(event)
 
