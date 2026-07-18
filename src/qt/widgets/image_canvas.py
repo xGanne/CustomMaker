@@ -86,6 +86,8 @@ if QT_AVAILABLE:
             # C2: before/after toggle state
             self._before_after_active = False
             self._original_image = None
+            self._saved_edit_pos = None
+            self._saved_edit_size = None
             self._layout_border(initial=True)
 
         @property
@@ -125,6 +127,9 @@ if QT_AVAILABLE:
             self._base_pixmap = None
             self._current_size = None
             self._original_image = None
+            self._before_after_active = False
+            self._saved_edit_pos = None
+            self._saved_edit_size = None
 
         def set_border_color(self, color_hex):
             self._border_color = color_hex
@@ -195,6 +200,12 @@ if QT_AVAILABLE:
             """C2: temporarily show the original unedited image filling the border."""
             if self._original_image is None or self.image_item is None:
                 return
+            if self._before_after_active:
+                return
+            # save the edit placement BEFORE moving anything, and raise the flag
+            # first so the temporary reposition never reaches state_changed
+            self._saved_edit_pos = (self.image_item.pos().x(), self.image_item.pos().y())
+            self._saved_edit_size = self._current_size
             self._before_after_active = True
             orig_pixmap = _pil_to_qpixmap(self._original_image)
             # fit the original inside the border box
@@ -214,12 +225,16 @@ if QT_AVAILABLE:
             """C2: restore the edited state after before/after toggle."""
             if not self._before_after_active or self._base_image is None:
                 return
-            self._before_after_active = False
             self.image_item.setPixmap(self._base_pixmap)
-            self._apply_size_transform(self._current_size)
-            self.image_item.setPos(*self._current_size and (
-                int(self.image_item.pos().x()), int(self.image_item.pos().y())
-            ))
+            if self._saved_edit_size is not None:
+                self._apply_size_transform(self._saved_edit_size)
+            if self._saved_edit_pos is not None:
+                self.image_item.setPos(*self._saved_edit_pos)
+            # only lower the flag after the placement is back, so the restore
+            # repositioning is also suppressed from state_changed
+            self._before_after_active = False
+            self._saved_edit_pos = None
+            self._saved_edit_size = None
             self.border_item.setVisible(True)
 
         # ── B4: zoom via wheel ─────────────────────────────────────────────
@@ -264,6 +279,8 @@ if QT_AVAILABLE:
 
         def _emit_state_changed(self):
             if self.image_item is None or self._current_size is None:
+                return
+            if self._before_after_active:
                 return
             pos = (int(self.image_item.pos().x()), int(self.image_item.pos().y()))
             self.state_changed.emit(pos, self._current_size)
