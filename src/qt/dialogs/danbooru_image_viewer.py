@@ -31,11 +31,7 @@ if QT_AVAILABLE:
     )
 
 
-def _pil_to_pixmap(image):
-    rgba = image.convert("RGBA")
-    data = rgba.tobytes("raw", "RGBA")
-    qimage = QImage(data, rgba.width, rgba.height, rgba.width * 4, QImage.Format_RGBA8888)
-    return QPixmap.fromImage(qimage.copy())
+from src.qt.pixmap_utils import pil_to_qpixmap as _pil_to_pixmap
 
 
 if QT_AVAILABLE:

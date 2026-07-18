@@ -126,9 +126,8 @@ if QT_AVAILABLE:
                 return
             if generation != self._generation:
                 return
-            data = thumb.tobytes("raw", "RGBA")
-            qimage = QImage(data, thumb.width, thumb.height, thumb.width * 4, QImage.Format_RGBA8888)
-            item.setIcon(QIcon(QPixmap.fromImage(qimage.copy())))
+            from src.qt.pixmap_utils import pil_to_qpixmap
+            item.setIcon(QIcon(pil_to_qpixmap(thumb)))
 
         @staticmethod
         def _generate_thumb(path):

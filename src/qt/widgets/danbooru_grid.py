@@ -247,17 +247,8 @@ if QT_AVAILABLE:
                     except Exception:
                         pass
                 return
-            qimage = thumb.convert("RGBA")
-            data = qimage.tobytes("raw", "RGBA")
-            image = QImage(
-                data,
-                qimage.width,
-                qimage.height,
-                qimage.width * 4,
-                QImage.Format_RGBA8888,
-            ).copy()
-            pixmap = QPixmap.fromImage(image)
-            item.setIcon(QIcon(pixmap))
+            from src.qt.pixmap_utils import pil_to_qpixmap
+            item.setIcon(QIcon(pil_to_qpixmap(thumb)))
             try:
                 thumb.close()
             except Exception:
