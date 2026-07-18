@@ -12,6 +12,15 @@ from src.core.animation_processor import AnimationProcessor
 
 class AnimationMixin:
 
+    _PREVIEW_CACHE_MAX_ENTRIES = 8
+
+    def _preview_frames_cache(self):
+        """M13: cache de pixmaps por (tipo, cor) — os frames não dependem da imagem."""
+        if not hasattr(self, "_preview_frames_cache_map"):
+            from collections import OrderedDict
+            self._preview_frames_cache_map = OrderedDict()
+        return self._preview_frames_cache_map
+
     @staticmethod
     def _generate_preview_frames(animation_type, border_color, cancel_event):
         try:
@@ -61,6 +70,18 @@ class AnimationMixin:
         border_color = self.editor_state.resolve_border_hex(BORDA_HEX, self.current_path)
         self.stop_preview_animation(clear_frames=False)
         self._preview_index = 0
+
+        # M13: reutiliza frames já gerados para o mesmo (tipo, cor)
+        cache = self._preview_frames_cache()
+        cache_key = (animation_type, border_color)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            cache.move_to_end(cache_key)
+            self._preview_frames, self._preview_duration = cached
+            if self._preview_frames:
+                self._advance_preview_frame()
+                self._preview_timer.start(self._preview_duration)
+            return
         self._preview_seq += 1
         task_id = f"qt_preview_frames_{self._preview_seq}"
         self._active_preview_task_id = task_id
@@ -90,6 +111,11 @@ class AnimationMixin:
             if not self._preview_frames:
                 self.image_canvas.clear_preview_overlay()
                 return
+            # M13: guarda no cache com evicção LRU simples
+            cache[cache_key] = (pixmaps, self._preview_duration)
+            cache.move_to_end(cache_key)
+            while len(cache) > self._PREVIEW_CACHE_MAX_ENTRIES:
+                cache.popitem(last=False)
             self._advance_preview_frame()
             self._preview_timer.start(self._preview_duration)
 
