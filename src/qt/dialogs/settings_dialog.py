@@ -7,17 +7,13 @@ if QT_AVAILABLE:
         QDialog,
         QDialogButtonBox,
         QFormLayout,
-        QGroupBox,
-        QHBoxLayout,
         QLabel,
         QLineEdit,
-        QPushButton,
-        QScrollArea,
+        QSpinBox,
         QTabWidget,
         QTextEdit,
         QVBoxLayout,
         QWidget,
-        Qt,
     )
 
 
@@ -87,10 +83,10 @@ if QT_AVAILABLE:
             layout.addSpacing(8)
 
             self._timeout_search = self._spin_field(
-                "Timeout busca (s):", self.app_config.get("danbooru_timeout_search_s", 10), 1, 120
+                self.app_config.get("danbooru_timeout_search_s", 10), 1, 120
             )
             self._timeout_download = self._spin_field(
-                "Timeout download (s):", self.app_config.get("danbooru_timeout_download_s", 15), 1, 300
+                self.app_config.get("danbooru_timeout_download_s", 15), 1, 300
             )
             for label, widget_ref in [
                 ("Timeout busca (s):", self._timeout_search),
@@ -107,40 +103,42 @@ if QT_AVAILABLE:
             widget = QWidget()
             layout = QFormLayout(widget)
 
-            self._max_workers = self._spin_field(
-                "Workers paralelos:", self.app_config.get("max_workers") or 4, 1, 16
-            )
+            # F12: 0 = automático (persistido como None); evita perder o modo
+            # auto ao abrir e salvar o diálogo
+            self._max_workers = self._spin_field(self.app_config.get("max_workers") or 0, 0, 16)
+            self._max_workers.setSpecialValueText("Automático")
             self._thumb_mem_mb = self._spin_field(
-                "Cache thumb memória (MB):", self.app_config.get("thumbnail_memory_cache_mb", 64), 8, 2048
+                self.app_config.get("thumbnail_memory_cache_mb", 64), 8, 2048
             )
             self._thumb_disk_mb = self._spin_field(
-                "Cache thumb disco (MB):", self.app_config.get("thumbnail_disk_cache_mb", 512), 64, 4096
+                self.app_config.get("thumbnail_disk_cache_mb", 512), 64, 4096
             )
             self._img_cache_mb = self._spin_field(
-                "Cache preview (MB):", self.app_config.get("image_cache_max_mb", 256), 32, 2048
+                self.app_config.get("image_cache_max_mb", 256), 32, 2048
             )
 
             layout.addRow("Workers paralelos:", self._max_workers)
             layout.addRow("Cache thumb memória (MB):", self._thumb_mem_mb)
             layout.addRow("Cache thumb disco (MB):", self._thumb_disk_mb)
             layout.addRow("Cache preview (MB):", self._img_cache_mb)
+
+            restart_note = QLabel("Alterações de performance têm efeito após reiniciar o programa.")
+            restart_note.setWordWrap(True)
+            restart_note.setStyleSheet("color: #7B879D; font-size: 11px; margin-top: 8px;")
+            layout.addRow(restart_note)
             return widget
 
         # ── Helpers ────────────────────────────────────────────────────────
 
         @staticmethod
-        def _spin_field(label, value, minimum, maximum):
-            from src.qt.compat import QLineEdit
-            field = QLineEdit()
-            field.setText(str(value))
-            return field
-
-        def _int_val(self, field, default, minimum, maximum):
+        def _spin_field(value, minimum, maximum):
+            field = QSpinBox()
+            field.setRange(minimum, maximum)
             try:
-                v = int(field.text())
-                return max(minimum, min(maximum, v))
+                field.setValue(int(value))
             except (ValueError, TypeError):
-                return default
+                field.setValue(minimum)
+            return field
 
         def _save(self):
             self.app_config.set("ai_mode", self._ai_mode.currentText())
@@ -149,13 +147,14 @@ if QT_AVAILABLE:
                 self.app_config.set("ai_base_prompt", prompt)
 
             self.app_config.set("danbooru_tag_blacklist", self._blacklist.text().strip())
-            self.app_config.set("danbooru_timeout_search_s", self._int_val(self._timeout_search, 10, 1, 120))
-            self.app_config.set("danbooru_timeout_download_s", self._int_val(self._timeout_download, 15, 1, 300))
+            self.app_config.set("danbooru_timeout_search_s", self._timeout_search.value())
+            self.app_config.set("danbooru_timeout_download_s", self._timeout_download.value())
 
-            self.app_config.set("max_workers", self._int_val(self._max_workers, 4, 1, 16))
-            self.app_config.set("thumbnail_memory_cache_mb", self._int_val(self._thumb_mem_mb, 64, 8, 2048))
-            self.app_config.set("thumbnail_disk_cache_mb", self._int_val(self._thumb_disk_mb, 512, 64, 4096))
-            self.app_config.set("image_cache_max_mb", self._int_val(self._img_cache_mb, 256, 32, 2048))
+            workers = self._max_workers.value()
+            self.app_config.set("max_workers", workers if workers > 0 else None)
+            self.app_config.set("thumbnail_memory_cache_mb", self._thumb_mem_mb.value())
+            self.app_config.set("thumbnail_disk_cache_mb", self._thumb_disk_mb.value())
+            self.app_config.set("image_cache_max_mb", self._img_cache_mb.value())
 
             self.app_config.save()
             self.accept()

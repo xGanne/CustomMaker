@@ -35,6 +35,7 @@ try:
         QScrollArea,
         QSizePolicy,
         QSlider,
+        QSpinBox,
         QSplitter,
         QStatusBar,
         QTabWidget,

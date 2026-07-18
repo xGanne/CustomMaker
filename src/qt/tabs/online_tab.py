@@ -212,6 +212,14 @@ if QT_AVAILABLE:
             self.main_window.app_config.set("danbooru_tag_blacklist", self.blacklist_edit.text().strip())
             self.main_window.app_config.save()
 
+        def refresh_from_config(self):
+            """F12: re-sincroniza campos que também existem no diálogo de configurações."""
+            saved_blacklist = self.main_window.app_config.get("danbooru_tag_blacklist", "")
+            if self.blacklist_edit.text().strip() != (saved_blacklist or "").strip():
+                self.blacklist_edit.setText(saved_blacklist or "")
+            self.client.timeout_search_s = self.client._cfg_int("danbooru_timeout_search_s", 10, minimum=1, maximum=120)
+            self.client.timeout_download_s = self.client._cfg_int("danbooru_timeout_download_s", 15, minimum=1, maximum=300)
+
         def close(self):
             if self._active_search_task_id and self.main_window.task_runner.is_running(self._active_search_task_id):
                 self.main_window.task_runner.cancel(self._active_search_task_id)

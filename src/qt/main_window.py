@@ -549,7 +549,12 @@ if QT_AVAILABLE:
         def _open_settings(self):
             from src.qt.dialogs.settings_dialog import SettingsDialog
             dialog = SettingsDialog(self.app_config, parent=self)
-            dialog.exec()
+            if dialog.exec():
+                # F12: refletir imediatamente o que dá para aplicar a quente
+                self.online_tab.refresh_from_config()
+                self.show_status(
+                    "Configurações salvas. Alterações de performance têm efeito após reiniciar."
+                )
 
         def _show_recent_folders_menu(self, pos):
             from src.qt.compat import QMenu
