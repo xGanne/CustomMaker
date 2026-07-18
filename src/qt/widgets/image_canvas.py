@@ -68,6 +68,13 @@ if QT_AVAILABLE:
             self.border_item = QGraphicsRectItem()
             self.border_item.setZValue(10)
             self.scene.addItem(self.border_item)
+            # M3: orientação exibida enquanto nenhuma imagem está carregada
+            self.empty_hint_item = self.scene.addText(
+                "Arraste uma pasta ou imagens aqui\n"
+                "Ctrl+O — abrir pasta   ·   Ctrl+V — colar imagem"
+            )
+            self.empty_hint_item.setDefaultTextColor(QColor("#7B879D"))
+            self.empty_hint_item.setZValue(5)
             self.preview_item = QGraphicsPixmapItem()
             self.preview_item.setZValue(12)
             self.preview_item.setVisible(False)
@@ -105,6 +112,12 @@ if QT_AVAILABLE:
             self.border_item.setRect(bx, by, BORDA_WIDTH, BORDA_HEIGHT)
             self.border_item.setPen(QPen(QColor(self._border_color), BORDER_THICKNESS))
             self.preview_item.setPos(bx, by)
+            if self.empty_hint_item is not None:
+                hint_rect = self.empty_hint_item.boundingRect()
+                self.empty_hint_item.setPos(
+                    (width - hint_rect.width()) / 2,
+                    by + BORDA_HEIGHT + 16,
+                )
             self.border_pos_changed.emit(self._border_pos)
 
             if not initial and self.image_item is not None:
@@ -128,6 +141,8 @@ if QT_AVAILABLE:
             self._before_after_active = False
             self._saved_edit_pos = None
             self._saved_edit_size = None
+            if self.empty_hint_item is not None:
+                self.empty_hint_item.setVisible(True)
 
         def set_border_color(self, color_hex):
             self._border_color = color_hex
@@ -166,6 +181,8 @@ if QT_AVAILABLE:
 
         def set_image(self, pil_image, state=None, border_color="#FFFFFF"):
             self.clear_image()
+            if self.empty_hint_item is not None:
+                self.empty_hint_item.setVisible(False)
             self._base_image = pil_image.convert("RGBA")
             self._original_image = self._base_image.copy()  # C2: keep original
             self._base_pixmap = _pil_to_qpixmap(self._base_image)
