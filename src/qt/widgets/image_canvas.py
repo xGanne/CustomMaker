@@ -1,3 +1,5 @@
+import time
+
 from PIL import Image
 
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH, BORDER_THICKNESS
@@ -83,6 +85,7 @@ if QT_AVAILABLE:
             self._border_color = "#FFFFFF"
             self._color_pick_enabled = False
             self._zoom_factor = 1.0  # B4
+            self._last_wheel_time = 0.0  # F8: debounce do snapshot de undo
             # C2: before/after toggle state
             self._before_after_active = False
             self._original_image = None
@@ -244,7 +247,12 @@ if QT_AVAILABLE:
                 super().wheelEvent(event)
                 return
 
-            self.interaction_started.emit()
+            # F8: uma sequência de ticks é um único gesto — só cria snapshot de
+            # undo se o último tick foi há mais de 0,5s
+            now = time.monotonic()
+            if now - self._last_wheel_time > 0.5:
+                self.interaction_started.emit()
+            self._last_wheel_time = now
             delta = event.angleDelta().y()
             factor = 1.05 if delta > 0 else 0.95
             width = max(1, int(self._current_size[0] * factor))
