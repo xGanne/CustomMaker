@@ -49,12 +49,6 @@ Execute a aplicação principal:
 python main.py
 ```
 
-A interface CustomTkinter antiga continua disponível como fallback legado:
-
-```sh
-python main_legacy.py
-```
-
 Fluxo básico:
 
 1. Selecione uma pasta ou cole uma imagem.
@@ -73,7 +67,7 @@ python -m pytest -q
 Para uma checagem rápida de sintaxe:
 
 ```sh
-python -m py_compile main.py main_qt.py main_legacy.py src/core/ai_pipeline.py src/core/app_config.py src/controllers/batch_controller.py src/qt/main_window.py src/qt/tabs/ai_tab.py src/qt/tabs/editor_tab.py src/qt/tabs/online_tab.py
+python -m py_compile main.py src/core/ai_pipeline.py src/core/app_config.py src/controllers/batch_controller.py src/qt/main_window.py src/qt/tabs/ai_tab.py src/qt/tabs/editor_tab.py src/qt/tabs/online_tab.py
 ```
 
 ## Sobre

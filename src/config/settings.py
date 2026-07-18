@@ -9,20 +9,6 @@ from src.utils.resource_loader import app_data_path, resource_path
 load_dotenv(app_data_path(".env"))
 load_dotenv()
 
-# Esquema de cores legado (mantido por compatibilidade)
-COLORS = {
-    "bg_dark": "#1e1e2e",
-    "bg_medium": "#313244",
-    "bg_light": "#45475a",
-    "accent": "#89b4fa",
-    "text": "#cdd6f4",
-    "text_dim": "#bac2de",
-    "success": "#a6e3a1",
-    "warning": "#f9e2af",
-    "error": "#f38ba8",
-    "danger": "#f38ba8",
-}
-
 # Design tokens v1 (Dark Editorial Clean)
 UI_TOKENS = {
     "surface_bg": "#141821",
@@ -48,30 +34,6 @@ UI_TOKENS = {
     "space_4": 16,
     "space_5": 20,
     "space_6": 24,
-}
-
-# Mapeamento de nomes de borda para exibicao
-BORDA_NAMES = {
-    ".borda_red": "Red",
-    ".borda_blue": "Blue",
-    ".borda_green": "Green",
-    ".borda_yellow": "Yellow",
-    ".borda_purple": "Purple",
-    ".borda_orange": "Orange",
-    ".borda_white": "White",
-    ".borda_black": "Black",
-    ".borda_gray": "Gray",
-    ".borda_cyan": "Cyan",
-    ".borda_magenta": "Magenta",
-    ".borda_brown": "Brown",
-    ".borda_pink": "Pink",
-    ".borda_lime": "Lime",
-    ".borda_olive": "Olive",
-    ".borda_maroon": "Maroon",
-    ".borda_navy": "Navy",
-    ".borda_teal": "Teal",
-    ".borda_aqua": "Aqua",
-    ".borda_silver": "Silver",
 }
 
 # Codigos hexadecimais das cores de borda
@@ -131,5 +93,4 @@ UPLOAD_BATCH_SIZE = 10
 SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
 
 # Path to local assets
-CSS_FILE = resource_path("bordas.css")
 FACE_CASCADE_FILE = resource_path("lbpcascade_animeface.xml")
