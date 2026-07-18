@@ -58,7 +58,6 @@ class EditorState:
         self.image_dirty.discard(path)
         self.individual_bordas.pop(path, None)
         self.custom_borda_hex_individual.pop(path, None)
-        self.uploaded_links = [link for link in self.uploaded_links if path not in link]
         if path in self.image_list:
             index = self.image_list.index(path)
             self.image_list.pop(index)
