@@ -128,12 +128,16 @@ class DanbooruClient:
                 raise LookupError("Danbooru: página ou recurso não encontrado (404).") from exc
             logger.warning("HTTP Error Danbooru (status=%s): %s", status_code, exc)
             raise RuntimeError(f"Danbooru: erro HTTP {status_code}.") from exc
+        except requests.exceptions.Timeout as exc:
+            logger.warning("Timeout ao buscar posts Danbooru: %s", exc)
+            raise RuntimeError("Danbooru: a busca excedeu o tempo limite. Tente novamente.") from exc
         except requests.exceptions.RequestException as exc:
+            # F7: propagar em vez de devolver [] — "sem internet" não é "0 resultados"
             logger.warning("Erro ao buscar posts Danbooru: %s", exc)
-            return []
+            raise RuntimeError("Danbooru: falha de conexão. Verifique sua internet e tente novamente.") from exc
         except ValueError as exc:
             logger.warning("Resposta JSON invalida em search_posts: %s", exc)
-            return []
+            raise RuntimeError("Danbooru: resposta inválida do servidor. Tente novamente.") from exc
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000
             logger.debug("Danbooru search_posts latency: %.1fms tags='%s' page=%s", elapsed_ms, tags, page)
