@@ -58,7 +58,7 @@ if QT_AVAILABLE:
             self._active_search_tags = ""
             self._active_query_label = ""
             self._expanded_dialog = None
-            self._image_viewer = None
+            self._image_viewers = []  # F21: todos os viewers abertos
             self.selection_state = DanbooruSelectionState()
 
             layout = QVBoxLayout(self)
@@ -225,8 +225,12 @@ if QT_AVAILABLE:
                 self.main_window.task_runner.cancel(self._active_search_task_id)
             if self._expanded_dialog is not None:
                 self._expanded_dialog.close()
-            if self._image_viewer is not None:
-                self._image_viewer.close()
+            for viewer in list(self._image_viewers):
+                try:
+                    viewer.close()
+                except Exception:
+                    pass
+            self._image_viewers.clear()
             self.autocomplete.close()
             self.results_grid.close()
             self.client.close()
@@ -573,9 +577,13 @@ if QT_AVAILABLE:
 
         def open_image_viewer(self, post):
             viewer = DanbooruImageViewer(post, self.client, parent=self)
+            viewer.setAttribute(Qt.WA_DeleteOnClose, True)
+            self._image_viewers.append(viewer)
+            viewer.destroyed.connect(
+                lambda *_args, v=viewer: v in self._image_viewers and self._image_viewers.remove(v)
+            )
             viewer.showMaximized()
             viewer.show()
-            self._image_viewer = viewer
 
 
     class _PostDetailPanel(QWidget):
