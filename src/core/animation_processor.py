@@ -11,7 +11,9 @@ class AnimationProcessor:
         w, h = image.size
         mask = Image.new('L', (w, h), 255)
         draw = ImageDraw.Draw(mask)
-        draw.rectangle((border_width, border_width, w - border_width, h - border_width), fill=0)
+        # PIL inclui a coordenada final no retângulo — o -1 mantém a borda
+        # direita/inferior com a mesma espessura das demais (F16)
+        draw.rectangle((border_width, border_width, w - border_width - 1, h - border_width - 1), fill=0)
         image.putalpha(mask)
         return image
 
