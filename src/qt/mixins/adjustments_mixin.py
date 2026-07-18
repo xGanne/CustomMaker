@@ -54,13 +54,22 @@ class AdjustmentsMixin:
         self.show_status("Ajuste inteligente aplicado.")
 
     def rotate_current_image(self, direction):
-        image = self.get_active_image_copy()
-        if image is None or not self.current_path:
+        if not self.current_path:
+            return
+        # F10: sem edição de pixels, rotacionar o original em resolução plena
+        # para não fixar a preview reduzida como fonte da exportação
+        image = self.edited_images.get(self.current_path)
+        if image is None:
+            image = self.current_original_image
+        if image is None:
+            image = self.get_active_image_copy()
+        if image is None:
             return
         self.save_state_for_undo()
         angle = 90 if direction == "left" else -90
         rotated = image.rotate(angle, expand=True)
         self.set_edited_image_for_current(rotated)
+        rotated.close()
         self.apply_auto_fit(push_undo=False)
         self.show_status(f"Prévia rotacionada para {direction}.")
 

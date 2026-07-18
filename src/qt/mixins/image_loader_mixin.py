@@ -235,7 +235,10 @@ class ImageLoaderMixin:
     def set_edited_image_for_current(self, image):
         if not self.current_path:
             return
+        previous = self.edited_images.get(self.current_path)
         self.edited_images[self.current_path] = image.copy()
+        if previous is not None and previous is not image:
+            self._dispose_images([previous])
         self.editor_state.mark_pixels_edited(self.current_path)
         self._remember_preview_cache(self.current_path, self.edited_images[self.current_path])
         state = self.editor_state.image_states.get(self.current_path)
