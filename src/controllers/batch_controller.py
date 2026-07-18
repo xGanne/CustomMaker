@@ -217,6 +217,14 @@ class BatchController:
 
         return {"results": self._sort_results_by_task_order(results, tasks), "cancelled": False}
 
+    def save_single_image(self, path, output_path):
+        """M12: exporta uma única imagem em processo, sem pool."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data = self._get_task_data(path, output_path, source_dir=tmp_dir)
+            if not data:
+                return {"status": "error", "path": path, "error": "Sem enquadramento possível para a imagem."}
+            return process_image_task(data)
+
     def save_all_images(self, target_dir, progress_callback=None, cancel_event=None):
         source_dir = tempfile.mkdtemp()
         tasks = []

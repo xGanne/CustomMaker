@@ -74,8 +74,13 @@ if QT_AVAILABLE:
             save_layout.setSpacing(6)
 
             save_images_button = QPushButton("Salvar")
-            save_images_button.setToolTip("Salvar todas as imagens")
+            save_images_button.setToolTip("Salvar todas as imagens  (Ctrl+S)")
             save_images_button.clicked.connect(self.main_window.save_all_images)
+
+            save_current_button = QPushButton("Atual")
+            save_current_button.setProperty("class", "secondary")
+            save_current_button.setToolTip("Salvar apenas a imagem atual  (Ctrl+Shift+S)")
+            save_current_button.clicked.connect(self.main_window.save_current_image)
 
             save_zip_button = QPushButton("ZIP")
             save_zip_button.setToolTip("Exportar como arquivo ZIP")
@@ -86,6 +91,7 @@ if QT_AVAILABLE:
             upload_button.clicked.connect(self.main_window.upload_to_imgchest)
 
             save_layout.addWidget(save_images_button)
+            save_layout.addWidget(save_current_button)
             save_layout.addWidget(save_zip_button)
             save_layout.addWidget(upload_button)
 

@@ -2,11 +2,12 @@
 ExportMixin — exportação e upload em lote.
 
 Responsabilidades:
-  • Salvar todas as imagens em pasta com bordas/animações aplicadas
+  • Salvar todas as imagens (ou apenas a atual) com bordas/animações aplicadas
   • Gerar arquivo ZIP das imagens processadas
   • Upload para ImgChest e geração do comando Mudae
   • Helpers de formatação e exibição de resultados de operações em lote
 """
+import os
 
 
 class ExportMixin:
@@ -46,6 +47,36 @@ class ExportMixin:
             self.show_info(title, message)
 
     # ── Exportação ────────────────────────────────────────────────────────
+
+    def save_current_image(self):
+        """M12: exporta apenas a imagem selecionada (Ctrl+Shift+S)."""
+        if not self.current_path:
+            self.show_warning("Salvar", "Nenhuma imagem selecionada.")
+            return
+        is_anim = self.editor_state.animation_type != "Nenhuma"
+        ext = ".gif" if is_anim else ".png"
+        suggested = os.path.splitext(os.path.basename(self.current_path))[0] + f"_custom{ext}"
+        filter_text = "GIF (*.gif)" if is_anim else "PNG (*.png)"
+        file_path = self.choose_save_file("Salvar imagem atual", filter_text, suggested_name=suggested)
+        if not file_path:
+            return
+        source_path = self.current_path
+
+        def task_fn(_cancel_event, on_progress):
+            if on_progress:
+                on_progress(0, 1, "Exportando imagem atual...")
+            result = self.batch_controller.save_single_image(source_path, file_path)
+            if on_progress:
+                on_progress(1, 1, "Concluído.")
+            return result
+
+        def on_done(result):
+            if result.get("status") == "success":
+                self.show_status(f"Imagem exportada: {file_path}")
+            else:
+                self.show_error("Salvar", result.get("error") or "Falha ao exportar a imagem.")
+
+        self.run_task("qt_save_current_image", "Exportando imagem", task_fn, on_done=on_done)
 
     def save_all_images(self):
         if not self.editor_state.image_list:

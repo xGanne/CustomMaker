@@ -357,6 +357,7 @@ if QT_AVAILABLE:
             shortcuts = [
                 ("Ctrl+O", self.load_folder),
                 ("Ctrl+S", self.save_all_images),
+                ("Ctrl+Shift+S", self.save_current_image),
                 ("Alt+F", self.apply_intelligent_fit),
                 ("Alt+B", self.apply_auto_fit),
                 ("Ctrl+Q", lambda: self.rotate_current_image("left")),
@@ -417,8 +418,10 @@ if QT_AVAILABLE:
             start_dir = self.ui_preferences.last_folder or ""
             return QFileDialog.getExistingDirectory(self, title, start_dir)
 
-        def choose_save_file(self, title, filter_text):
+        def choose_save_file(self, title, filter_text, suggested_name=None):
             start_dir = self.ui_preferences.last_folder or ""
+            if suggested_name:
+                start_dir = os.path.join(start_dir, suggested_name) if start_dir else suggested_name
             file_path, _ = QFileDialog.getSaveFileName(self, title, start_dir, filter_text)
             return file_path
 
