@@ -104,8 +104,9 @@ if QT_AVAILABLE:
             cache_mb = max(32, min(1024, int(self.ui_preferences.image_cache_max_mb or 256)))
             self._preview_cache_limit_bytes = cache_mb * 1024 * 1024
 
-            # Undo stacks (keyed by file path)
+            # Undo/redo stacks (keyed by file path)
             self._undo_stacks = {}
+            self._redo_stacks = {}
 
             # Animation preview state
             self._active_preview_task_id = None
@@ -520,6 +521,7 @@ if QT_AVAILABLE:
             undo_stack = self._undo_stacks.pop(path, [])
             for undo_image, *_rest in undo_stack:
                 self._dispose_images([undo_image])
+            self._drop_redo_stack(path)
             self.image_list_panel.set_paths(self.editor_state.image_list)
             if not self.editor_state.image_list:
                 self.current_path = None
@@ -619,6 +621,8 @@ if QT_AVAILABLE:
                 self.paste_image()
             elif event.matches(QKeySequence.Undo):
                 self.undo_current_image()
+            elif event.matches(QKeySequence.Redo):
+                self.redo_current_image()
             elif event.key() == Qt.Key_Left and event.modifiers() == Qt.NoModifier:
                 self.navigate_images(-1)
             elif event.key() == Qt.Key_Right and event.modifiers() == Qt.NoModifier:
@@ -675,6 +679,10 @@ if QT_AVAILABLE:
                 for image, *_rest in stack:
                     self._dispose_images([image])
             self._undo_stacks.clear()
+            for stack in self._redo_stacks.values():
+                for image, *_rest in stack:
+                    self._dispose_images([image])
+            self._redo_stacks.clear()
             super().closeEvent(event)
 
 else:

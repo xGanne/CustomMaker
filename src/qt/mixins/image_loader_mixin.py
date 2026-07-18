@@ -168,6 +168,10 @@ class ImageLoaderMixin:
                 for undo_image, *_rest in stack:
                     self._dispose_images([undo_image])
             self._undo_stacks.clear()
+            for stack in self._redo_stack_map().values():
+                for redo_image, *_rest in stack:
+                    self._dispose_images([redo_image])
+            self._redo_stack_map().clear()
             self._clear_preview_cache()
 
         for path in valid_paths:
@@ -347,25 +351,67 @@ class ImageLoaderMixin:
         handle.error.connect(on_error)
         self.show_status(f"Carregando: {os.path.basename(path)}")
 
-    # ── Pilha de undo ─────────────────────────────────────────────────────
+    # ── Pilhas de undo/redo ───────────────────────────────────────────────
+
+    def _redo_stack_map(self):
+        if not hasattr(self, "_redo_stacks"):
+            self._redo_stacks = {}
+        return self._redo_stacks
+
+    def _capture_current_snapshot(self):
+        """Snapshot (imagem, pos, size, tinha_pixels_editados) do estado atual."""
+        if not self.current_path:
+            return None
+        image = self.get_active_image_copy()
+        if image is None:
+            return None
+        state = self.editor_state.image_states.get(self.current_path) or self._ensure_state_for_current(image)
+        return (
+            image,
+            tuple(state.get("pos", self.editor_state.borda_pos)),
+            tuple(state.get("size", image.size)),
+            self.current_path in self.edited_images,
+        )
+
+    def _drop_redo_stack(self, path):
+        for image, *_rest in self._redo_stack_map().pop(path, []):
+            self._dispose_images([image])
 
     def save_state_for_undo(self):
         if not self.current_path:
             return
-        image = self.get_active_image_copy()
-        if image is None:
+        snapshot = self._capture_current_snapshot()
+        if snapshot is None:
             return
-        state = self.editor_state.image_states.get(self.current_path) or self._ensure_state_for_current(image)
-        snapshot = (
-            image,
-            tuple(state.get("pos", self.editor_state.borda_pos)),
-            tuple(state.get("size", image.size)),
-        )
         stack = self._undo_stacks.setdefault(self.current_path, [])
         stack.append(snapshot)
         while len(stack) > 20:
             old_image, *_rest = stack.pop(0)
             self._dispose_images([old_image])
+        # F15: uma nova ação do usuário invalida o redo
+        self._drop_redo_stack(self.current_path)
+
+    def _apply_snapshot(self, snapshot):
+        image, pos, size, was_pixel_edited = snapshot
+        path = self.current_path
+        previous = self.edited_images.pop(path, None)
+        if previous is not None:
+            self._dispose_images([previous])
+        if was_pixel_edited:
+            # F15: só volta para edited_images se o estado restaurado tinha
+            # edição de pixels — senão o indicador "editada" ficava para sempre
+            self.edited_images[path] = image.copy()
+        self._remember_preview_cache(path, image)
+        self.editor_state.set_image_state(path, pos, size)
+        self.image_canvas.set_image(
+            image,
+            state={"pos": pos, "size": size},
+            border_color=self.editor_state.resolve_border_hex(BORDA_HEX, path),
+        )
+        self._dispose_images([image])
+        self._update_preview_animation()
+        if hasattr(self, "refresh_list_indicators"):
+            self.refresh_list_indicators()
 
     def undo_current_image(self):
         if not self.current_path:
@@ -374,21 +420,24 @@ class ImageLoaderMixin:
         if not stack:
             self.show_status("Nada para desfazer.")
             return
-        image, pos, size = stack.pop()
-        previous = self.edited_images.get(self.current_path)
-        if previous is not None:
-            self._dispose_images([previous])
-        self.edited_images[self.current_path] = image.copy()
-        self._remember_preview_cache(self.current_path, self.edited_images[self.current_path])
-        self.editor_state.set_image_state(self.current_path, pos, size)
-        self.image_canvas.set_image(
-            self.edited_images[self.current_path],
-            state={"pos": pos, "size": size},
-            border_color=self.editor_state.resolve_border_hex(BORDA_HEX, self.current_path),
-        )
-        self._dispose_images([image])
-        self._update_preview_animation()
-        self.show_status("Ultima alteracao desfeita.")
+        current = self._capture_current_snapshot()
+        if current is not None:
+            self._redo_stack_map().setdefault(self.current_path, []).append(current)
+        self._apply_snapshot(stack.pop())
+        self.show_status("Última alteração desfeita.")
+
+    def redo_current_image(self):
+        if not self.current_path:
+            return
+        stack = self._redo_stack_map().get(self.current_path) or []
+        if not stack:
+            self.show_status("Nada para refazer.")
+            return
+        current = self._capture_current_snapshot()
+        if current is not None:
+            self._undo_stacks.setdefault(self.current_path, []).append(current)
+        self._apply_snapshot(stack.pop())
+        self.show_status("Alteração refeita.")
 
     def _ensure_state_for_current(self, image):
         if not self.current_path:
