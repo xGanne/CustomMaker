@@ -83,65 +83,76 @@ class AdjustmentsMixin:
             self.show_warning("Ajuste", "Nenhuma imagem carregada.")
             return
 
-        def task_fn(cancel_event, on_progress):
-            updated = 0
-            total = len(self.editor_state.image_list)
-            for index, path in enumerate(self.editor_state.image_list, start=1):
-                if cancel_event and cancel_event.is_set():
-                    break
+        # F9: a task roda em worker thread — capturar aqui (GUI thread) cópias
+        # imutáveis de tudo que ela precisa; nada compartilhado é tocado depois.
+        borda_pos = tuple(self.editor_state.borda_pos)
+        snapshots = []
+        for path in list(self.editor_state.image_list):
+            source = self.edited_images.get(path)
+            if source is not None:
+                snapshots.append((path, source.copy()))
+            else:
+                snapshots.append((path, self._get_preview_cache_copy(path)))
 
-                working = self.edited_images.get(path)
-                should_close = False
-                if working is None:
-                    cached = self._get_preview_cache_copy(path)
-                    if cached is not None:
-                        working = cached
-                        should_close = True
-                    else:
+        def task_fn(cancel_event, on_progress):
+            updated = {}
+            total = len(snapshots)
+            try:
+                for index, (path, working) in enumerate(snapshots, start=1):
+                    if cancel_event and cancel_event.is_set():
+                        break
+
+                    if working is None:
                         with Image.open(path) as source:
                             working = source.convert("RGBA")
-                        should_close = True
 
-                try:
-                    if adjustment_name == "auto_fit":
-                        result = ImageProcessor.calculate_auto_fit_pos(working, self.editor_state.borda_pos)
-                    else:
-                        face = ImageProcessor.detect_anime_face(working, self.face_cascade)
-                        if face:
-                            result = ImageProcessor.calculate_intelligent_frame_pos(
-                                working,
-                                face,
-                                self.editor_state.borda_pos,
-                            )
+                    try:
+                        if adjustment_name == "auto_fit":
+                            result = ImageProcessor.calculate_auto_fit_pos(working, borda_pos)
                         else:
-                            result = ImageProcessor.calculate_auto_fit_pos(working, self.editor_state.borda_pos)
-                    if result:
-                        new_w, new_h, pos_x, pos_y = result
-                        self.editor_state.set_image_state(path, (pos_x, pos_y), (new_w, new_h))
-                        updated += 1
-                finally:
-                    if should_close:
+                            face = ImageProcessor.detect_anime_face(working, self.face_cascade)
+                            if face:
+                                result = ImageProcessor.calculate_intelligent_frame_pos(
+                                    working,
+                                    face,
+                                    borda_pos,
+                                )
+                            else:
+                                result = ImageProcessor.calculate_auto_fit_pos(working, borda_pos)
+                        if result:
+                            updated[path] = result
+                    finally:
                         self._dispose_images([working])
+                        snapshots[index - 1] = (path, None)
 
-                if on_progress:
-                    on_progress(index, total, "Aplicando ajuste em lote...")
+                    if on_progress:
+                        on_progress(index, total, "Aplicando ajuste em lote...")
+            finally:
+                self._dispose_images([image for _path, image in snapshots])
 
             return {"updated": updated}
 
         def on_done(result):
+            updated = result.get("updated") or {}
+            # aplicar no editor_state apenas aqui, na GUI thread (F9)
+            for path, (new_w, new_h, pos_x, pos_y) in updated.items():
+                if path in self.editor_state.image_list:
+                    self.editor_state.set_image_state(path, (pos_x, pos_y), (new_w, new_h))
             if self.current_path:
                 state = self.editor_state.image_states.get(self.current_path)
                 if state:
                     self.image_canvas.set_image_state(state["pos"], state["size"])
+            if hasattr(self, "refresh_list_indicators"):
+                self.refresh_list_indicators()
             label = "Auto fit" if adjustment_name == "auto_fit" else "Ajuste inteligente"
-            self.show_info("Ajuste", f"{label} aplicado em {result.get('updated', 0)} imagem(ns).")
+            self.show_info("Ajuste", f"{label} aplicado em {len(updated)} imagem(ns).")
 
         self.run_task(
             f"qt_adjust_all_{adjustment_name}",
             "Aplicando ajuste em lote",
             task_fn,
             on_done=on_done,
-            maximum=max(1, len(self.editor_state.image_list)),
+            maximum=max(1, len(snapshots)),
         )
 
     def copy_framing_to_all(self):
