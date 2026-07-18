@@ -10,6 +10,7 @@ from typing import List
 from PIL import Image
 
 from src.core.batch_worker import process_image_task
+from src.core.image_processor import ImageProcessor
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,9 @@ class BatchController:
     def _get_task_data(self, path, output_path=None, source_dir=None):
         state = self._image_states().get(path)
         if not state:
-            return None
+            state = self._default_state_for(path)
+            if not state:
+                return None
 
         anim_type = self._animation_type()
         b_name = self._individual_bordas().get(path, self._selected_borda())
@@ -73,6 +76,24 @@ class BatchController:
         if source_image is not None:
             data["source_path"] = self._save_source_override(path, source_image, source_dir)
         return data
+
+    def _default_state_for(self, path):
+        """Auto fit padrão para imagens nunca abertas no canvas — evita que a
+        exportação as pule silenciosamente (F4)."""
+        source_image = self._edited_source_images.get(path)
+        try:
+            if source_image is not None:
+                fit = ImageProcessor.calculate_auto_fit_pos(source_image, self._resolve_borda_pos())
+            else:
+                with Image.open(path) as image:
+                    fit = ImageProcessor.calculate_auto_fit_pos(image, self._resolve_borda_pos())
+        except Exception as exc:
+            logger.warning("Sem estado e sem auto fit possível para %s: %s", path, exc)
+            return None
+        if not fit:
+            return None
+        new_w, new_h, pos_x, pos_y = fit
+        return {"pos": (pos_x, pos_y), "size": (new_w, new_h)}
 
     @staticmethod
     def _save_source_override(path, image, source_dir):
@@ -191,6 +212,7 @@ class BatchController:
     def save_all_images(self, target_dir, progress_callback=None, cancel_event=None):
         source_dir = tempfile.mkdtemp()
         tasks = []
+        skipped = []
         is_anim = self._animation_type() != "Nenhuma"
         ext = "_custom.gif" if is_anim else "_custom.png"
 
@@ -200,6 +222,8 @@ class BatchController:
                 data = self._get_task_data(path, out, source_dir=source_dir)
                 if data:
                     tasks.append(data)
+                else:
+                    skipped.append(os.path.basename(path))
 
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
             errors = [r for r in batch["results"] if r.get("status") != "success"]
@@ -209,6 +233,7 @@ class BatchController:
                 "errors": len(errors),
                 "target_dir": target_dir,
                 "total": len(tasks),
+                "skipped": skipped,
             }
         finally:
             shutil.rmtree(source_dir, ignore_errors=True)
@@ -220,6 +245,7 @@ class BatchController:
         with tempfile.TemporaryDirectory() as tmp_dir:
             source_dir = os.path.join(tmp_dir, "_sources")
             tasks = []
+            skipped = []
 
             for path in self._image_list():
                 fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
@@ -227,6 +253,8 @@ class BatchController:
                 data = self._get_task_data(path, out, source_dir=source_dir)
                 if data:
                     tasks.append(data)
+                else:
+                    skipped.append(os.path.basename(path))
 
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
             errors = [r for r in batch["results"] if r.get("status") != "success"]
@@ -238,6 +266,7 @@ class BatchController:
                     "processed": len(batch["results"]),
                     "errors": len(errors),
                     "total": len(tasks),
+                    "skipped": skipped,
                 }
 
             written = 0
@@ -253,6 +282,7 @@ class BatchController:
                 "processed": len(batch["results"]),
                 "errors": len(errors),
                 "total": len(tasks),
+                "skipped": skipped,
             }
 
     def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None):
@@ -262,6 +292,7 @@ class BatchController:
         with tempfile.TemporaryDirectory() as tmp_dir:
             source_dir = os.path.join(tmp_dir, "_sources")
             tasks = []
+            skipped = []
 
             for path in self._image_list():
                 fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
@@ -269,6 +300,8 @@ class BatchController:
                 data = self._get_task_data(path, out, source_dir=source_dir)
                 if data:
                     tasks.append(data)
+                else:
+                    skipped.append(os.path.basename(path))
 
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
             process_errors = [r for r in batch["results"] if r.get("status") != "success"]
@@ -280,6 +313,7 @@ class BatchController:
                     "processed": len(batch["results"]),
                     "uploaded": 0,
                     "total": len(tasks),
+                    "skipped": skipped,
                 }
 
             files = []
@@ -308,4 +342,5 @@ class BatchController:
                 "processed": len(batch["results"]),
                 "uploaded": len(files),
                 "total": len(tasks),
+                "skipped": skipped,
             }

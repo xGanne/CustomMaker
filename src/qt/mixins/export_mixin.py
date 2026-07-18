@@ -21,6 +21,15 @@ class ExportMixin:
     def _format_path(label, path):
         return f"{label}: {path}" if path else None
 
+    @staticmethod
+    def _format_skipped(result):
+        skipped = result.get("skipped") or []
+        if not skipped:
+            return None
+        names = ", ".join(skipped[:5])
+        suffix = "..." if len(skipped) > 5 else ""
+        return f"Puladas (sem enquadramento possível): {len(skipped)} — {names}{suffix}"
+
     def _show_result_summary(self, title, lines, details=None, warning=False):
         from src.qt.compat import QMessageBox
         message = "\n".join(line for line in lines if line)
@@ -58,9 +67,14 @@ class ExportMixin:
                 "Exportação concluída.",
                 self._format_count("Processadas", result.get("processed")),
                 self._format_count("Erros", result.get("errors")),
+                self._format_skipped(result),
                 self._format_path("Destino", result.get("target_dir") or target_dir),
             ]
-            self._show_result_summary("Salvar", lines, warning=bool(result.get("errors")))
+            self._show_result_summary(
+                "Salvar",
+                lines,
+                warning=bool(result.get("errors") or result.get("skipped")),
+            )
 
         self.run_task(
             "qt_save_all_images",
@@ -91,9 +105,14 @@ class ExportMixin:
                 self._format_count("Arquivos escritos", result.get("written")),
                 self._format_count("Processadas", result.get("processed")),
                 self._format_count("Erros", result.get("errors")),
+                self._format_skipped(result),
                 self._format_path("Arquivo", result.get("zip_path") or file_path),
             ]
-            self._show_result_summary("ZIP", lines, warning=bool(result.get("errors")))
+            self._show_result_summary(
+                "ZIP",
+                lines,
+                warning=bool(result.get("errors") or result.get("skipped")),
+            )
 
         self.run_task(
             "qt_save_zip",
@@ -129,6 +148,7 @@ class ExportMixin:
                 self._format_count("Arquivos enviados", result.get("uploaded")),
                 self._format_count("Links retornados", len(links)),
                 self._format_count("Erros", len(errors)),
+                self._format_skipped(result),
             ]
             if errors:
                 self._show_result_summary("Upload", lines, details=errors[:20], warning=not links)
