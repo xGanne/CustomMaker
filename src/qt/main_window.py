@@ -575,6 +575,10 @@ if QT_AVAILABLE:
         # ── Colar da área de transferência ────────────────────────────────
 
         def paste_image(self):
+            import tempfile
+            import time as _time
+            import uuid
+
             try:
                 clipboard_content = ImageGrab.grabclipboard()
             except Exception as exc:
@@ -583,11 +587,17 @@ if QT_AVAILABLE:
             if not isinstance(clipboard_content, Image.Image):
                 self.show_warning("Colar imagem", "Nenhuma imagem encontrada na área de transferência.")
                 return
-            temp_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Temp", "CustomMakerPaste")
+            temp_dir = os.path.join(tempfile.gettempdir(), "CustomMakerPaste")
             os.makedirs(temp_dir, exist_ok=True)
-            filename = f"pasted_{self._image_load_seq + len(self.editor_state.image_list) + 1}.png"
+            # F11: nome único por sessão/colagem — nunca sobrescreve um arquivo
+            # que ainda esteja na lista de outra colagem
+            filename = f"pasted_{_time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.png"
             path = os.path.join(temp_dir, filename)
-            clipboard_content.save(path)
+            try:
+                clipboard_content.save(path)
+            except OSError as exc:
+                self.show_error("Colar imagem", f"Falha ao salvar a imagem colada: {exc}")
+                return
             self.add_images([path], replace=False, select_last=True)
             self.show_status("Imagem colada da área de transferência.")
 
