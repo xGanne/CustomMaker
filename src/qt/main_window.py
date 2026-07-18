@@ -492,7 +492,8 @@ if QT_AVAILABLE:
             self.editor_tab.refresh_from_state()
             self.refresh_options_bar()
             self.refresh_current_canvas()
-            self.show_info("Pick Color", f"Cor copiada: {color}")
+            # M1: confirmação não crítica vai para a status bar, sem modal
+            self.show_status(f"Pick Color: {color} aplicada e copiada para a área de transferência.", timeout_ms=6000)
 
         # ── Gerenciamento da lista de imagens ──────────────────────────────
 
