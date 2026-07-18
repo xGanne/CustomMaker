@@ -61,16 +61,34 @@ def _process_cropped(cropped, anim_type, border_color, output_path, path):
 
 
 def _generate_frames(cropped, anim_type, border_color):
+    # F13: gera a borda como overlay (centro transparente) e compõe sobre o
+    # conteúdo em tamanho original — mesmo resultado visual do preview e do
+    # caminho estático, sem o resize não proporcional para dentro da borda.
+    size = cropped.size
     dispatch = {
-        "Rainbow": lambda: AnimationProcessor.generate_rainbow_frames(cropped, total_frames=40, border_width=BORDER_THICKNESS),
-        "Neon Pulsante": lambda: AnimationProcessor.generate_neon_frames(cropped, border_color, total_frames=40, border_width=BORDER_THICKNESS),
-        "Strobe (Pisca)": lambda: AnimationProcessor.generate_strobe_frames(cropped, total_frames=10, border_width=BORDER_THICKNESS),
-        "Glitch": lambda: AnimationProcessor.generate_glitch_frames(cropped, total_frames=20, border_width=BORDER_THICKNESS),
-        "Spin": lambda: AnimationProcessor.generate_spin_frames(cropped, border_color, total_frames=30, border_width=BORDER_THICKNESS),
-        "Flow": lambda: AnimationProcessor.generate_flow_frames(cropped, border_color, total_frames=30, border_width=BORDER_THICKNESS),
+        "Rainbow": lambda: AnimationProcessor.generate_rainbow_frames(size, total_frames=40, border_width=BORDER_THICKNESS, overlay_only=True),
+        "Neon Pulsante": lambda: AnimationProcessor.generate_neon_frames(size, border_color, total_frames=40, border_width=BORDER_THICKNESS, overlay_only=True),
+        "Strobe (Pisca)": lambda: AnimationProcessor.generate_strobe_frames(size, total_frames=10, border_width=BORDER_THICKNESS, overlay_only=True),
+        "Glitch": lambda: AnimationProcessor.generate_glitch_frames(size, total_frames=20, border_width=BORDER_THICKNESS, overlay_only=True),
+        "Spin": lambda: AnimationProcessor.generate_spin_frames(size, border_color, total_frames=30, border_width=BORDER_THICKNESS, overlay_only=True),
+        "Flow": lambda: AnimationProcessor.generate_flow_frames(size, border_color, total_frames=30, border_width=BORDER_THICKNESS, overlay_only=True),
     }
     fn = dispatch.get(anim_type) or dispatch["Rainbow"]
-    return fn()
+    overlays, duration = fn()
+
+    base = cropped if cropped.mode == "RGBA" else cropped.convert("RGBA")
+    frames = []
+    try:
+        for overlay in overlays:
+            frame = base.copy()
+            frame.alpha_composite(overlay)
+            frames.append(frame)
+    finally:
+        for overlay in overlays:
+            overlay.close()
+        if base is not cropped:
+            base.close()
+    return frames, duration
 
 
 def _resize_frames(frames):
