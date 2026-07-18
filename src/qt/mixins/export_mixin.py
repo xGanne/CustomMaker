@@ -46,6 +46,11 @@ class ExportMixin:
         else:
             self.show_info(title, message)
 
+    def _mark_work_exported(self, result):
+        """M2: exportação bem-sucedida zera o aviso de 'trabalho não exportado'."""
+        if not result.get("cancelled") and not result.get("errors"):
+            self.editor_state.image_dirty.clear()
+
     # ── Exportação ────────────────────────────────────────────────────────
 
     def save_current_image(self):
@@ -94,6 +99,7 @@ class ExportMixin:
             )
 
         def on_done(result):
+            self._mark_work_exported(result)
             lines = [
                 "Exportação concluída.",
                 self._format_count("Processadas", result.get("processed")),
@@ -131,6 +137,7 @@ class ExportMixin:
             )
 
         def on_done(result):
+            self._mark_work_exported(result)
             lines = [
                 "ZIP gerado com sucesso.",
                 self._format_count("Arquivos escritos", result.get("written")),
@@ -179,6 +186,7 @@ class ExportMixin:
             )
 
         def on_done(result):
+            self._mark_work_exported(result)
             links = result.get("links") or []
             errors = result.get("errors") or []
             lines = [

@@ -669,6 +669,20 @@ if QT_AVAILABLE:
         # ── Limpeza ao fechar ──────────────────────────────────────────────
 
         def closeEvent(self, event):
+            # M2: avisa antes de sair se há ajustes/edições ainda não exportados
+            dirty_count = len(self.editor_state.image_dirty)
+            if dirty_count > 0:
+                answer = QMessageBox.question(
+                    self,
+                    "Sair",
+                    f"Você tem {dirty_count} imagem(ns) com ajustes não exportados.\n"
+                    "Sair mesmo assim?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if answer != QMessageBox.Yes:
+                    event.ignore()
+                    return
             self.ui_preferences.last_global_borda = self.editor_state.selected_borda
             if self.editor_state.image_list:
                 self.ui_preferences.last_folder = os.path.dirname(self.editor_state.image_list[0])
