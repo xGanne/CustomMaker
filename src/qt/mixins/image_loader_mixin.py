@@ -217,8 +217,6 @@ class ImageLoaderMixin:
         recent.insert(0, folder)
         self.app_config.set("recent_folders", recent[:8])
         self.app_config.save()
-        if hasattr(self, "_update_recent_folders_menu"):
-            self._update_recent_folders_menu()
 
     def get_active_image_copy(self):
         if not self.current_path:

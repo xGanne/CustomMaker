@@ -226,7 +226,6 @@ if QT_AVAILABLE:
                 btn.clicked.connect(handler)
                 return btn
 
-            from src.qt.compat import QMenu
             self._folder_btn = _tool_btn("folder-open", "Selecionar Pasta  (clique direito: recentes)", self.load_folder, "Ctrl+O")
             self._folder_btn.setContextMenuPolicy(Qt.CustomContextMenu)
             self._folder_btn.customContextMenuRequested.connect(self._show_recent_folders_menu)
@@ -559,7 +558,6 @@ if QT_AVAILABLE:
                 )
 
         def _show_recent_folders_menu(self, pos):
-            from src.qt.compat import QMenu
             recent = self.app_config.get("recent_folders") or []
             if not recent:
                 self.show_status("Nenhuma pasta recente.")
@@ -569,9 +567,6 @@ if QT_AVAILABLE:
                 action = menu.addAction(folder)
                 action.triggered.connect(lambda _checked, f=folder: self.load_folder(f))
             menu.exec(self._folder_btn.mapToGlobal(pos))
-
-        def _update_recent_folders_menu(self):
-            pass  # menu is built dynamically on each right-click
 
         def refresh_list_indicators(self):
             self.image_list_panel.update_indicators(

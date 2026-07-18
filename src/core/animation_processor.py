@@ -85,10 +85,6 @@ class AnimationProcessor:
         return frames, 50
 
     @staticmethod
-    def generate_marching_ants_frames(base_image, color1="#FFFFFF", color2="#000000", total_frames=20, border_width=10, dash_length=20):
-        return []
-
-    @staticmethod
     def generate_strobe_frames(base_image, total_frames=10, border_width=10, overlay_only=False):
         frames = []
         if isinstance(base_image, tuple):
