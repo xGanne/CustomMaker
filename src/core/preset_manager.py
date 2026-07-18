@@ -26,11 +26,18 @@ class PresetManager:
             self.presets = {}
 
     def save_presets(self):
+        # F14: escrita atômica — um crash no meio do dump não corrompe o arquivo
+        tmp_path = f"{PRESETS_FILE}.tmp"
         try:
-            with open(PRESETS_FILE, "w", encoding="utf-8") as f:
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self.presets, f, indent=4, ensure_ascii=False)
+            os.replace(tmp_path, PRESETS_FILE)
         except Exception as exc:
             logger.error("Falha ao salvar presets: %s", exc)
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def add_preset(self, name, data):
         self.presets[name] = data

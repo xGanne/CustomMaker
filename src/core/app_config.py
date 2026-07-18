@@ -228,11 +228,18 @@ class AppConfig:
             self.config_data = deepcopy(DEFAULT_CONFIG)
 
     def save(self):
+        # F14: escrita atômica — um crash no meio do dump não corrompe o arquivo
+        tmp_path = f"{CONFIG_FILE}.tmp"
         try:
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self.config_data, f, indent=4, ensure_ascii=False)
+            os.replace(tmp_path, CONFIG_FILE)
         except OSError as exc:
             logger.error("Não foi possível salvar config em %s: %s", CONFIG_FILE, exc)
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def get(self, key, default=None):
         return self.config_data.get(key, default)
