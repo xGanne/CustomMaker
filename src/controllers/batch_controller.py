@@ -166,6 +166,14 @@ class BatchController:
         except (TypeError, ValueError):
             return cpu_default
 
+    @staticmethod
+    def _sort_results_by_task_order(results, tasks):
+        """Resultados chegam na ordem de conclusão dos processos; reordena pela
+        ordem da lista de tasks para manter links/arquivos na ordem da lista (F5)."""
+        order = {task.get("path"): index for index, task in enumerate(tasks)}
+        results.sort(key=lambda r: order.get(r.get("path"), len(order)))
+        return results
+
     def _run_batch(self, tasks, on_progress=None, cancel_event=None):
         total = len(tasks)
         completed = 0
@@ -185,7 +193,7 @@ class BatchController:
                     for future in pending:
                         future.cancel()
                     executor.shutdown(wait=False, cancel_futures=True)
-                    return {"results": results, "cancelled": True}
+                    return {"results": self._sort_results_by_task_order(results, tasks), "cancelled": True}
 
                 done, pending = concurrent.futures.wait(
                     pending,
@@ -207,7 +215,7 @@ class BatchController:
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
-        return {"results": results, "cancelled": False}
+        return {"results": self._sort_results_by_task_order(results, tasks), "cancelled": False}
 
     def save_all_images(self, target_dir, progress_callback=None, cancel_event=None):
         source_dir = tempfile.mkdtemp()

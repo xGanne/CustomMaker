@@ -455,7 +455,7 @@ if QT_AVAILABLE:
                 return
 
             def task_fn(cancel_event, on_progress):
-                downloaded_paths = []
+                indexed_paths = {}
                 errors = []
                 total = len(selected_posts)
                 max_workers = min(total, self._resolve_download_workers())
@@ -478,12 +478,19 @@ if QT_AVAILABLE:
                         file_obj.write(data)
                     return {"path": target_path}
 
+                def ordered_paths():
+                    # ordena pela ordem de seleção, não pela ordem de conclusão (F5)
+                    return [indexed_paths[i] for i in sorted(indexed_paths)]
+
                 processed = 0
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=max_workers,
                     thread_name_prefix="danbooru_dl",
                 ) as executor:
-                    futures = [executor.submit(download_one, post) for post in selected_posts]
+                    futures = {
+                        executor.submit(download_one, post): index
+                        for index, post in enumerate(selected_posts)
+                    }
                     for future in concurrent.futures.as_completed(futures):
                         processed += 1
                         try:
@@ -493,7 +500,7 @@ if QT_AVAILABLE:
                             result = {}
 
                         if result.get("path"):
-                            downloaded_paths.append(result["path"])
+                            indexed_paths[futures[future]] = result["path"]
                         elif result.get("error"):
                             errors.append(result["error"])
 
@@ -501,9 +508,9 @@ if QT_AVAILABLE:
                             on_progress(processed, total, f"Baixado {processed}/{total}")
 
                         if cancel_event.is_set():
-                            return {"cancelled": True, "paths": downloaded_paths, "errors": errors}
+                            return {"cancelled": True, "paths": ordered_paths(), "errors": errors}
 
-                return {"cancelled": False, "paths": downloaded_paths, "errors": errors}
+                return {"cancelled": False, "paths": ordered_paths(), "errors": errors}
 
             def on_done(result):
                 errors = result.get("errors") or []
