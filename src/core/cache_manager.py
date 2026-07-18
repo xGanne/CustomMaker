@@ -4,13 +4,16 @@ import os
 import threading
 import time
 
+from src.utils.resource_loader import app_data_path
+
 
 logger = logging.getLogger(__name__)
 
 
 class CacheManager:
-    def __init__(self, cache_dir=".cache", max_age_days=3, max_disk_size_mb=512):
-        self.cache_dir = cache_dir
+    def __init__(self, cache_dir=None, max_age_days=3, max_disk_size_mb=512):
+        # F19: cache ancorado no diretório de dados do app, não no cwd
+        self.cache_dir = cache_dir or app_data_path(".cache")
         self.max_age_days = max_age_days
         self.max_disk_size_bytes = max(0, int(float(max_disk_size_mb) * 1024 * 1024))
         self._lock = threading.Lock()

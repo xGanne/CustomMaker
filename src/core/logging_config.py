@@ -2,8 +2,10 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
+from src.utils.resource_loader import app_data_path
 
-DEFAULT_LOG_FILE = os.path.join("logs", "app.log")
+
+DEFAULT_LOG_FILE = app_data_path(os.path.join("logs", "app.log"))
 
 
 def configure_logging(level_name: str = "INFO", log_file: str = DEFAULT_LOG_FILE) -> None:

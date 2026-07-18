@@ -21,11 +21,13 @@ def main():
     app_config = AppConfig()
     configure_logging(app_config.get("log_level", "INFO"))
 
-    if not os.path.exists(".env"):
+    from src.utils.resource_loader import app_data_path
+    env_path = app_data_path(".env")
+    if not os.path.exists(env_path) and not os.path.exists(".env"):
         try:
-            with open(".env", "w", encoding="utf-8") as file_obj:
+            with open(env_path, "w", encoding="utf-8") as file_obj:
                 file_obj.write("IMG_CHEST_API_TOKEN=seu_token_aqui\n")
-            logger.info(".env criado com template inicial.")
+            logger.info(".env criado com template inicial em %s.", env_path)
         except OSError:
             logger.warning("Falha ao criar .env automaticamente.")
 

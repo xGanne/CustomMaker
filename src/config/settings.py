@@ -2,9 +2,11 @@
 
 from dotenv import load_dotenv
 
-from src.utils.resource_loader import resource_path
+from src.utils.resource_loader import app_data_path, resource_path
 
-# Carrega variaveis de ambiente do arquivo .env
+# Carrega variaveis de ambiente do arquivo .env — primeiro o do diretório de
+# dados do app (F19), depois o do cwd como fallback (compatibilidade)
+load_dotenv(app_data_path(".env"))
 load_dotenv()
 
 # Esquema de cores legado (mantido por compatibilidade)
@@ -99,8 +101,9 @@ BORDA_HEX = {
 # Obter o token da API do ImgChest
 IMG_CHEST_API_TOKEN = os.getenv("IMG_CHEST_API_TOKEN")
 
-# Nome do arquivo de configuracao para persistencia
-CONFIG_FILE = "custommaker_config.json"
+# Arquivo de configuracao para persistencia — ancorado no diretório de dados
+# do app (raiz do projeto em dev, %LOCALAPPDATA%/CustomMaker no exe) (F19)
+CONFIG_FILE = app_data_path("custommaker_config.json")
 
 # Defaults de performance (Otimização Geral V1)
 DANBOORU_POOL_CONNECTIONS_DEFAULT = 16

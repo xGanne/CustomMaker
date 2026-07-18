@@ -2,11 +2,13 @@ import json
 import logging
 import os
 
+from src.utils.resource_loader import app_data_path
+
 
 logger = logging.getLogger(__name__)
 
 
-PRESETS_FILE = "presets.json"
+PRESETS_FILE = app_data_path("presets.json")
 
 
 class PresetManager:

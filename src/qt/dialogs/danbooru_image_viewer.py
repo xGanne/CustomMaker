@@ -1,3 +1,4 @@
+import os
 from io import BytesIO
 
 from PIL import Image
@@ -116,7 +117,11 @@ if QT_AVAILABLE:
             self._task_runner = QtTaskRunner(self)
             self._active_load_task_id = None
             self._load_seq = 0
-            self._disk_cache = CacheManager(cache_dir=".cache/danbooru_viewer", max_disk_size_mb=768)
+            from src.utils.resource_loader import app_data_path
+            self._disk_cache = CacheManager(
+                cache_dir=app_data_path(os.path.join(".cache", "danbooru_viewer")),
+                max_disk_size_mb=768,
+            )
 
             self.setWindowTitle(f"Imagem #{post.get('id')}")
             self.resize(1280, 900)
