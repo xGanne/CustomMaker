@@ -4,6 +4,18 @@
 > Os problemas abaixo foram encontrados por leitura sistemática de todos os módulos de `src/`.
 > Cada item tem arquivo/linha, descrição do problema e a correção proposta.
 
+## ✅ Status de implementação (2026-07-18)
+
+**Todas as falhas F1–F22 foram corrigidas**, cada uma em um commit próprio (`fix(F1)`…`fix(F22)`).
+Melhorias já implementadas: **M1** (Pick Color sem modal), **M2** (confirmação ao sair),
+**M3** (estado vazio do canvas), **M6** (acentuação pt-BR), **M12** (exportar imagem atual,
+Ctrl+Shift+S), **M13** (cache de frames da prévia), **M17** (aviso de detecção de rosto),
+**M19** (helper único PIL→QPixmap), **M20** (código morto removido), **M21** (log de exceções
+em tasks). Extras incluídos nas correções: redo com Ctrl+Y/Ctrl+Shift+Z (F15) e tecla **B**
+para o antes/depois (F17).
+
+Pendentes (backlog): M4, M5, M7–M11, M14–M16, M18, M22.
+
 ---
 
 ## Sumário de priorização
