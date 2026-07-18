@@ -1,9 +1,13 @@
+import logging
 import threading
 
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 
 if QT_AVAILABLE:
     from src.qt.compat import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot
+
+
+logger = logging.getLogger(__name__)
 
 
 if QT_AVAILABLE:
@@ -22,6 +26,9 @@ if QT_AVAILABLE:
                 else:
                     self.handle.done.emit(result)
             except Exception as exc:
+                # M21: garante rastro no log mesmo se nenhum slot estiver
+                # conectado ao sinal de erro
+                logger.exception("Falha na task '%s': %s", self.handle.task_id, exc)
                 self.handle.error.emit(exc)
 
 
