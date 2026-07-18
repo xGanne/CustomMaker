@@ -90,7 +90,7 @@ class ImgChestUploader:
 
         for i in range(0, total_images, batch_size):
             if cancel_event and cancel_event.is_set():
-                errors.append("Upload cancelado pelo usuario.")
+                errors.append("Upload cancelado pelo usuário.")
                 break
 
             batch_num = (i // batch_size) + 1
@@ -116,7 +116,7 @@ class ImgChestUploader:
 
                 for attempt in range(retries + 1):
                     if cancel_event and cancel_event.is_set():
-                        errors.append(f"Lote {batch_num}: cancelado pelo usuario.")
+                        errors.append(f"Lote {batch_num}: cancelado pelo usuário.")
                         batch_uploaded = True
                         break
 

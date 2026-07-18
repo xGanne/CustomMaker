@@ -258,7 +258,7 @@ if QT_AVAILABLE:
         def _load_image(self):
             urls = self._image_urls()
             if not urls:
-                QMessageBox.warning(self, "Danbooru", "URL da imagem nao encontrada.")
+                QMessageBox.warning(self, "Danbooru", "URL da imagem não encontrada.")
                 return
             self._load_next_image(urls, has_displayed_image=False)
 
@@ -267,7 +267,7 @@ if QT_AVAILABLE:
                 if has_displayed_image:
                     self.info_label.setText((self.post.get("tag_string", "") or "").replace(" ", ", "))
                 else:
-                    QMessageBox.warning(self, "Danbooru", "Nao foi possivel carregar a imagem.")
+                    QMessageBox.warning(self, "Danbooru", "Não foi possível carregar a imagem.")
                 return
 
             quality, url = urls[0]
@@ -280,7 +280,7 @@ if QT_AVAILABLE:
                 if cancel_event.is_set():
                     return {"task_id": task_id, "quality": quality, "image": None}
                 if on_progress:
-                    label = "previsualizacao" if quality == "preview" else "imagem completa"
+                    label = "pré-visualização" if quality == "preview" else "imagem completa"
                     on_progress(0, 1, f"Carregando {label}...")
                 data = self._download_cached(url)
                 if not data:

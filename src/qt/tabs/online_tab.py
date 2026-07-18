@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 
 
 RATING_TAGS = {
-    "Qualquer classificacao": "",
+    "Qualquer classificação": "",
     "Geral": "rating:g",
-    "Sensivel": "rating:s",
-    "Questionavel": "rating:q",
-    "Explicito": "rating:e",
+    "Sensível": "rating:s",
+    "Questionável": "rating:q",
+    "Explícito": "rating:e",
 }
 
 SORT_TAGS = {
@@ -363,7 +363,7 @@ if QT_AVAILABLE:
             self.search_button.setEnabled(False)
             self._update_page_controls()
             self.results_grid.display_loading()
-            self.summary_label.setText(f"Buscando pagina {self.current_page}...")
+            self.summary_label.setText(f"Buscando página {self.current_page}...")
 
             self._search_seq += 1
             task_id = f"qt_online_search_{self._search_seq}"
@@ -421,7 +421,7 @@ if QT_AVAILABLE:
 
         def change_page(self, delta):
             if not self._active_search_tags:
-                self.main_window.show_info("Paginacao", "Faca uma busca primeiro.")
+                self.main_window.show_info("Paginação", "Faça uma busca primeiro.")
                 return
             new_page = self.current_page + delta
             if new_page < 1:
@@ -484,7 +484,7 @@ if QT_AVAILABLE:
 
                     file_url = post.get("file_url") or post.get("large_file_url") or post.get("sample_url")
                     if not file_url:
-                        return {"error": f"Post {post.get('id')}: URL nao encontrada."}
+                        return {"error": f"Post {post.get('id')}: URL não encontrada."}
 
                     filename = f"{post.get('id')}.{post.get('file_ext', 'png')}"
                     target_path = os.path.join(target_dir, filename)
@@ -536,7 +536,7 @@ if QT_AVAILABLE:
                     self.main_window.show_warning("Danbooru", "\n".join(errors[:10]))
                 if import_after and result.get("paths"):
                     self.main_window.add_images(result["paths"], replace=False, select_last=True)
-                self.main_window.show_status(f"Download concluido: {len(result.get('paths') or [])} arquivo(s).")
+                self.main_window.show_status(f"Download concluído: {len(result.get('paths') or [])} arquivo(s).")
 
             self.main_window.run_task(
                 "qt_online_download",
@@ -555,13 +555,13 @@ if QT_AVAILABLE:
         def import_selected(self):
             target_dir = self._resolve_import_directory()
             if not target_dir:
-                self.main_window.show_warning("Importar", "Abra uma pasta na edicao antes de importar imagens.")
+                self.main_window.show_warning("Importar", "Abra uma pasta na edição antes de importar imagens.")
                 return
             self._download_posts(target_dir, import_after=True)
 
         def open_expanded_gallery(self):
             if not self.posts:
-                self.main_window.show_info("Galeria", "Faca uma busca primeiro.")
+                self.main_window.show_info("Galeria", "Faça uma busca primeiro.")
                 return
             dialog = DanbooruGalleryDialog(
                 self.posts,
