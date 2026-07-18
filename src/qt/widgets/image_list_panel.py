@@ -1,6 +1,5 @@
 import concurrent.futures
 import os
-from io import BytesIO
 
 from PIL import Image
 
@@ -32,6 +31,7 @@ if QT_AVAILABLE:
         remove_requested = Signal(int)
         toggle_individual_requested = Signal(int)
         order_changed = Signal(list)  # C1: emitted after drag-reorder
+        thumbnail_ready = Signal(int, object, object)  # generation, item, PIL image
 
         def __init__(self, parent=None):
             super().__init__(parent)
@@ -59,6 +59,7 @@ if QT_AVAILABLE:
                 max_workers=2, thread_name_prefix="list_thumb"
             )
             self._generation = 0
+            self.thumbnail_ready.connect(self._apply_thumbnail)
 
         def set_paths(self, paths, edited_set=None, adjusted_set=None):
             self._generation += 1
@@ -110,15 +111,24 @@ if QT_AVAILABLE:
             future = self._executor.submit(self._generate_thumb, path)
 
             def on_done(f):
+                # runs on the executor thread — only emit the signal here so the
+                # QPixmap/QIcon work happens on the GUI thread (queued connection)
                 try:
-                    pixmap = f.result()
+                    thumb = f.result()
                 except Exception:
                     return
-                if pixmap and generation == self._generation:
-                    # must set icon from main thread via a queued call
-                    item.setIcon(QIcon(pixmap))
+                self.thumbnail_ready.emit(generation, item, thumb)
 
             future.add_done_callback(on_done)
+
+        def _apply_thumbnail(self, generation, item, thumb):
+            if thumb is None:
+                return
+            if generation != self._generation:
+                return
+            data = thumb.tobytes("raw", "RGBA")
+            qimage = QImage(data, thumb.width, thumb.height, thumb.width * 4, QImage.Format_RGBA8888)
+            item.setIcon(QIcon(QPixmap.fromImage(qimage.copy())))
 
         @staticmethod
         def _generate_thumb(path):
@@ -126,9 +136,7 @@ if QT_AVAILABLE:
                 with Image.open(path) as img:
                     thumb = img.convert("RGBA")
                     thumb.thumbnail((_THUMB_W, _THUMB_H), Image.LANCZOS)
-                    data = thumb.tobytes("raw", "RGBA")
-                    qimage = QImage(data, thumb.width, thumb.height, thumb.width * 4, QImage.Format_RGBA8888)
-                    return QPixmap.fromImage(qimage.copy())
+                    return thumb
             except Exception:
                 return None
 
