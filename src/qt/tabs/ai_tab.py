@@ -45,8 +45,11 @@ if QT_AVAILABLE:
             self.prompt_edit.setPlaceholderText("Ex: trocar roupa para uniforme azul, manter pose e estilo")
             prompt_layout.addWidget(self.prompt_edit)
 
-            # Slider de intensidade
-            strength_row = QHBoxLayout()
+            # Slider de intensidade — só faz sentido quando o provider edita
+            # imagens; oculto no modo texto (F18)
+            self._strength_row = QWidget()
+            strength_row = QHBoxLayout(self._strength_row)
+            strength_row.setContentsMargins(0, 0, 0, 0)
             strength_label = QLabel("Intensidade:")
             strength_label.setFixedWidth(80)
             self.strength_slider = QSlider(Qt.Horizontal)
@@ -62,7 +65,8 @@ if QT_AVAILABLE:
             strength_row.addWidget(strength_label)
             strength_row.addWidget(self.strength_slider)
             strength_row.addWidget(self.strength_value_label)
-            prompt_layout.addLayout(strength_row)
+            self._strength_row.setVisible(False)
+            prompt_layout.addWidget(self._strength_row)
 
             self.apply_button = QPushButton("Gerar descrição com IA")
             self.apply_button.clicked.connect(self.on_apply_click)
@@ -109,8 +113,10 @@ if QT_AVAILABLE:
             if self.pipeline_manager is None:
                 from src.core.ai_pipeline import AIPipelineManager
                 base_prompt = self.main_window.app_config.get("ai_base_prompt")
-                self.pipeline_manager = AIPipelineManager(base_prompt=base_prompt)
+                model_name = self.main_window.app_config.get("ai_model")
+                self.pipeline_manager = AIPipelineManager(base_prompt=base_prompt, model_name=model_name)
                 caps = self.pipeline_manager.get_capabilities()
+                self._strength_row.setVisible(bool(caps.image_edit))
                 if caps.image_edit:
                     self.info_label.setText("IA com edição de imagem habilitada.")
                 elif caps.text_only:
@@ -137,7 +143,14 @@ if QT_AVAILABLE:
                     status_callback=lambda message: on_progress(0, 1, message),
                 )
 
+            def _dispose_input():
+                try:
+                    image.close()
+                except Exception:
+                    pass
+
             def on_done(result):
+                _dispose_input()
                 self.apply_button.setEnabled(True)
                 if result.kind == "image" and result.image is not None:
                     self.main_window.set_edited_image_for_current(result.image)
@@ -152,6 +165,7 @@ if QT_AVAILABLE:
                 self.main_window.show_error("IA", result.error_message or "Erro desconhecido.")
 
             def on_error(exc):
+                _dispose_input()
                 logger.exception("Falha no processamento de IA: %s", exc)
                 self.apply_button.setEnabled(True)
                 self.status_label.setText("Erro")

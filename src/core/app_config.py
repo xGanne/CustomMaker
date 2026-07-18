@@ -38,6 +38,7 @@ DEFAULT_CONFIG = {
     "log_level": "INFO",
     "max_workers": None,
     "ai_mode": "safe",
+    "ai_model": "models/gemini-2.0-flash",
     "ai_base_prompt": (
         "Analyze the image and describe the requested visual edit while preserving the original pose, "
         "composition, character identity, and art style. Return only the visual description."
@@ -130,6 +131,13 @@ class AppConfig:
 
         if migrated.get("ai_mode") not in {"safe", "off", "provider_default"}:
             migrated["ai_mode"] = DEFAULT_CONFIG["ai_mode"]
+
+        ai_model = migrated.get("ai_model")
+        if not isinstance(ai_model, str) or not ai_model.strip():
+            migrated["ai_model"] = DEFAULT_CONFIG["ai_model"]
+        elif "gemini-1.5" in ai_model:
+            # F18: família 1.5 foi descontinuada pelo Google
+            migrated["ai_model"] = DEFAULT_CONFIG["ai_model"]
 
         if not isinstance(migrated.get("ai_base_prompt"), str) or not migrated.get("ai_base_prompt").strip():
             migrated["ai_base_prompt"] = DEFAULT_CONFIG["ai_base_prompt"]

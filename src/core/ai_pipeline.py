@@ -14,7 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiTextOnlyProvider(AIProvider):
-    def __init__(self, model_name: str = "models/gemini-1.5-flash"):
+    DEFAULT_MODEL = "models/gemini-2.0-flash"
+
+    def __init__(self, model_name: str = None):
+        model_name = (model_name or "").strip() or self.DEFAULT_MODEL
         self.model_name = model_name
         self.api_key = os.getenv("GEMINI_API_KEY")
         self._enabled = bool(self.api_key)
@@ -64,8 +67,13 @@ class AIPipelineManager:
         "composition, character identity, and art style. Return only the visual description."
     )
 
-    def __init__(self, provider: Optional[AIProvider] = None, base_prompt: Optional[str] = None):
-        self.provider = provider or GeminiTextOnlyProvider()
+    def __init__(
+        self,
+        provider: Optional[AIProvider] = None,
+        base_prompt: Optional[str] = None,
+        model_name: Optional[str] = None,
+    ):
+        self.provider = provider or GeminiTextOnlyProvider(model_name=model_name)
         self.base_prompt = (base_prompt or self.DEFAULT_BASE_PROMPT).strip()
 
     def get_capabilities(self) -> AICapabilities:
