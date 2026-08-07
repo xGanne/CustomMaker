@@ -105,13 +105,15 @@ class ImageProcessor:
         return image_with_border
 
     @staticmethod
-    def detect_anime_face(original_image, face_cascade):
+    def detect_all_anime_faces(original_image, face_cascade):
         """
-        Detects anime face in the image using the provided cascade.
-        Returns (x, y, w, h) of the best face or None.
+        Detects all anime faces in the image using the provided cascade.
+        Returns a list of (x, y, w, h) tuples (possibly empty). Used both by
+        the single-face fit logic and by the custom-suitability scorer, which
+        cares about *how many* faces are present (group shot vs solo).
         """
         if not face_cascade or not original_image:
-            return None
+            return []
 
         try:
             open_cv_image_rgb = np.array(original_image.convert("RGB"))
@@ -139,14 +141,23 @@ class ImageProcessor:
                     minSize=(min_size_relaxed, min_size_relaxed),
                 )
 
-            if len(faces) == 0:
-                return None
-
-            best_face = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)[0]
-            return best_face
+            if faces is None or len(faces) == 0:
+                return []
+            return list(faces)
         except Exception as exc:
             logger.warning("Erro de detecção OpenCV: %s", exc)
+            return []
+
+    @staticmethod
+    def detect_anime_face(original_image, face_cascade):
+        """
+        Detects anime face in the image using the provided cascade.
+        Returns (x, y, w, h) of the best (largest) face or None.
+        """
+        faces = ImageProcessor.detect_all_anime_faces(original_image, face_cascade)
+        if not faces:
             return None
+        return sorted(faces, key=lambda f: f[2] * f[3], reverse=True)[0]
 
     @staticmethod
     def calculate_intelligent_frame_pos(original_image, face_rect, borda_pos):
