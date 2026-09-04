@@ -186,3 +186,6 @@ presets.json
 
 # Spec canonico do PyInstaller e versionado (excecao ao *.spec acima)
 !CustomMaker.spec
+
+# Assets de UI gerados em runtime (chevrons SVG do tema)
+.ui/
