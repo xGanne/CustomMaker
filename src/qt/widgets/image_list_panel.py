@@ -26,6 +26,22 @@ _THUMB_H = 75
 
 
 if QT_AVAILABLE:
+    class _EmptyStateListWidget(QListWidget):
+        """Lista que desenha uma orientação centralizada enquanto está vazia."""
+
+        placeholder_text = "Nenhuma imagem carregada\n\nAbra uma pasta ou cole uma imagem"
+
+        def paintEvent(self, event):
+            super().paintEvent(event)
+            if self.count() > 0:
+                return
+            from src.qt.compat import QColor, QPainter
+            painter = QPainter(self.viewport())
+            painter.setPen(QColor("#7B879D"))
+            painter.drawText(self.viewport().rect(), Qt.AlignCenter, self.placeholder_text)
+            painter.end()
+
+
     class ImageListPanel(QWidget):
         selection_changed = Signal(int)
         remove_requested = Signal(int)
@@ -39,7 +55,10 @@ if QT_AVAILABLE:
             layout.setContentsMargins(10, 6, 10, 10)
             layout.setSpacing(8)
             self.title = QLabel("Lista de Imagens", self)
-            self.list_widget = QListWidget(self)
+            self.title.setStyleSheet(
+                "font-size: 10px; font-weight: 500; letter-spacing: 0.8px; color: #7B879D;"
+            )
+            self.list_widget = _EmptyStateListWidget(self)
             self.list_widget.setMinimumHeight(180)
             self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
             self.list_widget.setIconSize(QSize(_THUMB_W, _THUMB_H))  # B3

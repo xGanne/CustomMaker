@@ -28,19 +28,24 @@ if QT_AVAILABLE:
             self.pipeline_manager = None
 
             layout = QVBoxLayout(self)
-            layout.setSpacing(8)
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setSpacing(10)
 
             # ── Status da pipeline ─────────────────────────────────────────
             self.info_label = QLabel(
-                "Modo seguro ativo: a IA gera uma descrição textual da edição quando edição de imagem não está disponível."
+                "Modo seguro ativo: a IA gera uma descrição textual da edição "
+                "quando edição de imagem não está disponível."
             )
             self.info_label.setWordWrap(True)
-            self.info_label.setStyleSheet("color: #7B879D; font-size: 11px;")
+            self.info_label.setStyleSheet(
+                "color: #7B879D; font-size: 11px; padding: 2px 2px 4px 2px;"
+            )
             layout.addWidget(self.info_label)
 
             # ── Prompt do usuário ──────────────────────────────────────────
             prompt_group = QGroupBox("Prompt")
             prompt_layout = QVBoxLayout(prompt_group)
+            prompt_layout.setSpacing(8)
             self.prompt_edit = QLineEdit()
             self.prompt_edit.setPlaceholderText("Ex: trocar roupa para uniforme azul, manter pose e estilo")
             prompt_layout.addWidget(self.prompt_edit)
@@ -73,7 +78,9 @@ if QT_AVAILABLE:
             prompt_layout.addWidget(self.apply_button)
 
             self.status_label = QLabel("")
+            self.status_label.setAlignment(Qt.AlignCenter)
             self.status_label.setStyleSheet("font-size: 11px; color: #7B879D;")
+            self.status_label.setVisible(False)  # sem texto, não ocupa espaço
             prompt_layout.addWidget(self.status_label)
 
             layout.addWidget(prompt_group)
@@ -81,11 +88,12 @@ if QT_AVAILABLE:
             # ── Instrução base (base prompt) ───────────────────────────────
             base_group = QGroupBox("Instrução Base da IA")
             base_layout = QVBoxLayout(base_group)
-            base_hint = QLabel("Instrução enviada antes do seu prompt. Customizável.")
+            base_layout.setSpacing(8)
+            base_hint = QLabel("Enviada antes do seu prompt em toda geração. Customizável.")
             base_hint.setWordWrap(True)
             base_hint.setStyleSheet("color: #7B879D; font-size: 11px;")
             self.base_prompt_edit = QTextEdit()
-            self.base_prompt_edit.setMaximumHeight(90)
+            self.base_prompt_edit.setMaximumHeight(96)
             self.base_prompt_edit.setPlainText(
                 self.main_window.app_config.get("ai_base_prompt", "")
             )
@@ -97,6 +105,11 @@ if QT_AVAILABLE:
             base_layout.addWidget(save_base_btn)
             layout.addWidget(base_group)
             layout.addStretch(1)
+
+        def _set_status(self, text):
+            """Mostra o status só quando há mensagem — evita uma faixa vazia."""
+            self.status_label.setText(text or "")
+            self.status_label.setVisible(bool(text))
 
         def _save_base_prompt(self):
             text = self.base_prompt_edit.toPlainText().strip()
@@ -133,7 +146,7 @@ if QT_AVAILABLE:
             prompt = self.prompt_edit.text().strip()
             strength = self.strength_slider.value() / 100.0
             self.apply_button.setEnabled(False)
-            self.status_label.setText("Processando...")
+            self._set_status("Processando...")
 
             def task_fn(_cancel_event, on_progress):
                 return manager.apply_uniform(
@@ -154,21 +167,21 @@ if QT_AVAILABLE:
                 self.apply_button.setEnabled(True)
                 if result.kind == "image" and result.image is not None:
                     self.main_window.set_edited_image_for_current(result.image)
-                    self.status_label.setText("Imagem atualizada.")
+                    self._set_status("Imagem atualizada.")
                     self.main_window.show_info("IA", "Imagem atualizada pela IA.")
                     return
                 if result.kind == "text":
-                    self.status_label.setText("Concluído em modo seguro.")
+                    self._set_status("Concluído em modo seguro.")
                     self.main_window.show_info("Resultado da IA", result.text or "A IA não retornou descrição.")
                     return
-                self.status_label.setText("Erro")
+                self._set_status("Erro")
                 self.main_window.show_error("IA", result.error_message or "Erro desconhecido.")
 
             def on_error(exc):
                 _dispose_input()
                 logger.exception("Falha no processamento de IA: %s", exc)
                 self.apply_button.setEnabled(True)
-                self.status_label.setText("Erro")
+                self._set_status("Erro")
                 self.main_window.show_error("IA", str(exc))
 
             self.main_window.run_task("qt_ai_apply", "Processando IA", task_fn, on_done=on_done, on_error=on_error)

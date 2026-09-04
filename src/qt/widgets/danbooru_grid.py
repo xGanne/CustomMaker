@@ -63,6 +63,30 @@ if QT_AVAILABLE:
             self.setContextMenuPolicy(Qt.CustomContextMenu)
             self.customContextMenuRequested.connect(self._show_context_menu)
             self.thumbnail_ready.connect(self._apply_thumbnail)
+            self._placeholder_text = (
+                "Nenhuma busca executada\n\n"
+                "Digite uma tag acima e clique em Buscar"
+            )
+
+        # ── Estado vazio desenhado no centro da área ───────────────────────
+
+        def set_placeholder_text(self, text):
+            self._placeholder_text = text
+            self.viewport().update()
+
+        def paintEvent(self, event):
+            super().paintEvent(event)
+            if self.count() > 0 or not self._placeholder_text:
+                return
+            from src.qt.compat import QColor, QPainter
+            painter = QPainter(self.viewport())
+            painter.setPen(QColor("#7B879D"))
+            painter.drawText(
+                self.viewport().rect(),
+                Qt.AlignCenter,
+                self._placeholder_text,
+            )
+            painter.end()
 
         def close(self):
             self._executor.shutdown(wait=False, cancel_futures=True)
@@ -168,9 +192,7 @@ if QT_AVAILABLE:
             self._syncing_selection = True
             self.clear()
             self._syncing_selection = False
-            item = QListWidgetItem("Carregando resultados...")
-            item.setFlags(Qt.NoItemFlags)
-            self.addItem(item)
+            self.set_placeholder_text("Carregando resultados...")
 
         def display_posts(self, posts):
             self._generation += 1
@@ -180,10 +202,11 @@ if QT_AVAILABLE:
             self.clear()
 
             if not self.posts:
-                item = QListWidgetItem("Nenhum resultado encontrado.")
-                item.setFlags(Qt.NoItemFlags)
-                self.addItem(item)
                 self._syncing_selection = False
+                self.set_placeholder_text(
+                    "Nenhum resultado encontrado\n\n"
+                    "Tente outras tags ou ajuste os filtros"
+                )
                 self.selection_count_changed.emit(len(self.selection_state.selected_post_ids))
                 return
 

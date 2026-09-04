@@ -53,12 +53,19 @@ if QT_AVAILABLE:
             fit_layout.setSpacing(6)
 
             fit_row1 = QHBoxLayout()
-            auto_fit_all_btn = QPushButton("Auto Fit — Todas")
+            fit_row1.setSpacing(6)
+            auto_fit_all_btn = QPushButton("Auto Fit")
+            auto_fit_all_btn.setProperty("class", "secondary")
+            auto_fit_all_btn.setToolTip("Auto fit em todas as imagens da lista  (Alt+B na imagem atual)")
             auto_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("auto_fit"))
-            smart_fit_all_btn = QPushButton("Inteligente — Todas")
+            smart_fit_all_btn = QPushButton("Inteligente")
+            smart_fit_all_btn.setProperty("class", "secondary")
+            smart_fit_all_btn.setToolTip(
+                "Ajuste inteligente (centraliza o rosto) em todas as imagens  (Alt+F na imagem atual)"
+            )
             smart_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("intelligent_fit"))
-            fit_row1.addWidget(auto_fit_all_btn)
-            fit_row1.addWidget(smart_fit_all_btn)
+            fit_row1.addWidget(auto_fit_all_btn, 1)
+            fit_row1.addWidget(smart_fit_all_btn, 1)
 
             copy_frame_btn = QPushButton("Copiar Enquadramento para Todas")
             copy_frame_btn.setProperty("class", "secondary")
@@ -73,7 +80,9 @@ if QT_AVAILABLE:
             save_layout = QHBoxLayout(save_group)
             save_layout.setSpacing(6)
 
-            save_images_button = QPushButton("Salvar")
+            # Só "Salvar Todas" é ação primária aqui — as demais são variações
+            # do mesmo fluxo e ficam secundárias para não competirem visualmente.
+            save_images_button = QPushButton("Salvar Todas")
             save_images_button.setToolTip("Salvar todas as imagens  (Ctrl+S)")
             save_images_button.clicked.connect(self.main_window.save_all_images)
 
@@ -83,17 +92,19 @@ if QT_AVAILABLE:
             save_current_button.clicked.connect(self.main_window.save_current_image)
 
             save_zip_button = QPushButton("ZIP")
-            save_zip_button.setToolTip("Exportar como arquivo ZIP")
+            save_zip_button.setProperty("class", "secondary")
+            save_zip_button.setToolTip("Exportar todas como arquivo ZIP")
             save_zip_button.clicked.connect(self.main_window.save_zip)
 
             upload_button = QPushButton("ImgChest ↑")
+            upload_button.setProperty("class", "secondary")
             upload_button.setToolTip("Upload para ImgChest e copiar comando Mudae")
             upload_button.clicked.connect(self.main_window.upload_to_imgchest)
 
-            save_layout.addWidget(save_images_button)
-            save_layout.addWidget(save_current_button)
-            save_layout.addWidget(save_zip_button)
-            save_layout.addWidget(upload_button)
+            save_layout.addWidget(save_images_button, 2)
+            save_layout.addWidget(save_current_button, 1)
+            save_layout.addWidget(save_zip_button, 1)
+            save_layout.addWidget(upload_button, 2)
 
             # ── Presets ────────────────────────────────────────────────────
             preset_group = QGroupBox("Presets")
@@ -105,20 +116,24 @@ if QT_AVAILABLE:
             self.preset_name_edit = QLineEdit()
             self.preset_name_edit.setPlaceholderText("Nome do preset")
             save_preset_button = QPushButton("Salvar")
-            save_preset_button.setMaximumWidth(80)
+            save_preset_button.setProperty("class", "secondary")
+            save_preset_button.setFixedWidth(88)
+            save_preset_button.setToolTip("Salvar borda, cor e animação atuais como preset")
             save_preset_button.clicked.connect(self._save_preset)
-            row_save.addWidget(self.preset_name_edit)
+            row_save.addWidget(self.preset_name_edit, 1)
             row_save.addWidget(save_preset_button)
 
             row_load = QHBoxLayout()
             row_load.setSpacing(6)
             self.preset_combo = QComboBox()
+            self.preset_combo.setToolTip("Aplicar um preset salvo")
             self.preset_combo.currentTextChanged.connect(self._load_preset)
             delete_preset_button = QPushButton("Excluir")
-            delete_preset_button.setMaximumWidth(80)
+            delete_preset_button.setFixedWidth(88)
             delete_preset_button.setProperty("class", "secondary")
+            delete_preset_button.setToolTip("Excluir o preset selecionado")
             delete_preset_button.clicked.connect(self._delete_preset)
-            row_load.addWidget(self.preset_combo)
+            row_load.addWidget(self.preset_combo, 1)
             row_load.addWidget(delete_preset_button)
 
             preset_layout.addLayout(row_save)

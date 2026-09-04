@@ -66,43 +66,59 @@ if QT_AVAILABLE:
             self.selection_state = DanbooruSelectionState()
 
             layout = QVBoxLayout(self)
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setSpacing(10)
 
             # ── Busca ──────────────────────────────────────────────────────
             search_group = QGroupBox("Busca Online")
             search_layout = QVBoxLayout(search_group)
+            search_layout.setSpacing(8)
 
             # A5: search history combo instead of plain QLineEdit
+            # Campo de tags + Buscar na mesma linha (par natural), deixando a
+            # linha de baixo inteira para os dois combos — assim nenhum rótulo
+            # é truncado no painel estreito.
+            query_row = QHBoxLayout()
+            query_row.setSpacing(6)
             self.search_combo = QComboBox()
             self.search_combo.setEditable(True)
             self.search_combo.setInsertPolicy(QComboBox.NoInsert)
             self.search_combo.lineEdit().setPlaceholderText("Tags (ex: hatsune_miku)")
             self.search_combo.lineEdit().returnPressed.connect(self.search)
             self._load_search_history()
+            self.search_button = QPushButton("Buscar")
+            self.search_button.setMinimumWidth(84)
+            self.search_button.clicked.connect(self.search)
+            query_row.addWidget(self.search_combo, 1)
+            query_row.addWidget(self.search_button)
 
             filter_row = QHBoxLayout()
+            filter_row.setSpacing(6)
             self.rating_combo = QComboBox()
             self.rating_combo.addItems(list(RATING_TAGS.keys()))
+            self.rating_combo.setToolTip("Filtrar por classificação de conteúdo")
             self.sort_combo = QComboBox()
             self.sort_combo.addItems(list(SORT_TAGS.keys()))
-            self.search_button = QPushButton("Buscar")
-            self.search_button.clicked.connect(self.search)
-            filter_row.addWidget(self.rating_combo)
-            filter_row.addWidget(self.sort_combo)
-            filter_row.addWidget(self.search_button)
+            self.sort_combo.setToolTip("Ordenação dos resultados")
+            filter_row.addWidget(self.rating_combo, 1)
+            filter_row.addWidget(self.sort_combo, 1)
 
             # A6: blacklist row
             blacklist_row = QHBoxLayout()
-            blacklist_label = QLabel("Excluir tags:")
-            blacklist_label.setFixedWidth(70)
+            blacklist_row.setSpacing(6)
+            blacklist_label = QLabel("Excluir:")
+            blacklist_label.setMinimumWidth(52)
+            blacklist_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.blacklist_edit = QLineEdit()
-            self.blacklist_edit.setPlaceholderText("gore violence nsfw (separadas por espaço)")
+            self.blacklist_edit.setPlaceholderText("gore violence (separadas por espaço)")
+            self.blacklist_edit.setToolTip("Tags removidas de todas as buscas")
             saved_blacklist = self.main_window.app_config.get("danbooru_tag_blacklist", "")
             self.blacklist_edit.setText(saved_blacklist)
             self.blacklist_edit.editingFinished.connect(self._save_blacklist)
             blacklist_row.addWidget(blacklist_label)
-            blacklist_row.addWidget(self.blacklist_edit)
+            blacklist_row.addWidget(self.blacklist_edit, 1)
 
-            search_layout.addWidget(self.search_combo)
+            search_layout.addLayout(query_row)
             search_layout.addLayout(filter_row)
             search_layout.addLayout(blacklist_row)
 
@@ -124,23 +140,53 @@ if QT_AVAILABLE:
             # Pagination + summary in one compact row
             pagination_row = QHBoxLayout()
             pagination_row.setSpacing(4)
-            self.summary_label = QLabel("Nenhuma busca executada.")
+            self.summary_label = QLabel("")
             self.summary_label.setWordWrap(False)
+            self.summary_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             self.summary_label.setStyleSheet("color: #7B879D; font-size: 11px;")
             self.prev_button = QPushButton("←")
-            self.prev_button.setFixedWidth(32)
+            self.prev_button.setProperty("class", "pager")
+            self.prev_button.setFixedWidth(30)
+            self.prev_button.setToolTip("Página anterior")
             self.prev_button.clicked.connect(lambda: self.change_page(-1))
             self.page_label = QLabel("Pág. 1")
-            self.page_label.setStyleSheet("font-size: 11px; padding: 0 2px;")
+            self.page_label.setAlignment(Qt.AlignCenter)
+            self.page_label.setMinimumWidth(52)
+            self.page_label.setStyleSheet("font-size: 11px; color: #A8B3C7;")
             self.next_button = QPushButton("→")
-            self.next_button.setFixedWidth(32)
+            self.next_button.setProperty("class", "pager")
+            self.next_button.setFixedWidth(30)
+            self.next_button.setToolTip("Próxima página")
             self.next_button.clicked.connect(lambda: self.change_page(1))
             pagination_row.addWidget(self.summary_label, 1)
             pagination_row.addWidget(self.prev_button)
             pagination_row.addWidget(self.page_label)
             pagination_row.addWidget(self.next_button)
 
-            # Single actions row with hierarchy (primary + secondary)
+            # Duas linhas de 3 botões: seis numa linha só truncavam os rótulos
+            # no painel estreito. Cada linha divide a largura igualmente.
+            selection_row = QHBoxLayout()
+            selection_row.setSpacing(6)
+            self.auto_select_button = QPushButton("★ Auto")
+            self.auto_select_button.setProperty("class", "secondary")
+            self.auto_select_button.setToolTip(
+                "Auto-selecionar melhores: pontua os resultados desta página "
+                "(tags, proporção, rosto detectado) e pré-marca os melhores "
+                "candidatos para você revisar."
+            )
+            self.auto_select_button.clicked.connect(self._auto_select_best)
+            self.select_all_button = QPushButton("✓ Todos")
+            self.select_all_button.setProperty("class", "secondary")
+            self.select_all_button.setToolTip("Selecionar todos os resultados da página")
+            self.select_all_button.clicked.connect(self._select_all_on_page)
+            self.clear_sel_button = QPushButton("✗ Limpar")
+            self.clear_sel_button.setProperty("class", "secondary")
+            self.clear_sel_button.setToolTip("Limpar seleção")
+            self.clear_sel_button.clicked.connect(self._clear_selection)
+            selection_row.addWidget(self.auto_select_button, 1)
+            selection_row.addWidget(self.select_all_button, 1)
+            selection_row.addWidget(self.clear_sel_button, 1)
+
             actions_row = QHBoxLayout()
             actions_row.setSpacing(6)
             self.import_button = QPushButton("Importar")
@@ -154,32 +200,14 @@ if QT_AVAILABLE:
             self.expand_button.setProperty("class", "secondary")
             self.expand_button.setToolTip("Abrir galeria em janela maior")
             self.expand_button.clicked.connect(self.open_expanded_gallery)
-            self.auto_select_button = QPushButton("★ Auto-selecionar")
-            self.auto_select_button.setProperty("class", "secondary")
-            self.auto_select_button.setToolTip(
-                "Pontua os resultados desta página (tags, proporção, rosto detectado) "
-                "e pré-marca os melhores candidatos para você revisar."
-            )
-            self.auto_select_button.clicked.connect(self._auto_select_best)
-            self.select_all_button = QPushButton("✓ Todos")
-            self.select_all_button.setProperty("class", "secondary")
-            self.select_all_button.setToolTip("Selecionar todos os resultados da página")
-            self.select_all_button.clicked.connect(self._select_all_on_page)
-            self.clear_sel_button = QPushButton("✗ Seleção")
-            self.clear_sel_button.setProperty("class", "secondary")
-            self.clear_sel_button.setToolTip("Limpar seleção")
-            self.clear_sel_button.clicked.connect(self._clear_selection)
-
-            actions_row.addWidget(self.import_button)
-            actions_row.addWidget(self.download_button)
-            actions_row.addWidget(self.expand_button)
-            actions_row.addWidget(self.auto_select_button)
-            actions_row.addStretch(1)
-            actions_row.addWidget(self.select_all_button)
-            actions_row.addWidget(self.clear_sel_button)
+            actions_row.addWidget(self.import_button, 1)
+            actions_row.addWidget(self.download_button, 1)
+            actions_row.addWidget(self.expand_button, 1)
 
             result_layout.addWidget(self.results_grid, 1)
             result_layout.addLayout(pagination_row)
+            result_layout.addSpacing(2)
+            result_layout.addLayout(selection_row)
             result_layout.addLayout(actions_row)
 
             # A4: detail panel — below the grid, hidden until something is selected
@@ -269,7 +297,8 @@ if QT_AVAILABLE:
             elif self._active_search_tags:
                 self.summary_label.setText(f"Sem resultados · pág. {self.current_page}")
             else:
-                self.summary_label.setText("Nenhuma busca executada.")
+                # o estado vazio da grade já explica a situação — não repetir
+                self.summary_label.setText("")
 
         def _update_page_controls(self):
             self.page_label.setText(f"Pág. {self.current_page}")
