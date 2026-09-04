@@ -1,7 +1,11 @@
 import concurrent.futures
 import logging
 import os
+from io import BytesIO
 
+from PIL import Image
+
+from src.core.custom_scorer import metadata_score, visual_score
 from src.core.danbooru import DanbooruClient
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.dialogs.danbooru_gallery_dialog import DanbooruGalleryDialog
@@ -150,6 +154,13 @@ if QT_AVAILABLE:
             self.expand_button.setProperty("class", "secondary")
             self.expand_button.setToolTip("Abrir galeria em janela maior")
             self.expand_button.clicked.connect(self.open_expanded_gallery)
+            self.auto_select_button = QPushButton("★ Auto-selecionar")
+            self.auto_select_button.setProperty("class", "secondary")
+            self.auto_select_button.setToolTip(
+                "Pontua os resultados desta página (tags, proporção, rosto detectado) "
+                "e pré-marca os melhores candidatos para você revisar."
+            )
+            self.auto_select_button.clicked.connect(self._auto_select_best)
             self.select_all_button = QPushButton("✓ Todos")
             self.select_all_button.setProperty("class", "secondary")
             self.select_all_button.setToolTip("Selecionar todos os resultados da página")
@@ -162,6 +173,7 @@ if QT_AVAILABLE:
             actions_row.addWidget(self.import_button)
             actions_row.addWidget(self.download_button)
             actions_row.addWidget(self.expand_button)
+            actions_row.addWidget(self.auto_select_button)
             actions_row.addStretch(1)
             actions_row.addWidget(self.select_all_button)
             actions_row.addWidget(self.clear_sel_button)
@@ -558,6 +570,81 @@ if QT_AVAILABLE:
                 self.main_window.show_warning("Importar", "Abra uma pasta na edição antes de importar imagens.")
                 return
             self._download_posts(target_dir, import_after=True)
+
+        # ── Auto-seleção por pontuação (tags + rosto detectado) ─────────────
+        def _auto_select_best(self):
+            if not self.posts:
+                self.main_window.show_info("Auto-selecionar", "Faça uma busca primeiro.")
+                return
+
+            from src.qt.compat import QInputDialog
+            default_count = min(10, len(self.posts))
+            count, ok = QInputDialog.getInt(
+                self,
+                "Auto-selecionar melhores",
+                "Quantos candidatos pré-selecionar?",
+                default_count,
+                1,
+                len(self.posts),
+            )
+            if not ok:
+                return
+
+            # F1: pontuação de metadado é síncrona e barata — roda aqui mesmo,
+            # sem worker. Só o refinamento visual (que baixa imagem) vai para
+            # a task em background.
+            ranked = sorted(self.posts, key=metadata_score, reverse=True)
+            shortlist_size = min(len(ranked), max(count * 2, count + 5))
+            shortlist = ranked[:shortlist_size]
+            face_cascade = self.main_window.face_cascade
+
+            def task_fn(cancel_event, on_progress):
+                results = []
+                total = len(shortlist)
+                for index, post in enumerate(shortlist, start=1):
+                    if cancel_event and cancel_event.is_set():
+                        break
+                    bonus = 0.0
+                    preview_url = (
+                        post.get("preview_file_url")
+                        or post.get("preview_url")
+                        or post.get("sample_url")
+                        or post.get("file_url")
+                    )
+                    if preview_url and face_cascade is not None:
+                        data = self.client.download_image(preview_url)
+                        if data:
+                            try:
+                                with Image.open(BytesIO(data)) as img:
+                                    bonus = visual_score(img.convert("RGB"), face_cascade)
+                            except Exception as exc:
+                                logger.debug("Falha ao avaliar %s: %s", preview_url, exc)
+                    results.append((post.get("id"), metadata_score(post) + bonus))
+                    if on_progress:
+                        on_progress(index, total, f"Avaliando candidatos... {index}/{total}")
+                return {"scores": results}
+
+            def on_done(result):
+                scores = result.get("scores") or []
+                scores.sort(key=lambda pair: pair[1], reverse=True)
+                top_ids = [post_id for post_id, _score in scores[:count] if post_id is not None]
+                if not top_ids:
+                    self.main_window.show_warning("Auto-selecionar", "Nenhum candidato pôde ser avaliado.")
+                    return
+                self.results_grid.select_posts_by_id(top_ids)
+                self.main_window.show_status(
+                    f"{len(top_ids)} candidato(s) pré-selecionado(s) pela pontuação — "
+                    "revise e clique em Importar.",
+                    timeout_ms=8000,
+                )
+
+            self.main_window.run_task(
+                "qt_auto_select_best",
+                "Avaliando candidatos",
+                task_fn,
+                on_done=on_done,
+                maximum=max(1, len(shortlist)),
+            )
 
         def open_expanded_gallery(self):
             if not self.posts:

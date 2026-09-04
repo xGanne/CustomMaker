@@ -274,6 +274,21 @@ if QT_AVAILABLE:
             self._syncing_selection = False
             self._sync_selection_state()
 
+        def select_posts_by_id(self, post_ids):
+            """Marca (sem desmarcar o resto) os itens cujo post['id'] está no
+            conjunto dado — usado pela auto-seleção por pontuação."""
+            ids = set(post_ids)
+            if not ids:
+                return
+            self._syncing_selection = True
+            for i in range(self.count()):
+                item = self.item(i)
+                post = item.data(Qt.UserRole) if item else None
+                if post and post.get("id") in ids:
+                    item.setSelected(True)
+            self._syncing_selection = False
+            self._sync_selection_state()
+
         def _on_double_click(self, item):
             """A2: double-click imports the post directly."""
             post = item.data(Qt.UserRole)
