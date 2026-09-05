@@ -44,8 +44,11 @@ if QT_AVAILABLE:
             layout.setSpacing(6)
 
             self.grid = DanbooruResultsGrid(app_config, client, self, selection_state=selection_state)
-            self.grid.setIconSize(self.grid.iconSize() * 1.2)
-            self.grid.setGridSize(self.grid.gridSize() * 1.15)
+            # Tamanhos absolutos: a janela expandida é larga, então não deve
+            # herdar os cards compactos do painel lateral.
+            from src.qt.compat import QSize
+            self.grid.setIconSize(QSize(190, 190))
+            self.grid.setGridSize(QSize(212, 250))
             self.grid.selection_count_changed.connect(self._update_selection_label)
             layout.addWidget(self.grid, 1)
 

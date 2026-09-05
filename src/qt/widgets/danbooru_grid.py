@@ -54,9 +54,12 @@ if QT_AVAILABLE:
             self.setViewMode(QListView.IconMode)
             self.setResizeMode(QListView.Adjust)
             self.setMovement(QListView.Static)
-            self.setSpacing(8)
-            self.setIconSize(QSize(180, 180))
-            self.setGridSize(QSize(200, 230))
+            self.setSpacing(6)
+            # Cards compactos: no painel lateral (~440px) cards de 200x230 só
+            # cabiam 2 por linha e nem uma linha inteira aparecia na altura.
+            self.setIconSize(QSize(132, 132))
+            self.setGridSize(QSize(150, 182))
+            self.setWordWrap(True)
             self.setSelectionMode(QAbstractItemView.MultiSelection)
             self.itemSelectionChanged.connect(self._sync_selection_state)
             self.itemDoubleClicked.connect(self._on_double_click)  # A2
@@ -163,10 +166,19 @@ if QT_AVAILABLE:
             self._memory_cache[url] = image
             return image.copy()
 
-        @staticmethod
-        def _placeholder_pixmap():
-            pixmap = QPixmap(180, 180)
+        def _placeholder_pixmap(self):
+            """Card "carregando": um placeholder transparente fazia a grade
+            parecer vazia enquanto os thumbnails baixavam."""
+            from src.qt.compat import QColor, QPainter
+            size = self.iconSize()
+            pixmap = QPixmap(size)
             pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor("#222938"))
+            painter.drawRoundedRect(0, 0, size.width(), size.height(), 8, 8)
+            painter.end()
             return pixmap
 
         @staticmethod

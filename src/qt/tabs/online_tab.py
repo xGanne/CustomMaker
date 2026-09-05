@@ -133,6 +133,7 @@ if QT_AVAILABLE:
                 result_group,
                 selection_state=self.selection_state,
             )
+            self.results_grid.setMinimumHeight(210)
             self.results_grid.selection_count_changed.connect(self._on_selection_count_changed)
             self.results_grid.image_open_requested.connect(self.open_image_viewer)
             self.results_grid.image_import_requested.connect(self._import_single_post)  # A2

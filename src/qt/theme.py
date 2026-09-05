@@ -79,12 +79,19 @@ QGroupBox::title {{
 }}
 
 /* ── Inputs ───────────────────────────────────────────────── */
-QLineEdit, QComboBox, QPlainTextEdit, QTextEdit, QListWidget {{
+QLineEdit, QComboBox, QPlainTextEdit, QTextEdit {{
     background-color: {UI_TOKENS["surface_muted"]};
     border: 1px solid {UI_TOKENS["border_soft"]};
     border-radius: {UI_TOKENS["radius_sm"]}px;
     padding: 3px 8px;
     min-height: 16px;
+}}
+/* Listas ficam fora da regra acima de propósito: um `min-height` em QSS
+   sobrescreve setMinimumHeight() no código e achatava a grade de resultados. */
+QListWidget {{
+    background-color: {UI_TOKENS["surface_muted"]};
+    border: 1px solid {UI_TOKENS["border_soft"]};
+    border-radius: {UI_TOKENS["radius_sm"]}px;
 }}
 QComboBox {{
     min-height: 28px;

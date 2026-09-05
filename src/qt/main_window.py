@@ -209,10 +209,14 @@ if QT_AVAILABLE:
 
             right_splitter.addWidget(self.tabs)
             right_splitter.addWidget(self.image_list_panel)
-            right_splitter.setSizes([380, 220])
+            # As abas precisam de mais altura que a lista: a grade de resultados
+            # da aba Online só mostra uma linha inteira de cards a partir daqui.
+            right_splitter.setStretchFactor(0, 3)
+            right_splitter.setStretchFactor(1, 2)
+            right_splitter.setSizes([560, 320])
             right_outer.addWidget(right_splitter)
             splitter.addWidget(right_widget)
-            splitter.setSizes([1020, 420])
+            splitter.setSizes([980, 460])
 
         def _build_toolbar(self):
             from src.qt.icons import make_icon
