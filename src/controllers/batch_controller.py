@@ -18,6 +18,28 @@ from src.core.image_processor import ImageProcessor
 logger = logging.getLogger(__name__)
 
 
+def unique_output_names(paths, suffix):
+    """Nome de saída por path, sem colisões dentro do lote.
+
+    "pastaA/001.png" e "pastaB/001.png" (ou "a.jpg" e "a.png") gerariam o
+    mesmo arquivo, e uma custom sobrescrevia a outra sem aviso. O Windows não
+    diferencia maiúsculas, então a comparação também não diferencia.
+    """
+    names = {}
+    used = set()
+    for path in paths:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        candidate = f"{stem}{suffix}"
+        counter = 2
+        while candidate.lower() in used:
+            root, ext = os.path.splitext(suffix)
+            candidate = f"{stem}{root}_{counter}{ext}"
+            counter += 1
+        used.add(candidate.lower())
+        names[path] = candidate
+    return names
+
+
 def _resolve_value(value, default=None):
     if value is None:
         return default
@@ -304,8 +326,10 @@ class BatchController:
         ext = "_custom.gif" if is_anim else "_custom.png"
 
         try:
-            for path in (self._image_list() if paths is None else paths):
-                out = os.path.join(target_dir, os.path.splitext(os.path.basename(path))[0] + ext)
+            batch_paths = self._image_list() if paths is None else paths
+            names = unique_output_names(batch_paths, ext)
+            for path in batch_paths:
+                out = os.path.join(target_dir, names[path])
                 data = self._get_task_data(path, out, source_dir=source_dir)
                 if data:
                     tasks.append(data)
@@ -335,9 +359,10 @@ class BatchController:
             tasks = []
             skipped = []
 
-            for path in (self._image_list() if paths is None else paths):
-                fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
-                out = os.path.join(tmp_dir, fname)
+            batch_paths = self._image_list() if paths is None else paths
+            names = unique_output_names(batch_paths, f"_custom{ext}")
+            for path in batch_paths:
+                out = os.path.join(tmp_dir, names[path])
                 data = self._get_task_data(path, out, source_dir=source_dir)
                 if data:
                     tasks.append(data)
@@ -384,9 +409,10 @@ class BatchController:
             tasks = []
             skipped = []
 
-            for path in (self._image_list() if paths is None else paths):
-                fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
-                out = os.path.join(tmp_dir, fname)
+            batch_paths = self._image_list() if paths is None else paths
+            names = unique_output_names(batch_paths, f"_custom{ext}")
+            for path in batch_paths:
+                out = os.path.join(tmp_dir, names[path])
                 data = self._get_task_data(path, out, source_dir=source_dir)
                 if data:
                     tasks.append(data)

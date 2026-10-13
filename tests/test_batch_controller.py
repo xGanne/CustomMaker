@@ -224,3 +224,50 @@ class TestBatchControllerExplicitPaths(unittest.TestCase):
             self.assertEqual(captured["paths"], ["novo1.png", "novo2.png"])
             controller.save_all_images("out")
             self.assertEqual(captured["paths"], ["editor_a.png", "editor_b.png"])
+
+
+class TestUniqueOutputNames(unittest.TestCase):
+    """Imagens com o mesmo nome em pastas diferentes não se sobrescrevem."""
+
+    def test_collisions_get_numbered_case_insensitively(self):
+        from src.controllers.batch_controller import unique_output_names
+        names = unique_output_names(
+            ["A/001.png", "B/001.png", "C/001.jpg", "D/Foto.png", "E/foto.jpg", "F/002.png"], "_custom.png"
+        )
+        self.assertEqual(
+            list(names.values()),
+            ["001_custom.png", "001_custom_2.png", "001_custom_3.png", "Foto_custom.png", "foto_custom_2.png",
+             "002_custom.png"],
+        )
+
+    def test_upload_sends_both_colliding_images(self):
+        import os
+        from src.core.editor_state import EditorState
+
+        with TemporaryDirectory() as tmp:
+            paths = []
+            for folder, color in (("a", "red"), ("b", "blue")):
+                os.makedirs(os.path.join(tmp, folder))
+                path = os.path.join(tmp, folder, "001.png")
+                Image.new("RGBA", (300, 450), color).save(path)
+                paths.append(path)
+            uploaded = {}
+
+            class CapturingUploader:
+                def upload_images(self, files, title, progress_callback=None, cancel_event=None):
+                    for item in files:
+                        with Image.open(item["path"]) as img:
+                            uploaded[item["filename"]] = img.convert("RGB").getpixel((112, 175))
+                    return ["link1", "link2"], []
+
+            controller = BatchController(
+                editor_state=EditorState(image_list=paths), uploader=CapturingUploader(), borda_hex={"White": "#FFFFFF"}
+            )
+            try:
+                result = controller.upload_to_imgchest("Album")
+            finally:
+                controller.shutdown()
+        self.assertEqual(result["uploaded"], 2)
+        self.assertEqual(set(uploaded), {"001_custom.png", "001_custom_2.png"})
+        # cada arquivo enviado é a sua própria custom (vermelha e azul)
+        self.assertEqual(sorted(uploaded.values()), sorted([(255, 0, 0), (0, 0, 255)]))
