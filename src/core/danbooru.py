@@ -10,6 +10,13 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
+# Campos de post que o app usa — pedir só eles (only=) deixa a resposta da
+# busca ~4x menor. Ao ler um campo novo de `post`, acrescente-o aqui.
+POST_FIELDS = (
+    "id,rating,score,fav_count,image_width,image_height,file_ext,tag_string,"
+    "file_url,large_file_url,preview_file_url,uploader_id"
+)
+
 # Largura da versão "large" (sample) que o Danbooru gera para imagens maiores
 DANBOORU_SAMPLE_WIDTH = 850
 
@@ -174,7 +181,7 @@ class DanbooruClient:
     def search_posts(self, tags, limit=20, page=1):
         """Searches posts on Danbooru."""
         url = f"{self.base_url}/posts.json"
-        params = {"tags": tags, "limit": limit, "page": page}
+        params = {"tags": tags, "limit": limit, "page": page, "only": POST_FIELDS}
         start = time.perf_counter()
         response = None
 

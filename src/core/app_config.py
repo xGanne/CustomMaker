@@ -57,6 +57,7 @@ DEFAULT_CONFIG = {
     "thumbnail_memory_cache_mb": THUMBNAIL_MEMORY_CACHE_MB_DEFAULT,
     "thumbnail_disk_cache_mb": THUMBNAIL_DISK_CACHE_MB_DEFAULT,
     "image_cache_max_mb": IMAGE_CACHE_MAX_MB_DEFAULT,
+    "danbooru_page_size": 40,
     "danbooru_search_history": [],
     "danbooru_tag_blacklist": "",
     "recent_folders": [],
@@ -199,6 +200,13 @@ class AppConfig:
             DEFAULT_CONFIG["danbooru_timeout_download_s"],
             minimum=1,
             maximum=300,
+        )
+        # a API do Danbooru aceita até 200 posts por página
+        migrated["danbooru_page_size"] = _coerce_int(
+            migrated.get("danbooru_page_size"),
+            DEFAULT_CONFIG["danbooru_page_size"],
+            minimum=10,
+            maximum=200,
         )
         migrated["thumbnail_batch_size"] = _coerce_int(
             migrated.get("thumbnail_batch_size"),

@@ -56,8 +56,10 @@ class TestOnlineTabSearch(unittest.TestCase):
 
     def setUp(self):
         self.main = FakeMainWindow(self.TaskRunner())
+        self.main.app_config.set("danbooru_page_size", 20)  # os cenários usam páginas de 20
         self.tab = online_module.OnlineTab(self.main)
         self.requests = []
+        self.limits = []
         self.pages = {}  # page -> posts
         self.gate = None
         self.tab.client.search_posts = self._fake_search
@@ -71,6 +73,7 @@ class TestOnlineTabSearch(unittest.TestCase):
 
     def _fake_search(self, tags, limit=20, page=1):
         self.requests.append(page)
+        self.limits.append(limit)
         if self.gate is not None:
             self.gate.wait(5)
         return list(self.pages.get(page, []))
@@ -189,6 +192,16 @@ class TestOnlineTabSearch(unittest.TestCase):
         self.assertEqual(self.requests, [2])
         self.assertEqual(self.tab.current_page, 2)
         self.assertIn("Todos ocultos", self.tab.summary_label.text())
+
+    def test_page_size_change_applies_to_next_new_search_only(self):
+        self.pages[1] = _posts(20)
+        self.pages[2] = _posts(20, start=100)
+        self._search_and_wait()
+        self.main.app_config.set("danbooru_page_size", 60)
+        self.tab.change_page(1)  # paginação da busca ativa mantém o tamanho
+        self.assertTrue(self._wait_until(lambda: not self.tab._is_searching()))
+        self._search_and_wait()  # busca nova adota o tamanho configurado
+        self.assertEqual(self.limits, [20, 20, 60])
 
     def test_empty_next_page_still_steps_back_one(self):
         """F22 continua valendo para o avanço normal com →."""

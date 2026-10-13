@@ -19,6 +19,7 @@ if QT_AVAILABLE:
             current_page=1,
             exclude_tags=None,
             has_next_page=None,
+            page_size=20,
             selection_state=None,
             parent=None,
             title="Galeria Expandida",
@@ -38,7 +39,7 @@ if QT_AVAILABLE:
             self.tags = tags or ""
             self.posts = posts or []
             self.current_page = max(1, int(current_page or 1))
-            self._page_size = 20
+            self._page_size = page_size
             self._exclude_tags = list(exclude_tags or [])
             # os posts recebidos já vêm filtrados pela blacklist, então o
             # tamanho deles não diz se há próxima página — a aba informa

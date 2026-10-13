@@ -238,3 +238,17 @@ class TestImportSource(unittest.TestCase):
         from src.core.danbooru import import_source
         self.assertEqual(import_source({"file_url": "https://cdn/a.png"}, self.MIN), ("https://cdn/a.png", "png"))
         self.assertEqual(import_source({}, self.MIN), (None, None))
+
+
+class TestSearchRequestsOnlyUsedFields(unittest.TestCase):
+    def test_search_sends_only_param_with_fields_the_app_reads(self):
+        from src.core.danbooru import POST_FIELDS
+        client = DanbooruClient()
+        with patch.object(client.session, "get", return_value=FakeResponse(payload=[])) as get:
+            client.search_posts("hatsune_miku", limit=40, page=2)
+        params = get.call_args.kwargs["params"]
+        self.assertEqual(params["only"], POST_FIELDS)
+        self.assertEqual(params["limit"], 40)
+        for field in ("id", "rating", "tag_string", "file_url", "large_file_url", "preview_file_url"):
+            self.assertIn(field, POST_FIELDS.split(","))
+        client.close()

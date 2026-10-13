@@ -114,7 +114,14 @@ if QT_AVAILABLE:
             self._timeout_download = self._spin_field(
                 self.app_config.get("danbooru_timeout_download_s", 15), 1, 300
             )
+            self._page_size = self._spin_field(self.app_config.get("danbooru_page_size", 40), 10, 200)
+            self._page_size.setSingleStep(10)
+            self._page_size.setToolTip(
+                "Mais resultados por página = menos troca de página e mais candidatos "
+                "para o Auto-selecionar. Vale a partir da próxima busca."
+            )
             for label, widget_ref in [
+                ("Resultados por página:", self._page_size),
                 ("Timeout busca (s):", self._timeout_search),
                 ("Timeout download (s):", self._timeout_download),
             ]:
@@ -178,6 +185,7 @@ if QT_AVAILABLE:
             self.app_config.set("danbooru_tag_blacklist", self._blacklist.text().strip())
             self.app_config.set("danbooru_timeout_search_s", self._timeout_search.value())
             self.app_config.set("danbooru_timeout_download_s", self._timeout_download.value())
+            self.app_config.set("danbooru_page_size", self._page_size.value())
 
             workers = self._max_workers.value()
             self.app_config.set("max_workers", workers if workers > 0 else None)

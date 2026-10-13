@@ -65,7 +65,9 @@ if QT_AVAILABLE:
             self.client = DanbooruClient(config=self.main_window.app_config)
             self.posts = []
             self.current_page = 1
-            self._page_size = 20
+            # tamanho da página da busca ativa: fixado ao iniciar uma busca nova
+            # para que a paginação não mude no meio (pág. 3 de 20 ≠ pág. 3 de 40)
+            self._page_size = self._configured_page_size()
             self._has_next_page = False
             self._search_seq = 0
             self._active_search_task_id = None
@@ -280,6 +282,13 @@ if QT_AVAILABLE:
             self.main_window.app_config.set("danbooru_tag_blacklist", self.blacklist_edit.text().strip())
             self.main_window.app_config.save()
 
+        def _configured_page_size(self):
+            try:
+                value = int(self.main_window.app_config.get("danbooru_page_size", 40))
+            except (TypeError, ValueError):
+                value = 40
+            return max(10, min(200, value))
+
         def refresh_from_config(self):
             """F12: re-sincroniza campos que também existem no diálogo de configurações."""
             saved_blacklist = self.main_window.app_config.get("danbooru_tag_blacklist", "")
@@ -481,6 +490,7 @@ if QT_AVAILABLE:
             if not use_active_tags:
                 self._active_search_tags = tags
                 self._active_blacklist = parse_tag_list(self.blacklist_edit.text())
+                self._page_size = self._configured_page_size()
                 self._active_query_label = self.search_edit.text().strip() or tags
                 self.results_grid.clear_selection()
                 self.detail_panel.clear()
@@ -806,6 +816,7 @@ if QT_AVAILABLE:
                 current_page=self.current_page,
                 exclude_tags=self._active_blacklist,
                 has_next_page=self._has_next_page,
+                page_size=self._page_size,
                 selection_state=self.selection_state,
                 parent=self,
                 title=f"Galeria Expandida - {self._active_query_label or 'Danbooru'}",
