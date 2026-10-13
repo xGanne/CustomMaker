@@ -548,6 +548,13 @@ if QT_AVAILABLE:
                 for state in self.editor_state.image_states.values():
                     x, y = state["pos"]
                     state["pos"] = (x + dx, y + dy)
+                # o histórico de desfazer/refazer também guarda posições absolutas
+                for stacks in (self._undo_stacks, self._redo_stacks):
+                    for stack in stacks.values():
+                        stack[:] = [
+                            (image, (px + dx, py + dy), size, edited)
+                            for image, (px, py), size, edited in stack
+                        ]
             self.editor_state.borda_pos = pos
 
         # ── Color picker ───────────────────────────────────────────────────

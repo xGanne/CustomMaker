@@ -176,6 +176,24 @@ class TestShortcutsDoNotStealTextKeys(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(es.user_adjusted, {self.window.current_path})
 
+    def test_undo_after_resize_restores_framing_relative_to_border(self):
+        es = self.window.editor_state
+        canvas = self.window.image_canvas
+
+        def relative():
+            x, y = es.image_states[self.window.current_path]["pos"]
+            return x - es.borda_pos[0], y - es.borda_pos[1]
+
+        original = relative()
+        self.window.save_state_for_undo()
+        canvas.image_item.setPos(canvas.image_item.pos().x() + 40, canvas.image_item.pos().y() + 25)
+        self.app.processEvents()
+        self.window.resize(900, 650)
+        self.assertTrue(_wait_until(self.app, lambda: es.borda_pos == canvas.border_pos))
+        self.window.undo_current_image()
+        self.app.processEvents()
+        self.assertEqual(relative(), original)
+
     def test_arrows_navigate_when_canvas_has_focus(self):
         self.window.image_canvas.setFocus()
         self.QTest.keyClick(self.window.image_canvas, compat.Qt.Key_Right)
