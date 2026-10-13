@@ -167,6 +167,14 @@ class TestOnlineTabSearch(unittest.TestCase):
         self.tab.sort_combo.setCurrentText("Melhor avaliados")
         self.assertEqual(self.tab._build_tags(), "hatsune_miku solo rating:g order:score")
 
+    def test_portrait_filter_adds_ratio_metatag_and_is_remembered(self):
+        self.tab.search_edit.setText("hatsune_miku solo")
+        self.tab.portrait_check.setChecked(True)
+        self.assertEqual(self.tab._build_tags(), f"hatsune_miku solo {online_module.PORTRAIT_RATIO_TAG}")
+        self.assertTrue(self.main.app_config.get("danbooru_portrait_only"))
+        self.tab.portrait_check.setChecked(False)
+        self.assertEqual(self.tab._build_tags(), "hatsune_miku solo")
+
     def test_blacklist_is_filtered_from_results(self):
         posts = _posts(20)
         posts[0]["tag_string"] = "hatsune_miku gore"

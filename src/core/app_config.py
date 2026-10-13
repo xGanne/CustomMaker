@@ -58,6 +58,7 @@ DEFAULT_CONFIG = {
     "thumbnail_disk_cache_mb": THUMBNAIL_DISK_CACHE_MB_DEFAULT,
     "image_cache_max_mb": IMAGE_CACHE_MAX_MB_DEFAULT,
     "danbooru_page_size": 40,
+    "danbooru_portrait_only": False,
     "danbooru_search_history": [],
     "danbooru_tag_blacklist": "",
     "recent_folders": [],
@@ -130,6 +131,9 @@ class AppConfig:
 
         if not isinstance(migrated.get("confirm_exit_with_unexported"), bool):
             migrated["confirm_exit_with_unexported"] = DEFAULT_CONFIG["confirm_exit_with_unexported"]
+
+        if not isinstance(migrated.get("danbooru_portrait_only"), bool):
+            migrated["danbooru_portrait_only"] = DEFAULT_CONFIG["danbooru_portrait_only"]
 
         if not isinstance(migrated.get("strobe_warning_acknowledged"), bool):
             migrated["strobe_warning_acknowledged"] = DEFAULT_CONFIG["strobe_warning_acknowledged"]

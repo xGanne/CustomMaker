@@ -17,6 +17,7 @@ from src.qt.widgets.danbooru_grid import DanbooruResultsGrid, DanbooruSelectionS
 
 if QT_AVAILABLE:
     from src.qt.compat import (
+        QCheckBox,
         QComboBox,
         QGroupBox,
         QHBoxLayout,
@@ -48,6 +49,10 @@ SORT_TAGS = {
     "Melhor avaliados": "order:score",
     "Mais favoritos": "order:favcount",
 }
+
+# A custom é 225x350 (proporção 0,64). ratio: é largura/altura e, ao contrário
+# de order: e das exclusões, não conta no limite de 2 tags do Danbooru.
+PORTRAIT_RATIO_TAG = "ratio:0.5..0.85"
 
 _HISTORY_MAX = 15
 # resolução mínima da fonte importada: o dobro da custom, para sobrar margem
@@ -134,6 +139,14 @@ if QT_AVAILABLE:
             self.blacklist_edit.editingFinished.connect(self._save_blacklist)
             blacklist_row.addWidget(blacklist_label)
             blacklist_row.addWidget(self.blacklist_edit, 1)
+            self.portrait_check = QCheckBox("Só retrato")
+            self.portrait_check.setToolTip(
+                "Mostrar só imagens em pé, com proporção próxima da custom (225×350) —\n"
+                "menos corte e menos descarte. Não conta no limite de tags do Danbooru."
+            )
+            self.portrait_check.setChecked(bool(self.main_window.app_config.get("danbooru_portrait_only", False)))
+            self.portrait_check.toggled.connect(self._save_portrait_only)
+            blacklist_row.addWidget(self.portrait_check)
 
             search_layout.addLayout(query_row)
             search_layout.addLayout(filter_row)
@@ -289,6 +302,10 @@ if QT_AVAILABLE:
                 value = 40
             return max(10, min(200, value))
 
+        def _save_portrait_only(self, checked):
+            self.main_window.app_config.set("danbooru_portrait_only", bool(checked))
+            self.main_window.app_config.save()
+
         def refresh_from_config(self):
             """F12: re-sincroniza campos que também existem no diálogo de configurações."""
             saved_blacklist = self.main_window.app_config.get("danbooru_tag_blacklist", "")
@@ -320,6 +337,8 @@ if QT_AVAILABLE:
                 parts.append(rating_tag)
             if sort_tag:
                 parts.append(sort_tag)
+            if self.portrait_check.isChecked():
+                parts.append(PORTRAIT_RATIO_TAG)
             # A6: a blacklist não entra na query — é filtrada nos resultados
             # (cada "-tag" contaria no limite de 2 tags do Danbooru)
             return " ".join(part for part in parts if part).strip()
