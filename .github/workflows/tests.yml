@@ -44,3 +44,54 @@ jobs:
       - name: Anotar falhas
         if: failure()
         run: python .github/scripts/annotate_failures.py test-report.xml pytest-output.txt
+
+  exe:
+    # Empacota o CustomMaker.exe e roda o autoteste nele: valida o que só
+    # quebra no executável (pool de processos, assets e traduções embutidos)
+    needs: pytest
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Instalar dependências
+        run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+
+      - name: Gerar o executável
+        run: pyinstaller --noconfirm --log-level WARN CustomMaker.spec
+
+      - name: Autoteste no executável
+        shell: bash
+        run: ./dist/CustomMaker.exe --self-test selftest-report.txt
+
+      - name: Anotar resultado do autoteste
+        if: always()
+        shell: bash
+        run: |
+          if [ -f selftest-report.txt ]; then
+            cat selftest-report.txt
+            if grep -q "FALHOU" selftest-report.txt; then
+              echo "::error title=Autoteste do exe falhou::$(sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' selftest-report.txt)"
+            fi
+          else
+            echo "::error title=Autoteste do exe::o executável não gerou o relatório (travou ou não abriu)"
+          fi
+
+      - name: Publicar o executável
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CustomMaker-${{ github.sha }}
+          path: |
+            dist/CustomMaker.exe
+            selftest-report.txt
+          retention-days: 14

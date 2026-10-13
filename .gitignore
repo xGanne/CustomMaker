@@ -196,3 +196,4 @@ session_edits/
 # Relatório JUnit do pytest (CI)
 test-report.xml
 pytest-output.txt
+selftest-report.txt
