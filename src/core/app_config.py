@@ -62,6 +62,7 @@ DEFAULT_CONFIG = {
     "recent_folders": [],
     "strobe_warning_acknowledged": False,
     "default_framing": "auto_fit",
+    "confirm_exit_with_unexported": True,
 }
 
 
@@ -125,6 +126,9 @@ class AppConfig:
 
         if migrated.get("default_framing") not in {"auto_fit", "intelligent"}:
             migrated["default_framing"] = DEFAULT_CONFIG["default_framing"]
+
+        if not isinstance(migrated.get("confirm_exit_with_unexported"), bool):
+            migrated["confirm_exit_with_unexported"] = DEFAULT_CONFIG["confirm_exit_with_unexported"]
 
         if not isinstance(migrated.get("strobe_warning_acknowledged"), bool):
             migrated["strobe_warning_acknowledged"] = DEFAULT_CONFIG["strobe_warning_acknowledged"]

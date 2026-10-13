@@ -45,6 +45,7 @@ if QT_AVAILABLE:
     from src.qt.compat import (
         QAction,
         QApplication,
+        QCheckBox,
         QComboBox,
         QFileDialog,
         QIcon,
@@ -743,21 +744,33 @@ if QT_AVAILABLE:
 
         # ── Limpeza ao fechar ──────────────────────────────────────────────
 
+        def _confirm_exit_with_unexported(self, dirty_count):
+            """M2: pergunta antes de sair; "não perguntar novamente" desliga o aviso."""
+            if not self.app_config.get("confirm_exit_with_unexported", True):
+                return True
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Question)
+            box.setWindowTitle("Sair")
+            box.setText(
+                f"Você tem {dirty_count} imagem(ns) com ajustes não exportados.\n"
+                "Sair mesmo assim?"
+            )
+            box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            box.setDefaultButton(QMessageBox.No)
+            dont_ask = QCheckBox("Não perguntar novamente")
+            box.setCheckBox(dont_ask)
+            confirmed = box.exec() == QMessageBox.Yes
+            # só desliga o aviso quando o usuário de fato confirmou a saída
+            if confirmed and dont_ask.isChecked():
+                self.app_config.set("confirm_exit_with_unexported", False)
+            return confirmed
+
         def closeEvent(self, event):
             # M2: avisa antes de sair se há ajustes/edições ainda não exportados
             dirty_count = len(self.editor_state.image_dirty)
-            if dirty_count > 0:
-                answer = QMessageBox.question(
-                    self,
-                    "Sair",
-                    f"Você tem {dirty_count} imagem(ns) com ajustes não exportados.\n"
-                    "Sair mesmo assim?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
-                )
-                if answer != QMessageBox.Yes:
-                    event.ignore()
-                    return
+            if dirty_count > 0 and not self._confirm_exit_with_unexported(dirty_count):
+                event.ignore()
+                return
             self.ui_preferences.last_global_borda = self.editor_state.selected_borda
             if self.editor_state.image_list:
                 self.ui_preferences.last_folder = os.path.dirname(self.editor_state.image_list[0])

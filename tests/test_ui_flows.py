@@ -135,6 +135,61 @@ class TestShortcutsDoNotStealTextKeys(unittest.TestCase):
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestExitConfirmation(unittest.TestCase):
+    """M2: confirmação ao sair com "não perguntar novamente"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _app()
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        for patcher in (
+            patch("src.core.app_config.CONFIG_FILE", os.path.join(self.tmp, "config.json")),
+            patch("src.core.preset_manager.PRESETS_FILE", os.path.join(self.tmp, "presets.json")),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        from src.core.app_config import AppConfig
+        from src.qt.main_window import QtMainWindow
+        self.window = QtMainWindow(AppConfig())
+
+    def tearDown(self):
+        self.window.editor_state.image_dirty.clear()
+        self.window.close()
+        self.window.deleteLater()
+        self.app.processEvents()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _answer(self, button, dont_ask):
+        """Responde o QMessageBox assim que ele abrir."""
+        def respond():
+            box = self.app.activeModalWidget()
+            if box is None:
+                compat.QTimer.singleShot(10, respond)
+                return
+            box.checkBox().setChecked(dont_ask)
+            box.button(button).click()
+        compat.QTimer.singleShot(0, respond)
+
+    def test_dont_ask_again_is_saved_only_when_exit_is_confirmed(self):
+        QMessageBox = compat.QMessageBox
+        self._answer(QMessageBox.No, dont_ask=True)
+        self.assertFalse(self.window._confirm_exit_with_unexported(2))
+        self.assertTrue(self.window.app_config.get("confirm_exit_with_unexported"))
+
+        self._answer(QMessageBox.Yes, dont_ask=True)
+        self.assertTrue(self.window._confirm_exit_with_unexported(2))
+        self.assertFalse(self.window.app_config.get("confirm_exit_with_unexported"))
+
+    def test_disabled_confirmation_exits_without_dialog(self):
+        self.window.app_config.set("confirm_exit_with_unexported", False)
+        with patch.object(compat.QMessageBox, "exec") as exec_:
+            self.assertTrue(self.window._confirm_exit_with_unexported(3))
+        exec_.assert_not_called()
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
 class TestListThumbnailsOnGuiThread(unittest.TestCase):
     """F1: QPixmap/QIcon da lista só são criados na GUI thread."""
 
