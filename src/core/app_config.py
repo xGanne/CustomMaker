@@ -5,6 +5,7 @@ from copy import deepcopy
 
 from src.config.settings import (
     CONFIG_FILE,
+    UI_THEMES,
     DANBOORU_POOL_CONNECTIONS_DEFAULT,
     DANBOORU_POOL_MAXSIZE_DEFAULT,
     DANBOORU_RETRY_BACKOFF_DEFAULT,
@@ -114,7 +115,7 @@ class AppConfig:
         if not isinstance(migrated.get("log_level"), str):
             migrated["log_level"] = DEFAULT_CONFIG["log_level"]
 
-        if migrated.get("ui_theme_variant") not in {"editorial_dark_v1"}:
+        if migrated.get("ui_theme_variant") not in UI_THEMES:
             migrated["ui_theme_variant"] = DEFAULT_CONFIG["ui_theme_variant"]
 
         if migrated.get("ui_density") not in {"comfortable", "compact"}:

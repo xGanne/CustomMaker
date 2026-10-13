@@ -1,4 +1,5 @@
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
+from src.qt.theme import tokens
 from src.qt.task_runner import QtTaskRunner
 from src.qt.widgets.danbooru_grid import DanbooruResultsGrid
 
@@ -56,11 +57,11 @@ if QT_AVAILABLE:
             status_row = QHBoxLayout()
             self.results_label = QLabel()
             self.results_label.setWordWrap(True)
-            self.results_label.setStyleSheet("color: #7B879D; font-size: 11px;")
+            self.results_label.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px;")
             status_row.addWidget(self.results_label, 1)
 
             self.selection_label = QLabel("0 selecionados")
-            self.selection_label.setStyleSheet("color: #7B879D; font-size: 11px;")
+            self.selection_label.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px;")
             status_row.addWidget(self.selection_label)
 
             self.prev_button = QPushButton("←")

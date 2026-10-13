@@ -25,6 +25,7 @@ if QT_AVAILABLE:
 
 
 from src.qt.pixmap_utils import pil_to_qpixmap as _pil_to_qpixmap
+from src.qt.theme import tokens as _theme_tokens
 
 
 # M8: passo da roda — fino por padrão, rápido com Ctrl pressionado
@@ -80,7 +81,7 @@ if QT_AVAILABLE:
             super().__init__(parent)
             self.setRenderHint(QPainter.Antialiasing)
             self.setRenderHint(QPainter.SmoothPixmapTransform)
-            self.setBackgroundBrush(QColor("#141821"))
+            self.setBackgroundBrush(QColor(_theme_tokens()["canvas_bg"]))
             self.setFrameShape(QGraphicsView.NoFrame)
             self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
 
@@ -96,7 +97,7 @@ if QT_AVAILABLE:
                 "Arraste uma pasta ou imagens aqui\n"
                 "Ctrl+O — abrir pasta   ·   Ctrl+V — colar imagem"
             )
-            self.empty_hint_item.setDefaultTextColor(QColor("#7B879D"))
+            self.empty_hint_item.setDefaultTextColor(QColor(_theme_tokens()["text_muted"]))
             self.empty_hint_item.setZValue(5)
             self.preview_item = QGraphicsPixmapItem()
             self.preview_item.setZValue(12)

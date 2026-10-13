@@ -7,6 +7,7 @@ from PIL import Image
 
 from src.core.cache_manager import CacheManager
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
+from src.qt.theme import tokens
 
 if QT_AVAILABLE:
     from src.qt.compat import (
@@ -141,7 +142,7 @@ if QT_AVAILABLE:
                 return
             from src.qt.compat import QColor, QPainter
             painter = QPainter(self.viewport())
-            painter.setPen(QColor("#7B879D"))
+            painter.setPen(QColor(tokens()["text_muted"]))
             painter.drawText(
                 self.viewport().rect(),
                 Qt.AlignCenter,
@@ -234,7 +235,7 @@ if QT_AVAILABLE:
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor("#222938"))
+            painter.setBrush(QColor(tokens()["surface_elevated"]))
             painter.drawRoundedRect(0, 0, size.width(), size.height(), 8, 8)
             painter.end()
             return pixmap

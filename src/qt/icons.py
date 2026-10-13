@@ -78,8 +78,11 @@ _ICONS: dict[str, str] = {
 }
 
 
-def make_icon(name: str, size: int = 22, color: str = "#A8B3C7"):
+def make_icon(name: str, size: int = 22, color: str = None):
     """Render a Heroicons v2 outline icon as QIcon at the given size and color."""
+    if color is None:
+        from src.qt.theme import tokens
+        color = tokens()["text_secondary"]
     path_el = _ICONS.get(name)
     flip = False
 

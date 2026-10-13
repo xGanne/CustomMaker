@@ -4,6 +4,7 @@ import os
 from PIL import Image
 
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
+from src.qt.theme import tokens
 from src.utils.file_reveal import reveal_in_file_manager
 
 if QT_AVAILABLE:
@@ -46,7 +47,7 @@ if QT_AVAILABLE:
             if self.count() > 0:
                 return
             painter = QPainter(self.viewport())
-            painter.setPen(QColor("#7B879D"))
+            painter.setPen(QColor(tokens()["text_muted"]))
             painter.drawText(self.viewport().rect(), Qt.AlignCenter, self.placeholder_text)
             painter.end()
 
@@ -77,7 +78,7 @@ if QT_AVAILABLE:
             y = rect.center().y() - diameter // 2
             painter.save()
             painter.setRenderHint(QPainter.Antialiasing)
-            painter.setPen(QPen(QColor("#E9EEF8"), 1.5))
+            painter.setPen(QPen(QColor(tokens()["border_strong"]), 1.5))
             painter.setBrush(QColor(color))
             painter.drawEllipse(x, y, diameter, diameter)
             painter.restore()
@@ -97,7 +98,7 @@ if QT_AVAILABLE:
             layout.setSpacing(8)
             self.title = QLabel("Lista de Imagens", self)
             self.title.setStyleSheet(
-                "font-size: 10px; font-weight: 500; letter-spacing: 0.8px; color: #7B879D;"
+                f"font-size: 10px; font-weight: 500; letter-spacing: 0.8px; color: {tokens()['text_muted']};"
             )
             self.list_widget = _EmptyStateListWidget(self)
             self.list_widget.setMinimumHeight(180)
@@ -156,6 +157,7 @@ if QT_AVAILABLE:
             self._refresh_item_decorations()
 
         def _refresh_item_decorations(self):
+            theme = tokens()
             for i in range(self.list_widget.count()):
                 item = self.list_widget.item(i)
                 if item is None:
@@ -163,13 +165,13 @@ if QT_AVAILABLE:
                 path = item.data(Qt.UserRole)
                 tooltip = [path]
                 if path in self._edited_set:
-                    item.setForeground(QColor("#1FA971"))
+                    item.setForeground(QColor(theme["success"]))
                     tooltip.append("● Pixels editados")
                 elif path in self._adjusted_set:
-                    item.setForeground(QColor("#E7A83D"))
+                    item.setForeground(QColor(theme["warning"]))
                     tooltip.append("◉ Enquadramento ajustado")
                 else:
-                    item.setForeground(QColor("#E9EEF8"))
+                    item.setForeground(QColor(theme["text_primary"]))
                 badge = self._border_badges.get(path)
                 item.setData(BORDER_BADGE_ROLE, badge[1] if badge else None)
                 if badge:

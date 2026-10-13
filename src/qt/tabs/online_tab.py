@@ -8,6 +8,7 @@ from PIL import Image
 from src.core.custom_scorer import metadata_score, visual_score
 from src.core.danbooru import DanbooruClient
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
+from src.qt.theme import tokens
 from src.qt.dialogs.danbooru_gallery_dialog import DanbooruGalleryDialog
 from src.qt.dialogs.danbooru_image_viewer import DanbooruImageViewer
 from src.qt.widgets.danbooru_autocomplete import DanbooruAutocomplete
@@ -150,7 +151,7 @@ if QT_AVAILABLE:
             self.summary_label = QLabel("")
             self.summary_label.setWordWrap(False)
             self.summary_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            self.summary_label.setStyleSheet("color: #7B879D; font-size: 11px;")
+            self.summary_label.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px;")
             self.prev_button = QPushButton("←")
             self.prev_button.setProperty("class", "pager")
             self.prev_button.setFixedWidth(30)
@@ -811,7 +812,7 @@ if QT_AVAILABLE:
             # Single-line info bar
             self._info_label = QLabel()
             self._info_label.setWordWrap(False)
-            self._info_label.setStyleSheet("font-size: 11px; color: #7B879D;")
+            self._info_label.setStyleSheet(f"font-size: 11px; color: {tokens()['text_muted']};")
             root.addWidget(self._info_label)
 
             # Horizontal scrollable chip strip

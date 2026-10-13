@@ -27,6 +27,7 @@ from src.core.image_processor import ImageProcessor
 from src.core.preset_manager import PresetManager
 from src.core.uploader import ImgChestUploader
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
+from src.qt.theme import tokens
 from src.qt.dialogs.progress_dialog import ProgressDialog
 from src.qt.mixins.adjustments_mixin import AdjustmentsMixin
 from src.qt.mixins.animation_mixin import AnimationMixin
@@ -181,7 +182,7 @@ if QT_AVAILABLE:
             self._image_counter_label = QLabel("")
             self._image_counter_label.setAlignment(Qt.AlignCenter)
             self._image_counter_label.setStyleSheet(
-                "color: #555; font-size: 11px; padding: 2px 0; background: transparent;"
+                f"color: {tokens()['text_muted']}; font-size: 11px; padding: 2px 0; background: transparent;"
             )
             left_layout.addWidget(self._image_counter_label)
             splitter.addWidget(left_widget)
@@ -369,7 +370,7 @@ if QT_AVAILABLE:
                 return
             color = self.editor_state.custom_borda_hex or "#FFFFFF"
             self.options_color_swatch.setStyleSheet(
-                f"background-color: {color}; border: 1px solid #334056; border-radius: 4px;"
+                f"background-color: {color}; border: 1px solid {tokens()['border_soft']}; border-radius: 4px;"
             )
 
         def refresh_options_bar(self):
@@ -632,8 +633,10 @@ if QT_AVAILABLE:
             if dialog.exec():
                 # F12: refletir imediatamente o que dá para aplicar a quente
                 self.online_tab.refresh_from_config()
+                if dialog.theme_changed:
+                    self.show_info("Tema", "O novo tema será aplicado na próxima vez que o programa abrir.")
                 self.show_status(
-                    "Configurações salvas. Alterações de performance têm efeito após reiniciar."
+                    "Configurações salvas. Tema e performance têm efeito após reiniciar."
                 )
 
         def _show_recent_folders_menu(self, pos):

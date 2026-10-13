@@ -1,6 +1,7 @@
 import logging
 
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
+from src.qt.theme import tokens
 
 if QT_AVAILABLE:
     from src.qt.compat import (
@@ -38,7 +39,7 @@ if QT_AVAILABLE:
             )
             self.info_label.setWordWrap(True)
             self.info_label.setStyleSheet(
-                "color: #7B879D; font-size: 11px; padding: 2px 2px 4px 2px;"
+                f"color: {tokens()['text_muted']}; font-size: 11px; padding: 2px 2px 4px 2px;"
             )
             layout.addWidget(self.info_label)
 
@@ -79,7 +80,7 @@ if QT_AVAILABLE:
 
             self.status_label = QLabel("")
             self.status_label.setAlignment(Qt.AlignCenter)
-            self.status_label.setStyleSheet("font-size: 11px; color: #7B879D;")
+            self.status_label.setStyleSheet(f"font-size: 11px; color: {tokens()['text_muted']};")
             self.status_label.setVisible(False)  # sem texto, não ocupa espaço
             prompt_layout.addWidget(self.status_label)
 
@@ -91,7 +92,7 @@ if QT_AVAILABLE:
             base_layout.setSpacing(8)
             base_hint = QLabel("Enviada antes do seu prompt em toda geração. Customizável.")
             base_hint.setWordWrap(True)
-            base_hint.setStyleSheet("color: #7B879D; font-size: 11px;")
+            base_hint.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px;")
             self.base_prompt_edit = QTextEdit()
             self.base_prompt_edit.setMaximumHeight(96)
             self.base_prompt_edit.setPlainText(

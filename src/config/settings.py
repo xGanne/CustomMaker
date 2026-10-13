@@ -9,22 +9,7 @@ from src.utils.resource_loader import app_data_path, resource_path
 load_dotenv(app_data_path(".env"))
 load_dotenv()
 
-# Design tokens v1 (Dark Editorial Clean)
-UI_TOKENS = {
-    "surface_bg": "#141821",
-    "surface_panel": "#1B202B",
-    "surface_elevated": "#222938",
-    "surface_muted": "#2A3244",
-    "accent": "#2F8CFF",
-    "accent_hover": "#1F6DCC",
-    "text_primary": "#E9EEF8",
-    "text_secondary": "#A8B3C7",
-    "text_muted": "#7B879D",
-    "success": "#1FA971",
-    "warning": "#E7A83D",
-    "error": "#D94B5E",
-    "border_soft": "#334056",
-    "border_strong": "#4A5A75",
+_UI_METRICS = {
     "radius_sm": 8,
     "radius_md": 12,
     "radius_lg": 16,
@@ -34,6 +19,56 @@ UI_TOKENS = {
     "space_4": 16,
     "space_5": 20,
     "space_6": 24,
+}
+
+# Design tokens por tema (M7). "on_accent" é o texto sobre botões/abas em
+# destaque — fica branco nos dois temas, ao contrário de text_primary.
+UI_THEMES = {
+    "editorial_dark_v1": {
+        "surface_bg": "#141821",
+        "surface_panel": "#1B202B",
+        "surface_elevated": "#222938",
+        "surface_muted": "#2A3244",
+        "canvas_bg": "#141821",
+        "accent": "#2F8CFF",
+        "accent_hover": "#1F6DCC",
+        "on_accent": "#FFFFFF",
+        "text_primary": "#E9EEF8",
+        "text_secondary": "#A8B3C7",
+        "text_muted": "#7C889E",  # 4.5:1 sobre surface_panel (era #7B879D, 4.499)
+        "success": "#1FA971",
+        "warning": "#E7A83D",
+        "error": "#D94B5E",
+        "border_soft": "#334056",
+        "border_strong": "#4A5A75",
+        **_UI_METRICS,
+    },
+    "editorial_light_v1": {
+        "surface_bg": "#F3F5F9",
+        "surface_panel": "#FFFFFF",
+        "surface_elevated": "#EDF1F7",
+        "surface_muted": "#E2E7EF",
+        # canvas levemente mais escuro que os painéis: a borda branca e
+        # imagens claras continuam visíveis
+        "canvas_bg": "#D5DBE4",
+        "accent": "#1F6FE0",
+        "accent_hover": "#1959B5",
+        "on_accent": "#FFFFFF",
+        "text_primary": "#1A2130",
+        "text_secondary": "#465166",
+        "text_muted": "#626E83",
+        "success": "#137A50",
+        "warning": "#A56A12",
+        "error": "#C2303F",
+        "border_soft": "#CDD5E1",
+        "border_strong": "#9AA7BB",
+        **_UI_METRICS,
+    },
+}
+DEFAULT_THEME_VARIANT = "editorial_dark_v1"
+THEME_LABELS = {
+    "editorial_dark_v1": "Escuro",
+    "editorial_light_v1": "Claro",
 }
 
 # Codigos hexadecimais das cores de borda

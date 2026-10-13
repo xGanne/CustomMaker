@@ -1,5 +1,7 @@
 """Dialog de configurações do CustomMaker."""
+from src.config.settings import DEFAULT_THEME_VARIANT, THEME_LABELS
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
+from src.qt.theme import tokens
 
 if QT_AVAILABLE:
     from src.qt.compat import (
@@ -22,6 +24,7 @@ if QT_AVAILABLE:
         def __init__(self, app_config, parent=None):
             super().__init__(parent)
             self.app_config = app_config
+            self.theme_changed = False
             self.setWindowTitle("Configurações")
             self.resize(540, 480)
             self.setModal(True)
@@ -30,6 +33,7 @@ if QT_AVAILABLE:
             tabs = QTabWidget()
             layout.addWidget(tabs, 1)
 
+            tabs.addTab(self._build_appearance_tab(), "Aparência")
             tabs.addTab(self._build_ai_tab(), "IA")
             tabs.addTab(self._build_danbooru_tab(), "Danbooru")
             tabs.addTab(self._build_performance_tab(), "Performance")
@@ -38,6 +42,28 @@ if QT_AVAILABLE:
             buttons.accepted.connect(self._save)
             buttons.rejected.connect(self.reject)
             layout.addWidget(buttons)
+
+        # ── Aba Aparência (M7) ────────────────────────────────────────────
+
+        def _build_appearance_tab(self):
+            widget = QWidget()
+            layout = QVBoxLayout(widget)
+            form = QFormLayout()
+            self._theme = QComboBox()
+            for variant, label in THEME_LABELS.items():
+                self._theme.addItem(label, variant)
+            current = self.app_config.get("ui_theme_variant", DEFAULT_THEME_VARIANT)
+            index = self._theme.findData(current)
+            self._theme.setCurrentIndex(index if index >= 0 else 0)
+            form.addRow("Tema:", self._theme)
+            layout.addLayout(form)
+
+            theme_note = QLabel("A troca de tema é aplicada ao reiniciar o programa.")
+            theme_note.setWordWrap(True)
+            theme_note.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px; margin-top: 8px;")
+            layout.addWidget(theme_note)
+            layout.addStretch(1)
+            return widget
 
         # ── Aba IA ────────────────────────────────────────────────────────
 
@@ -55,7 +81,7 @@ if QT_AVAILABLE:
 
             prompt_label = QLabel("Instrução base enviada ao Gemini antes do prompt do usuário:")
             prompt_label.setWordWrap(True)
-            prompt_label.setStyleSheet("color: #7B879D; font-size: 11px; margin-top: 8px;")
+            prompt_label.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px; margin-top: 8px;")
             self._ai_base_prompt = QTextEdit()
             self._ai_base_prompt.setMinimumHeight(120)
             self._ai_base_prompt.setPlainText(self.app_config.get("ai_base_prompt", ""))
@@ -73,7 +99,7 @@ if QT_AVAILABLE:
 
             blacklist_hint = QLabel("Tags excluídas de buscas (separadas por espaço):")
             blacklist_hint.setWordWrap(True)
-            blacklist_hint.setStyleSheet("color: #7B879D; font-size: 11px;")
+            blacklist_hint.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px;")
             layout.addWidget(blacklist_hint)
             self._blacklist = QLineEdit()
             self._blacklist.setText(self.app_config.get("danbooru_tag_blacklist", ""))
@@ -124,7 +150,7 @@ if QT_AVAILABLE:
 
             restart_note = QLabel("Alterações de performance têm efeito após reiniciar o programa.")
             restart_note.setWordWrap(True)
-            restart_note.setStyleSheet("color: #7B879D; font-size: 11px; margin-top: 8px;")
+            restart_note.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px; margin-top: 8px;")
             layout.addRow(restart_note)
             return widget
 
@@ -141,6 +167,9 @@ if QT_AVAILABLE:
             return field
 
         def _save(self):
+            theme = self._theme.currentData()
+            self.theme_changed = theme != self.app_config.get("ui_theme_variant", DEFAULT_THEME_VARIANT)
+            self.app_config.set("ui_theme_variant", theme)
             self.app_config.set("ai_mode", self._ai_mode.currentText())
             prompt = self._ai_base_prompt.toPlainText().strip()
             if prompt:

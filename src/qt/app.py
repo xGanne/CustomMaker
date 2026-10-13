@@ -5,7 +5,7 @@ from src.core.app_config import AppConfig
 from src.core.logging_config import configure_logging
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.main_window import QtMainWindow
-from src.qt.theme import QT_STYLESHEET
+from src.qt.theme import build_stylesheet, set_active_theme
 
 if QT_AVAILABLE:
     from src.qt.compat import QApplication, QFont
@@ -34,7 +34,10 @@ def main():
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Custom Maker Pro")
     app.setFont(QFont("Segoe UI", 10))
-    app.setStyleSheet(QT_STYLESHEET)
+    # M7: o tema precisa estar ativo antes da janela — widgets leem as cores
+    # do tema na construção
+    set_active_theme(app_config.get("ui_theme_variant"))
+    app.setStyleSheet(build_stylesheet())
 
     window = QtMainWindow(app_config)
     window.show()
