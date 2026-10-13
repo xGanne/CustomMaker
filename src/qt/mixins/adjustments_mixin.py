@@ -194,4 +194,6 @@ class AdjustmentsMixin:
             if state.selected_borda == "Cor Personalizada":
                 state.custom_borda_hex_individual[path] = state.custom_borda_hex
         self.refresh_current_canvas()
+        if hasattr(self, "refresh_list_indicators"):
+            self.refresh_list_indicators()
         self.show_status(f"Borda '{state.selected_borda}' aplicada a {len(image_list)} imagem(ns).")

@@ -202,7 +202,7 @@ if QT_AVAILABLE:
 
             self.image_list_panel = ImageListPanel(self)
             self.image_list_panel.selection_changed.connect(self.load_image)
-            self.image_list_panel.remove_requested.connect(self.remove_image_at)
+            self.image_list_panel.remove_requested.connect(self.remove_images_at)
             self.image_list_panel.toggle_individual_requested.connect(self.toggle_individual_border)
             self.image_list_panel.order_changed.connect(self._on_image_list_reordered)
 
@@ -544,10 +544,46 @@ if QT_AVAILABLE:
 
         # ── Gerenciamento da lista de imagens ──────────────────────────────
 
-        def remove_image_at(self, index):
-            if index < 0 or index >= len(self.editor_state.image_list):
+        def remove_images_at(self, indices):
+            """M9: remove uma ou várias imagens da lista (os arquivos ficam no disco)."""
+            image_list = self.editor_state.image_list
+            paths = [image_list[i] for i in sorted(set(indices)) if 0 <= i < len(image_list)]
+            if not paths:
                 return
-            path = self.editor_state.image_list[index]
+            if len(paths) > 1:
+                answer = QMessageBox.question(
+                    self,
+                    "Remover imagens",
+                    f"Remover {len(paths)} imagens da lista?\n"
+                    "Os arquivos não são apagados, mas os ajustes delas serão perdidos.",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if answer != QMessageBox.Yes:
+                    return
+            current_removed = self.current_path in paths
+            for path in paths:
+                self._forget_image(path)
+            self.image_list_panel.set_paths(self.editor_state.image_list)
+            self.refresh_list_indicators()
+            if not self.editor_state.image_list:
+                self.current_path = None
+                self._close_current_original()
+                self.image_canvas.set_loading(False)
+                self.image_canvas.clear_image()
+                self.stop_preview_animation()
+                self.show_status("Lista de imagens vazia.")
+                return
+            if current_removed:
+                self.load_image(self.editor_state.current_image_index or 0)
+            else:
+                self.image_list_panel.set_current_index(self.editor_state.current_image_index)
+                self._update_image_counter()
+            if len(paths) > 1:
+                self.show_status(f"{len(paths)} imagens removidas da lista.")
+
+        def _forget_image(self, path):
+            """Remove a imagem do estado e libera tudo que estava em memória para ela."""
             self.editor_state.remove_image(path)
             cached_preview = self._preview_cache.pop(path, None)
             if cached_preview is not None:
@@ -569,16 +605,6 @@ if QT_AVAILABLE:
             for undo_image, *_rest in undo_stack:
                 self._dispose_images([undo_image])
             self._drop_redo_stack(path)
-            self.image_list_panel.set_paths(self.editor_state.image_list)
-            if not self.editor_state.image_list:
-                self.current_path = None
-                self._close_current_original()
-                self.image_canvas.set_loading(False)
-                self.image_canvas.clear_image()
-                self.stop_preview_animation()
-                self.show_status("Lista de imagens vazia.")
-                return
-            self.load_image(self.editor_state.current_image_index or 0)
 
         def toggle_individual_border(self, index):
             if index < 0 or index >= len(self.editor_state.image_list):
@@ -590,6 +616,7 @@ if QT_AVAILABLE:
                 self.editor_state.individual_bordas[path] = self.editor_state.selected_borda
             if path == self.current_path:
                 self.refresh_current_canvas()
+            self.refresh_list_indicators()
             self.show_status("Configuração individual de borda atualizada.")
 
         def _on_image_list_reordered(self, new_paths):
@@ -622,6 +649,12 @@ if QT_AVAILABLE:
                 set(self.edited_images.keys()),
                 set(self.editor_state.image_states.keys()),
             )
+            # M9: badge com a cor das imagens que têm borda individual
+            state = self.editor_state
+            self.image_list_panel.update_border_badges({
+                path: (name, state.resolve_border_hex(BORDA_HEX, path))
+                for path, name in state.individual_bordas.items()
+            })
 
         # ── Colar da área de transferência ────────────────────────────────
 
