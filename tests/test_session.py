@@ -12,6 +12,8 @@ from PIL import Image
 from src.core.editor_state import EditorState
 from src.core.session_store import SESSION_VERSION, SessionStore, apply_session, snapshot_session
 
+from _qt_helpers import dispose_window
+
 
 class _TempDirTestCase(unittest.TestCase):
     def setUp(self):
@@ -118,7 +120,7 @@ class TestSessionInWindow(_TempDirTestCase):
         with patch.object(compat.QMessageBox, "question", return_value=answer):
             window = QtMainWindow(config, session_store=self.store)
             self._pump(0.3)
-        self.addCleanup(window.deleteLater)
+        self.addCleanup(dispose_window, self.app, window)
         return window
 
     def test_closing_saves_and_reopening_restores(self):
@@ -148,7 +150,7 @@ class TestSessionInWindow(_TempDirTestCase):
         from src.core.app_config import AppConfig
         from src.qt.main_window import QtMainWindow
         window = QtMainWindow(AppConfig())
-        self.addCleanup(window.deleteLater)
+        self.addCleanup(dispose_window, self.app, window)
         window.add_images(self.paths, replace=True)
         window._autosave_session(force=True)
         self.assertFalse(os.path.exists(self.store.session_file))

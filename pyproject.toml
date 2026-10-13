@@ -26,3 +26,5 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# teste travado por mais de 2 min: despeja as pilhas de todas as threads
+faulthandler_timeout = 120

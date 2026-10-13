@@ -12,6 +12,8 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
+from _qt_helpers import dispose_window
+
 
 compat = importlib.import_module("src.qt.compat")
 QT_AVAILABLE = compat.QT_AVAILABLE
@@ -99,10 +101,7 @@ class TestShortcutsDoNotStealTextKeys(unittest.TestCase):
         _wait_until(self.app, lambda: self.window._active_image_load_task_id is None)
 
     def tearDown(self):
-        self.window.editor_state.image_dirty.clear()  # evita o diálogo de "sair mesmo assim?"
-        self.window.close()
-        self.window.deleteLater()
-        self.app.processEvents()
+        dispose_window(self.app, self.window)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _focused_line_edit(self):
@@ -239,10 +238,7 @@ class TestExitConfirmation(unittest.TestCase):
         self.window = QtMainWindow(AppConfig())
 
     def tearDown(self):
-        self.window.editor_state.image_dirty.clear()
-        self.window.close()
-        self.window.deleteLater()
-        self.app.processEvents()
+        dispose_window(self.app, self.window)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _answer(self, button, dont_ask):
@@ -294,7 +290,7 @@ class TestFaceDetectionUnavailable(unittest.TestCase):
         from src.core.app_config import AppConfig
         from src.qt.main_window import QtMainWindow
         window = QtMainWindow(AppConfig())
-        self.addCleanup(window.deleteLater)
+        self.addCleanup(dispose_window, self.app, window)
         return window
 
     def test_buttons_disabled_and_explained_without_cascade(self):
@@ -331,7 +327,7 @@ class TestMissingTokenDialog(unittest.TestCase):
         from src.core.app_config import AppConfig
         from src.qt.main_window import QtMainWindow
         self.window = QtMainWindow(AppConfig())
-        self.addCleanup(self.window.deleteLater)
+        self.addCleanup(dispose_window, self.app, self.window)
         self.window.editor_state.image_list = ["qualquer.png"]
         self.window.uploader.api_token = None
 
@@ -386,7 +382,7 @@ class TestAiOffMode(unittest.TestCase):
         from src.core.app_config import AppConfig
         from src.qt.main_window import QtMainWindow
         self.window = QtMainWindow(AppConfig())
-        self.addCleanup(self.window.deleteLater)
+        self.addCleanup(dispose_window, self.app, self.window)
         self.tab = self.window.ai_tab
 
     def test_off_mode_disables_tab_and_blocks_sending(self):
@@ -430,7 +426,7 @@ class TestCloseWithRunningOperation(unittest.TestCase):
         from src.core.app_config import AppConfig
         from src.qt.main_window import QtMainWindow
         self.window = QtMainWindow(AppConfig())
-        self.addCleanup(self.window.deleteLater)
+        self.addCleanup(dispose_window, self.app, self.window)
         self.cancelled = threading.Event()
 
         def long_upload(cancel_event, _progress):
@@ -481,9 +477,9 @@ class TestListThumbnailsOnGuiThread(unittest.TestCase):
             panel = panel_module.ImageListPanel()
             threads = []
             original = panel._apply_thumbnail
-            panel.thumbnail_ready.disconnect()
-            panel.thumbnail_ready.connect(
-                lambda *args: (threads.append(threading.current_thread()), original(*args))
+            panel._thumbnail_signal.ready.disconnect()
+            panel._thumbnail_signal.ready.connect(
+                lambda payload: (threads.append(threading.current_thread()), original(*payload))
             )
             panel.set_paths(paths)
             self.assertTrue(_wait_until(self.app, lambda: len(threads) == len(paths)))
