@@ -113,6 +113,10 @@ if QT_AVAILABLE:
             self._task_runner = QtTaskRunner(self)
             self._active_load_task_id = None
             self._load_seq = 0
+            # o handle da task não é filho do diálogo: sinais de progresso/fim
+            # podem chegar depois do fechamento (WA_DeleteOnClose), com os
+            # widgets já destruídos
+            self._closed = False
             from src.utils.resource_loader import app_data_path
             self._disk_cache = CacheManager(
                 cache_dir=app_data_path(os.path.join(".cache", "danbooru_viewer")),
@@ -292,10 +296,12 @@ if QT_AVAILABLE:
                 return {"task_id": task_id, "quality": quality, "image": loaded_image}
 
             def on_progress(_value, _maximum, message):
+                if self._closed or task_id != self._active_load_task_id:
+                    return
                 self.info_label.setText(message)
 
             def on_done(result):
-                if result.get("task_id") != self._active_load_task_id:
+                if self._closed or result.get("task_id") != self._active_load_task_id:
                     return
                 self._active_load_task_id = None
                 image = result.get("image")
@@ -307,7 +313,7 @@ if QT_AVAILABLE:
                 self._load_next_image(remaining_urls, has_displayed_image=True)
 
             def on_error(_exc):
-                if task_id != self._active_load_task_id:
+                if self._closed or task_id != self._active_load_task_id:
                     return
                 self._active_load_task_id = None
                 self._load_next_image(remaining_urls, has_displayed_image)
@@ -367,6 +373,7 @@ if QT_AVAILABLE:
                 self._update_window_button_text()
 
         def closeEvent(self, event):
+            self._closed = True
             if self._active_load_task_id and self._task_runner.is_running(self._active_load_task_id):
                 self._task_runner.cancel(self._active_load_task_id)
             if self.original_image is not None:
