@@ -349,6 +349,7 @@ class TestGenerateCustoms(unittest.TestCase):
         main.add_images = lambda paths, **_kw: main.added.extend(paths)
         main.show_info = lambda _t, msg: main.infos.append(msg)
         main.mudae_command = ExportMixin.mudae_command
+        main.mudae_commands = ExportMixin.mudae_commands
         main._show_links_dialog = lambda title, links: main.links.append((title, links))
         main.choose_directory = lambda _title: os.path.join(self.tmp, "out")
         main.uploader = SimpleNamespace(api_token="token", reload_token=lambda: "token")

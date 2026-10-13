@@ -10,6 +10,10 @@ Responsabilidades:
 import os
 
 
+# Limite de caracteres de uma mensagem do Discord (sem Nitro)
+DISCORD_MESSAGE_LIMIT = 2000
+
+
 class ExportMixin:
 
     # ── Helpers de formatação ──────────────────────────────────────────────
@@ -252,22 +256,59 @@ class ExportMixin:
         """Comando do Mudae que adiciona as imagens à custom `title`."""
         return f"$ai {title} $\n" + " $\n".join(links)
 
+    @classmethod
+    def mudae_commands(cls, title, links, limit=DISCORD_MESSAGE_LIMIT):
+        """Comando dividido em mensagens que cabem no limite do Discord.
+
+        Com ~40 imagens o comando único passava de 2000 caracteres e o Discord
+        recusava a mensagem. Cada parte é um $ai completo para a mesma custom.
+        """
+        parts, current = [], []
+        for link in links:
+            candidate = current + [link]
+            if current and len(cls.mudae_command(title, candidate)) > limit:
+                parts.append(cls.mudae_command(title, current))
+                candidate = [link]
+            current = candidate
+        if current:
+            parts.append(cls.mudae_command(title, current))
+        return parts
+
     def _show_links_dialog(self, title, links):
-        from src.qt.compat import QGuiApplication, QPushButton, QPlainTextEdit, QVBoxLayout, QWidget, Qt
+        from src.qt.compat import (
+            QGuiApplication, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QVBoxLayout, QWidget, Qt,
+        )
+        commands = self.mudae_commands(title, links)
         dialog = QWidget(self, Qt.Dialog)
         dialog.setWindowTitle("Links de Upload")
-        dialog.resize(540, 420)
+        dialog.resize(560, 440)
         layout = QVBoxLayout(dialog)
+        if len(commands) > 1:
+            hint = QLabel(
+                f"{len(links)} imagens: o comando foi dividido em {len(commands)} mensagens "
+                f"(limite de {DISCORD_MESSAGE_LIMIT} caracteres do Discord). Envie uma de cada vez."
+            )
+            hint.setWordWrap(True)
+            layout.addWidget(hint)
         text = QPlainTextEdit(dialog)
         text.setReadOnly(True)
-        text.setPlainText("\n".join(links))
-        copy_button = QPushButton("Copiar comando", dialog)
-
-        def copy_links():
-            QGuiApplication.clipboard().setText(self.mudae_command(title, links))
-            self.show_status("Comando copiado para a área de transferência.")
-
-        copy_button.clicked.connect(copy_links)
+        text.setPlainText("\n\n".join(commands))
         layout.addWidget(text)
-        layout.addWidget(copy_button)
+
+        buttons = QHBoxLayout()
+        dialog.copy_buttons = []
+        for index, command in enumerate(commands, start=1):
+            label = "Copiar comando" if len(commands) == 1 else f"Copiar parte {index}/{len(commands)}"
+            button = QPushButton(label, dialog)
+
+            def copy_part(_checked=False, command=command, index=index):
+                QGuiApplication.clipboard().setText(command)
+                suffix = "" if len(commands) == 1 else f" (parte {index} de {len(commands)})"
+                self.show_status(f"Comando copiado para a área de transferência{suffix}.")
+
+            button.clicked.connect(copy_part)
+            buttons.addWidget(button)
+            dialog.copy_buttons.append(button)
+        layout.addLayout(buttons)
         dialog.show()
+        return dialog

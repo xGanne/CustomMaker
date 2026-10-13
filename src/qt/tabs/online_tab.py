@@ -886,10 +886,14 @@ if QT_AVAILABLE:
                 links = export.get("links") or []
                 if links:
                     from src.qt.compat import QGuiApplication
-                    QGuiApplication.clipboard().setText(mw.mudae_command(title, links))
+                    commands = mw.mudae_commands(title, links)
+                    QGuiApplication.clipboard().setText(commands[0])
                     mw._show_links_dialog(title, links)
+                    copied = "comando Mudae copiado" if len(commands) == 1 else (
+                        f"parte 1 de {len(commands)} do comando Mudae copiada (as outras estão no diálogo)"
+                    )
                     mw.show_status(
-                        f"{len(links)} custom(s) enviada(s) — comando Mudae copiado para a área de transferência.",
+                        f"{len(links)} custom(s) enviada(s) — {copied}.",
                         timeout_ms=10000,
                     )
                 if errors or not links:
