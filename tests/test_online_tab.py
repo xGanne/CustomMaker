@@ -154,6 +154,41 @@ class TestOnlineTabSearch(unittest.TestCase):
         self.assertEqual(self.tab.search_edit.text(), "hatsune_miku")
         self.assertEqual(self.main.app_config.get("danbooru_search_history"), ["hatsune_miku"])
 
+    def test_query_respects_two_tag_limit(self):
+        """Ordenação padrão e blacklist não ocupam vagas do limite de tags."""
+        self.tab.search_edit.setText("hatsune_miku solo")
+        self.tab.blacklist_edit.setText("gore blood")
+        self.tab.rating_combo.setCurrentText("Geral")
+        self.assertEqual(self.tab._build_tags(), "hatsune_miku solo rating:g")
+        self.tab.sort_combo.setCurrentText("Melhor avaliados")
+        self.assertEqual(self.tab._build_tags(), "hatsune_miku solo rating:g order:score")
+
+    def test_blacklist_is_filtered_from_results(self):
+        posts = _posts(20)
+        posts[0]["tag_string"] = "hatsune_miku gore"
+        posts[1]["tag_string"] = "hatsune_miku blood"
+        self.pages[1] = posts
+        self.tab.blacklist_edit.setText("gore blood")
+        self._search_and_wait()
+        self.assertEqual(len(self.tab.posts), 18)
+        self.assertNotIn(1, [p["id"] for p in self.tab.posts])
+        self.assertIn("2 oculto(s)", self.tab.summary_label.text())
+        # a página veio cheia do servidor: ainda há próxima página
+        self.assertTrue(self.tab._has_next_page)
+
+    def test_page_fully_hidden_by_blacklist_is_not_end_of_results(self):
+        self.pages[1] = _posts(20)
+        self.pages[2] = [dict(p, tag_string="gore") for p in _posts(20, start=100)]
+        self.tab.blacklist_edit.setText("gore")
+        self._search_and_wait()
+        self.requests.clear()
+        self.tab.change_page(1)
+        self.assertTrue(self._wait_until(lambda: not self.tab._is_searching()))
+        # não volta para a página 1 (F22): a página 2 existe, só está toda oculta
+        self.assertEqual(self.requests, [2])
+        self.assertEqual(self.tab.current_page, 2)
+        self.assertIn("Todos ocultos", self.tab.summary_label.text())
+
     def test_empty_next_page_still_steps_back_one(self):
         """F22 continua valendo para o avanço normal com →."""
         self.pages[1] = _posts(20)

@@ -10,6 +10,48 @@ from urllib3.util.retry import Retry
 logger = logging.getLogger(__name__)
 
 
+def parse_tag_list(text):
+    """Tags de uma blacklist digitada ("gore  -blood") — minúsculas, sem o "-"."""
+    tags = []
+    for tag in (text or "").split():
+        tag = tag.strip().lstrip("-").lower()
+        if tag and tag not in tags:
+            tags.append(tag)
+    return tags
+
+
+def filter_blacklisted(posts, blacklist):
+    """Remove posts que têm alguma tag da blacklist.
+
+    A blacklist é aplicada aqui, e não como "-tag" na busca: sem login o
+    Danbooru aceita só 2 tags por busca e cada exclusão conta como uma.
+    """
+    excluded = set(parse_tag_list(blacklist) if isinstance(blacklist, str) else blacklist or ())
+    if not excluded:
+        return list(posts or [])
+    return [
+        post for post in posts or []
+        if not excluded.intersection((post.get("tag_string") or "").lower().split())
+    ]
+
+
+def _tag_limit_message(response):
+    """Mensagem clara para o 422 de limite de tags, ou None se for outro 422."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict) or payload.get("error") != "PostQuery::TagLimitError":
+        return None
+    return (
+        "Danbooru: a busca passou do limite de tags da sua conta "
+        f"({payload.get('message', 'limite de tags')}).\n\n"
+        "Sem login o limite é de 2 tags. A ordenação (Melhor avaliados / Mais favoritos) "
+        "conta como uma tag; o filtro de classificação não conta. Remova uma tag ou "
+        "use a ordenação \"Mais recentes\"."
+    )
+
+
 class DanbooruClient:
     def __init__(self, user_agent="CustomMakerv2/1.0 (by xGanne on GitHub)", config=None):
         self.base_url = "https://danbooru.donmai.us"
@@ -123,6 +165,11 @@ class DanbooruClient:
                 raise PermissionError(
                     "Danbooru: acesso negado (403). O conteúdo pode estar restrito por rating ou sua conta não tem permissão."
                 ) from exc
+            if status_code == 422 and response is not None:
+                message = _tag_limit_message(response)
+                if message:
+                    logger.info("Danbooru: limite de tags excedido para tags='%s'.", tags)
+                    raise RuntimeError(message) from exc
             if status_code == 404:
                 logger.warning("Danbooru: recurso não encontrado (404) para tags='%s'.", tags)
                 raise LookupError("Danbooru: página ou recurso não encontrado (404).") from exc

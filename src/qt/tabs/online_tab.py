@@ -6,7 +6,7 @@ from io import BytesIO
 from PIL import Image
 
 from src.core.custom_scorer import metadata_score, visual_score
-from src.core.danbooru import DanbooruClient
+from src.core.danbooru import DanbooruClient, filter_blacklisted, parse_tag_list
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
 from src.qt.dialogs.danbooru_gallery_dialog import DanbooruGalleryDialog
@@ -40,8 +40,10 @@ RATING_TAGS = {
     "Explícito": "rating:e",
 }
 
+# "Mais recentes" é a ordem padrão do Danbooru: não enviar order: economiza
+# uma das 2 tags permitidas sem login (order: conta no limite; rating: não)
 SORT_TAGS = {
-    "Mais recentes": "order:id_desc",
+    "Mais recentes": "",
     "Melhor avaliados": "order:score",
     "Mais favoritos": "order:favcount",
 }
@@ -65,6 +67,8 @@ if QT_AVAILABLE:
             self._active_search_task_id = None
             self._active_search_tags = ""
             self._active_query_label = ""
+            self._active_blacklist = []
+            self._hidden_by_blacklist = 0
             self._search_restore_state = None  # M16: estado a restaurar se cancelar
             self._page_before_request = None
             self._expanded_dialog = None
@@ -303,17 +307,16 @@ if QT_AVAILABLE:
                 parts.append(rating_tag)
             if sort_tag:
                 parts.append(sort_tag)
-            # A6: inject blacklist exclusions
-            blacklist = self.blacklist_edit.text().strip()
-            for tag in blacklist.split():
-                tag = tag.strip()
-                if tag and not tag.startswith("-"):
-                    parts.append(f"-{tag}")
+            # A6: a blacklist não entra na query — é filtrada nos resultados
+            # (cada "-tag" contaria no limite de 2 tags do Danbooru)
             return " ".join(part for part in parts if part).strip()
 
         def _set_results_summary(self):
+            hidden = f" · {self._hidden_by_blacklist} oculto(s)" if self._hidden_by_blacklist else ""
             if self.posts:
-                self.summary_label.setText(f"{len(self.posts)} resultado(s) · pág. {self.current_page}")
+                self.summary_label.setText(f"{len(self.posts)} resultado(s){hidden} · pág. {self.current_page}")
+            elif hidden:
+                self.summary_label.setText(f"Todos ocultos pela blacklist{hidden} · pág. {self.current_page}")
             elif self._active_search_tags:
                 self.summary_label.setText(f"Sem resultados · pág. {self.current_page}")
             else:
@@ -367,6 +370,8 @@ if QT_AVAILABLE:
             self._active_search_tags = restore.get("tags", "")
             self._active_query_label = restore.get("label", "")
             self._has_next_page = restore.get("has_next", False)
+            self._active_blacklist = restore.get("blacklist", [])
+            self._hidden_by_blacklist = restore.get("hidden", 0)
             self._search_restore_state = None
             self._set_search_button_mode(False)
             self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
@@ -464,11 +469,14 @@ if QT_AVAILABLE:
                     "tags": self._active_search_tags,
                     "label": self._active_query_label,
                     "has_next": self._has_next_page,
+                    "blacklist": list(self._active_blacklist),
+                    "hidden": self._hidden_by_blacklist,
                 }
             self._page_before_request = self.current_page if use_active_tags else None
             self.current_page = max(1, min(_MAX_PAGE, int(page or 1)))
             if not use_active_tags:
                 self._active_search_tags = tags
+                self._active_blacklist = parse_tag_list(self.blacklist_edit.text())
                 self._active_query_label = self.search_edit.text().strip() or tags
                 self.results_grid.clear_selection()
                 self.detail_panel.clear()
@@ -487,14 +495,21 @@ if QT_AVAILABLE:
             self.summary_label.setText(f"Buscando página {self.current_page}...")
             active_page = self.current_page
             active_tags = self._active_search_tags
+            active_blacklist = list(self._active_blacklist)
 
             def task_fn(_cancel_event, on_progress):
                 if on_progress:
                     on_progress(0, 1, "Buscando no Danbooru...")
-                posts = self.client.search_posts(active_tags, limit=self._page_size, page=active_page)
+                raw_posts = self.client.search_posts(active_tags, limit=self._page_size, page=active_page)
+                posts = filter_blacklisted(raw_posts, active_blacklist)
                 if on_progress:
                     on_progress(1, 1, f"{len(posts)} resultado(s) carregado(s).")
-                return {"task_id": task_id, "page": active_page, "posts": posts}
+                return {
+                    "task_id": task_id,
+                    "page": active_page,
+                    "posts": posts,
+                    "raw_count": len(raw_posts),
+                }
 
             def on_done(result):
                 if result.get("task_id") != self._active_search_task_id:
@@ -504,11 +519,13 @@ if QT_AVAILABLE:
                 self._set_search_button_mode(False)
                 self.current_page = result.get("page") or self.current_page
                 posts = result.get("posts") or []
+                raw_count = result.get("raw_count", len(posts))
                 # F22: página vazia após avançar = fim dos resultados; volta
                 # automaticamente para a última página com conteúdo. M16: depois
                 # de um salto (ex.: pág. 500) volta direto para a página de onde
                 # saiu, em vez de recuar uma por uma
-                if not posts and self.current_page > 1:
+                # (página só com posts da blacklist não é o fim: raw_count > 0)
+                if raw_count == 0 and self.current_page > 1:
                     previous = self._page_before_request
                     target = previous if previous and previous < self.current_page else self.current_page - 1
                     self.main_window.show_status(
@@ -517,7 +534,8 @@ if QT_AVAILABLE:
                     self.search(page=target, use_active_tags=True)
                     return
                 self.posts = posts
-                self._has_next_page = len(self.posts) >= self._page_size
+                self._hidden_by_blacklist = raw_count - len(posts)
+                self._has_next_page = raw_count >= self._page_size
                 self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
                 self._set_results_summary()
                 self._update_page_controls()
@@ -534,9 +552,12 @@ if QT_AVAILABLE:
                 self.posts = []
                 self._has_next_page = False
                 self.results_grid.display_posts(self._posts_with_selected_thumbnails([]))
-                self.summary_label.setText(f"Erro na página {self.current_page}: {exc}")
+                # o rótulo é uma linha só; a explicação completa vai no aviso abaixo
+                first_line = str(exc).strip().splitlines()[0] if str(exc).strip() else "erro desconhecido"
+                self.summary_label.setText(f"Erro na página {self.current_page}: {first_line}")
                 self._update_page_controls()
-                logger.exception("Erro na busca Danbooru Qt: %s", exc)
+                # fora de um bloco except, logger.exception só imprimia "NoneType: None"
+                logger.warning("Erro na busca Danbooru Qt: %s", exc)
                 self.main_window.show_warning("Danbooru", str(exc))
 
             handle = self.main_window.task_runner.submit(task_id, task_fn)
@@ -773,6 +794,8 @@ if QT_AVAILABLE:
                 self.client,
                 tags=self._active_search_tags,
                 current_page=self.current_page,
+                exclude_tags=self._active_blacklist,
+                has_next_page=self._has_next_page,
                 selection_state=self.selection_state,
                 parent=self,
                 title=f"Galeria Expandida - {self._active_query_label or 'Danbooru'}",

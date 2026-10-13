@@ -153,3 +153,54 @@ class TestDanbooruClient(unittest.TestCase):
                 client.search_posts("popular_tag")
         self.assertIn("429", str(ctx.exception))
         client.close()
+
+
+class TestTagLimitAndBlacklist(unittest.TestCase):
+    """Sem login o Danbooru aceita 2 tags por busca: a blacklist é filtrada
+    no app e o 422 de limite vira uma mensagem que explica o que fazer."""
+
+    def test_parse_tag_list_normalizes(self):
+        from src.core.danbooru import parse_tag_list
+        self.assertEqual(parse_tag_list("  Gore -blood gore "), ["gore", "blood"])
+        self.assertEqual(parse_tag_list(""), [])
+        self.assertEqual(parse_tag_list(None), [])
+
+    def test_filter_blacklisted_removes_posts_with_any_tag(self):
+        from src.core.danbooru import filter_blacklisted
+        posts = [
+            {"id": 1, "tag_string": "hatsune_miku solo"},
+            {"id": 2, "tag_string": "hatsune_miku gore"},
+            {"id": 3, "tag_string": "Blood hatsune_miku"},
+            {"id": 4},
+        ]
+        kept = filter_blacklisted(posts, "gore blood")
+        self.assertEqual([p["id"] for p in kept], [1, 4])
+        self.assertEqual(filter_blacklisted(posts, ""), posts)
+        self.assertEqual([p["id"] for p in filter_blacklisted(posts, ["gore"])], [1, 3, 4])
+
+    def test_tag_limit_422_has_actionable_message(self):
+        client = DanbooruClient()
+        response = FakeResponse(
+            status_code=422,
+            payload={
+                "success": False,
+                "error": "PostQuery::TagLimitError",
+                "message": "You cannot search for more than 2 tags at a time.",
+            },
+        )
+        with patch.object(client.session, "get", return_value=response):
+            with self.assertRaises(RuntimeError) as ctx:
+                client.search_posts("hatsune_miku solo order:score")
+        message = str(ctx.exception)
+        self.assertIn("limite de tags", message)
+        self.assertIn("Mais recentes", message)
+        client.close()
+
+    def test_other_422_keeps_generic_message(self):
+        client = DanbooruClient()
+        response = FakeResponse(status_code=422, payload={"error": "Outra coisa"})
+        with patch.object(client.session, "get", return_value=response):
+            with self.assertRaises(RuntimeError) as ctx:
+                client.search_posts("x")
+        self.assertIn("422", str(ctx.exception))
+        client.close()

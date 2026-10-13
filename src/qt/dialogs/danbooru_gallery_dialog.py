@@ -1,3 +1,4 @@
+from src.core.danbooru import filter_blacklisted
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
 from src.qt.task_runner import QtTaskRunner
@@ -16,6 +17,8 @@ if QT_AVAILABLE:
             client,
             tags="",
             current_page=1,
+            exclude_tags=None,
+            has_next_page=None,
             selection_state=None,
             parent=None,
             title="Galeria Expandida",
@@ -36,7 +39,12 @@ if QT_AVAILABLE:
             self.posts = posts or []
             self.current_page = max(1, int(current_page or 1))
             self._page_size = 20
-            self._has_next_page = len(self.posts) >= self._page_size
+            self._exclude_tags = list(exclude_tags or [])
+            # os posts recebidos já vêm filtrados pela blacklist, então o
+            # tamanho deles não diz se há próxima página — a aba informa
+            self._has_next_page = (
+                has_next_page if has_next_page is not None else len(self.posts) >= self._page_size
+            )
             self._search_seq = 0
             self._active_search_task_id = None
             self._task_runner = QtTaskRunner(self)
@@ -164,9 +172,16 @@ if QT_AVAILABLE:
             active_page = self.current_page
             active_tags = self.tags
 
+            exclude_tags = list(self._exclude_tags)
+
             def task_fn(_cancel_event, _on_progress):
-                posts = self.client.search_posts(active_tags, limit=self._page_size, page=active_page)
-                return {"task_id": task_id, "page": active_page, "posts": posts}
+                raw_posts = self.client.search_posts(active_tags, limit=self._page_size, page=active_page)
+                return {
+                    "task_id": task_id,
+                    "page": active_page,
+                    "posts": filter_blacklisted(raw_posts, exclude_tags),
+                    "raw_count": len(raw_posts),
+                }
 
             def on_done(result):
                 if result.get("task_id") != self._active_search_task_id:
@@ -174,7 +189,7 @@ if QT_AVAILABLE:
                 self._active_search_task_id = None
                 self.current_page = result.get("page") or self.current_page
                 self.posts = result.get("posts") or []
-                self._has_next_page = len(self.posts) >= self._page_size
+                self._has_next_page = result.get("raw_count", len(self.posts)) >= self._page_size
                 self.grid.display_posts(self.posts)
                 self._set_results_summary()
                 self._update_page_controls()
