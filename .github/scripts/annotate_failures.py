@@ -18,14 +18,25 @@ def main(report_path, output_path=None):
     except (OSError, ET.ParseError) as exc:
         # sem relatório = o processo do pytest morreu no meio; o fim da saída
         # mostra o último teste iniciado e o traceback do faulthandler
-        tail = ""
+        text = ""
         if output_path:
             try:
                 with open(output_path, encoding="utf-8", errors="replace") as f:
-                    tail = "".join(f.readlines()[-60:])
+                    text = f.read()
             except OSError:
                 pass
-        print(f"::error title=pytest terminou sem relatorio ({exc.__class__.__name__})::{_escape(tail[-3500:])}")
+        crash = text.rfind("Fatal Python error")
+        if crash >= 0:
+            # o começo do dump do faulthandler diz o tipo de falha e qual thread
+            # caiu; cada thread vira uma anotação para não estourar o limite
+            last_test = text[:crash].rstrip().splitlines()[-1:] or [""]
+            print(f"::error title=pytest caiu durante::{_escape(last_test[0][:500])}")
+            for block in text[crash:].split("\n\n")[:6]:
+                if block.strip():
+                    print(f"::error title=dump do crash::{_escape(block.strip()[:3500])}")
+        else:
+            tail = "".join(text.splitlines(keepends=True)[-60:])
+            print(f"::error title=pytest terminou sem relatorio ({exc.__class__.__name__})::{_escape(tail[-3500:])}")
         return
     for case in root.iter("testcase"):
         for kind in ("failure", "error"):
