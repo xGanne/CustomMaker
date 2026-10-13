@@ -99,8 +99,10 @@ class AnimationMixin:
             if result.get("cancelled"):
                 return
             if result.get("error"):
+                if not self._window_alive():
+                    return
                 self.image_canvas.clear_preview_overlay()
-                self.show_warning("Preview", result["error"])
+                self.show_status(f"Prévia da animação indisponível: {result['error']}", timeout_ms=8000)
                 return
             pixmaps = []
             for frame in result.get("frames") or []:
@@ -120,10 +122,12 @@ class AnimationMixin:
             self._preview_timer.start(self._preview_duration)
 
         def on_error(exc):
+            if not self._window_alive():
+                return
             if task_id == self._active_preview_task_id:
                 self._active_preview_task_id = None
             self.image_canvas.clear_preview_overlay()
-            self.show_warning("Preview", str(exc))
+            self.show_status(f"Prévia da animação indisponível: {exc}", timeout_ms=8000)
 
         handle = self.task_runner.submit(task_id, task_fn)
         if handle is None:

@@ -117,6 +117,14 @@ class ImageLoaderMixin:
             except Exception:
                 pass
 
+    def _window_alive(self):
+        """False se a janela já fechou (ou o objeto C++ foi destruído) — tasks em
+        segundo plano não devem mais mexer na interface."""
+        try:
+            return bool(self.isVisible()) or not getattr(self, "_closing", False)
+        except RuntimeError:
+            return False
+
     # ── Pipeline de carregamento ───────────────────────────────────────────
 
     def _preview_max_dimension(self):
@@ -451,10 +459,15 @@ class ImageLoaderMixin:
             self.show_status(f"Imagem carregada: {os.path.basename(path)}")
 
         def on_error(exc):
+            # carregamento em segundo plano: a janela pode já ter fechado, e um
+            # diálogo modal sobre uma janela destruída corrompia o heap. Erro de
+            # navegação vai para a status bar (M1), sem interromper o fluxo.
+            if not self._window_alive():
+                return
             if task_id == self._active_image_load_task_id:
                 self._active_image_load_task_id = None
                 self.image_canvas.set_loading(False)
-            self.show_error("Erro", f"Falha ao carregar imagem: {exc}")
+            self.show_status(f"Falha ao carregar {os.path.basename(path)}: {exc}", timeout_ms=10000)
 
         handle = self.task_runner.submit(task_id, task_fn)
         if handle is None:

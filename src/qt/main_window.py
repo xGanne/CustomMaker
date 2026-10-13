@@ -825,6 +825,7 @@ if QT_AVAILABLE:
             ]
 
         def closeEvent(self, event):
+            self._closing = False
             # sair no meio de um upload/exportação: a janela sumia, mas o processo
             # seguia vivo até a operação acabar, e o resultado (links, comando
             # Mudae) se perdia
@@ -845,6 +846,9 @@ if QT_AVAILABLE:
             if dirty_count > 0 and not self._confirm_exit_with_unexported(dirty_count):
                 event.ignore()
                 return
+            # a partir daqui a janela está fechando: tasks em segundo plano que
+            # terminarem depois não mexem mais na interface (_window_alive)
+            self._closing = True
             # salva a sessão (lista, enquadramentos, edições) antes de liberar tudo
             if getattr(self, "_session_timer", None) is not None:
                 self._session_timer.stop()
