@@ -4,17 +4,36 @@
 > Os problemas abaixo foram encontrados por leitura sistemática de todos os módulos de `src/`.
 > Cada item tem arquivo/linha, descrição do problema e a correção proposta.
 
-## ✅ Status de implementação (2026-07-18)
+## ✅ Status de implementação (atualizado em 2026-10-13)
 
-**Todas as falhas F1–F22 foram corrigidas**, cada uma em um commit próprio (`fix(F1)`…`fix(F22)`).
-Melhorias já implementadas: **M1** (Pick Color sem modal), **M2** (confirmação ao sair),
-**M3** (estado vazio do canvas), **M6** (acentuação pt-BR), **M12** (exportar imagem atual,
-Ctrl+Shift+S), **M13** (cache de frames da prévia), **M17** (aviso de detecção de rosto),
-**M19** (helper único PIL→QPixmap), **M20** (código morto removido), **M21** (log de exceções
-em tasks). Extras incluídos nas correções: redo com Ctrl+Y/Ctrl+Shift+Z (F15) e tecla **B**
-para o antes/depois (F17).
+**Plano concluído: F1–F22 e M1–M22 implementados**, cada item em um commit próprio
+(`fix(Fn)`, `feat(Mn)`, `perf(M15)`, `build(M22)`, `refactor(M14)`, `test(M18)`).
+Suíte atual: **150 testes, todos passando** (com as dependências de `requirements.txt` instaladas).
 
-Pendentes (backlog): M4, M5, M7–M11, M14–M16, M18, M22.
+Primeira rodada (2026-07-18): F1–F22, M1, M2, M3, M6, M12, M13, M17, M19, M20, M21.
+Extras: redo com Ctrl+Y/Ctrl+Shift+Z (F15) e tecla **B** para o antes/depois (F17).
+
+Segunda rodada (2026-10-13):
+- **M4** indicador "Carregando…" no canvas (com atraso de 150 ms para não piscar)
+- **M5** filete colorido por rating nos cards do Danbooru
+- **M7** tema claro em Configurações › Aparência (vale ao reiniciar); cores dos widgets vêm do tema
+- **M8** Ctrl+roda (passo de 20%), zoom ancorado no cursor, Ctrl+0 = 100% e indicador fixo de zoom
+- **M9** multi-seleção, Delete/“Remover selecionadas”, badge de borda individual e “Revelar no Explorer”
+- **M10** aviso único de fotossensibilidade; Strobe limitado a < 3 flashes/s (350 ms por quadro)
+- **M11** enquadramento padrão (auto fit/inteligente) para imagens não ajustadas; presets podem
+  incluir enquadramento e blacklist; amostra de cor no combo
+- **M14** resolvido pela opção “honesta” do próprio item: a chave `ui_language` foi **removida**
+  (o app só existe em pt-BR); i18n de verdade fica para quando houver demanda
+- **M15** pool de processos reutilizado entre exportações (2º lote: ~0,9 s → ~0,06 s)
+- **M16** botão Cancelar na busca, campo para pular para a página N, cache do autocomplete por prefixo
+- **M18** testes de UI para F1/F2/F3/F5 com o `QTest` do PySide6 (sem adicionar pytest-qt)
+- **M22** versões fixadas (PySide6==6.12.0); removidas dependências da UI legada
+
+Correções encontradas durante a segunda rodada (fora do plano original):
+- campo de tags da aba Online era apagado após cada busca
+- detecção de rosto concorrente na mesma instância do cascade falhava em silêncio (agora com lock)
+- OpenCL desativado na detecção: a primeira detecção da sessão levava ~2 s
+- checkboxes desmarcados ficavam invisíveis (o tema não estilizava o indicador)
 
 ---
 
