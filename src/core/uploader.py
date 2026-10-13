@@ -1,12 +1,20 @@
 import contextlib
 import logging
 import mimetypes
+import os
 import time
 from typing import List, Tuple
 
 import requests
+from dotenv import dotenv_values
 
 from src.config.settings import IMG_CHEST_API_TOKEN, UPLOAD_BATCH_SIZE
+from src.utils.resource_loader import app_data_path
+
+
+# .env editado pelo usuário a partir do aviso de token ausente (F6)
+ENV_FILE = app_data_path(".env")
+ENV_TEMPLATE = "IMG_CHEST_API_TOKEN=seu_token_aqui\n"
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +35,16 @@ class ImgChestUploader:
     def __init__(self, api_token=None, session: requests.Session = None):
         self.api_token = _normalize_token(api_token) or _normalize_token(IMG_CHEST_API_TOKEN)
         self.session = session or requests.Session()
+
+    def reload_token(self, env_file=None):
+        """Relê o token do .env — editar o arquivo não exige reiniciar o app (F6)."""
+        env_file = env_file or ENV_FILE
+        token = None
+        if os.path.exists(env_file):
+            token = _normalize_token(dotenv_values(env_file).get("IMG_CHEST_API_TOKEN"))
+        if token:
+            self.api_token = token
+        return self.api_token
 
     @staticmethod
     def _guess_content_type(filename: str) -> str:

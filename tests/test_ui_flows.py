@@ -226,6 +226,63 @@ class TestFaceDetectionUnavailable(unittest.TestCase):
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestMissingTokenDialog(unittest.TestCase):
+    """F6: o aviso de token ausente oferece abrir (e criar) o .env."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _app()
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.env_file = os.path.join(self.tmp, ".env")
+        for patcher in (
+            patch("src.core.app_config.CONFIG_FILE", os.path.join(self.tmp, "config.json")),
+            patch("src.core.preset_manager.PRESETS_FILE", os.path.join(self.tmp, "presets.json")),
+            patch("src.core.uploader.ENV_FILE", self.env_file),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        from src.core.app_config import AppConfig
+        from src.qt.main_window import QtMainWindow
+        self.window = QtMainWindow(AppConfig())
+        self.addCleanup(self.window.deleteLater)
+        self.window.editor_state.image_list = ["qualquer.png"]
+        self.window.uploader.api_token = None
+
+    def _click(self, label):
+        def respond():
+            box = self.app.activeModalWidget()
+            if box is None:
+                compat.QTimer.singleShot(10, respond)
+                return
+            for button in box.buttons():
+                if button.text() == label:
+                    button.click()
+                    return
+            box.reject()
+        compat.QTimer.singleShot(0, respond)
+
+    def test_open_button_creates_template_and_opens_env(self):
+        self._click("Abrir .env")
+        with patch("src.utils.file_reveal.open_with_default_app", return_value=True) as opener:
+            self.window.upload_to_imgchest()
+        opener.assert_called_once_with(self.env_file)
+        with open(self.env_file, encoding="utf-8") as f:
+            self.assertIn("IMG_CHEST_API_TOKEN=", f.read())
+
+    def test_token_saved_in_env_is_used_without_restart(self):
+        with open(self.env_file, "w", encoding="utf-8") as f:
+            f.write("IMG_CHEST_API_TOKEN=token_novo\n")
+        with patch("src.qt.compat.QInputDialog.getText", return_value=("", False)) as ask_title:
+            self.window.upload_to_imgchest()
+        # sem diálogo de erro: já seguiu para pedir o título do álbum
+        ask_title.assert_called_once()
+        self.assertEqual(self.window.uploader.api_token, "token_novo")
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
 class TestListThumbnailsOnGuiThread(unittest.TestCase):
     """F1: QPixmap/QIcon da lista só são criados na GUI thread."""
 

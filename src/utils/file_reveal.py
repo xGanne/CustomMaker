@@ -20,6 +20,23 @@ def reveal_command(path, platform=None):
     return ["xdg-open", os.path.dirname(path) or "."]
 
 
+def open_with_default_app(path):
+    """Abre `path` no programa associado (ex.: Bloco de Notas para .env)."""
+    if not path or not os.path.exists(path):
+        return False
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+        return True
+    except OSError as exc:
+        logger.warning("Não foi possível abrir %s: %s", path, exc)
+        return False
+
+
 def reveal_in_file_manager(path):
     """Mostra `path` no Explorer/Finder. Retorna False se não foi possível."""
     if not path or not os.path.exists(path):

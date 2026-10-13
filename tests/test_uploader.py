@@ -1,3 +1,5 @@
+import os
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -226,3 +228,29 @@ class TestUploader(unittest.TestCase):
             self.assertEqual(len(errors), 1)
             self.assertIn("HTTP 400", errors[0])
             self.assertEqual(len(session.calls), 1)
+
+
+class TestReloadToken(unittest.TestCase):
+    """F6: o token editado no .env vale sem reiniciar o app."""
+
+    def _env(self, content):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = os.path.join(tmp, ".env")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return path
+
+    def test_reload_picks_up_real_token(self):
+        uploader = ImgChestUploader(api_token=None)
+        uploader.api_token = None
+        self.assertEqual(uploader.reload_token(self._env("IMG_CHEST_API_TOKEN=abc123\n")), "abc123")
+
+    def test_placeholder_is_still_treated_as_missing(self):
+        uploader = ImgChestUploader(api_token=None)
+        uploader.api_token = None
+        self.assertIsNone(uploader.reload_token(self._env("IMG_CHEST_API_TOKEN=seu_token_aqui\n")))
+
+    def test_missing_file_keeps_current_token(self):
+        uploader = ImgChestUploader(api_token="atual")
+        self.assertEqual(uploader.reload_token("Z:/nao/existe/.env"), "atual")

@@ -164,13 +164,8 @@ class ExportMixin:
         if not self.editor_state.image_list:
             self.show_warning("Upload", "Nenhuma imagem carregada.")
             return
-        if not getattr(self.uploader, "api_token", None):
-            self.show_warning(
-                "Upload",
-                "Token da API ImgChest não configurado.\n\n"
-                "Edite o arquivo .env na pasta do programa e defina IMG_CHEST_API_TOKEN "
-                "com o seu token real (o valor 'seu_token_aqui' é apenas um modelo).",
-            )
+        if not getattr(self.uploader, "api_token", None) and not self.uploader.reload_token():
+            self._show_missing_token_dialog()
             return
         from src.qt.compat import QInputDialog
         album_title, ok = QInputDialog.getText(self, "Upload ImgChest", "Título do álbum:")
@@ -213,6 +208,37 @@ class ExportMixin:
             on_done=on_done,
             maximum=max(1, len(self.editor_state.image_list)),
         )
+
+    def _show_missing_token_dialog(self):
+        """F6: explica o token ausente e oferece abrir o .env para edição."""
+        from src.core.uploader import ENV_FILE, ENV_TEMPLATE
+        from src.qt.compat import QMessageBox
+        from src.utils.file_reveal import open_with_default_app
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Upload")
+        box.setText("Token da API ImgChest não configurado.")
+        box.setInformativeText(
+            "Defina IMG_CHEST_API_TOKEN no arquivo .env com o seu token real "
+            "(o valor 'seu_token_aqui' é apenas um modelo). Depois de salvar o "
+            "arquivo, clique em ImgChest de novo — não precisa reiniciar.\n\n"
+            f"Arquivo: {ENV_FILE}"
+        )
+        open_button = box.addButton("Abrir .env", QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Close)
+        box.exec()
+        if box.clickedButton() is not open_button:
+            return
+        if not os.path.exists(ENV_FILE):
+            try:
+                with open(ENV_FILE, "w", encoding="utf-8") as file_obj:
+                    file_obj.write(ENV_TEMPLATE)
+            except OSError as exc:
+                self.show_error("Upload", f"Não foi possível criar o .env: {exc}")
+                return
+        if not open_with_default_app(ENV_FILE):
+            self.show_error("Upload", f"Não foi possível abrir o arquivo:\n{ENV_FILE}")
 
     def _show_links_dialog(self, title, links):
         from src.qt.compat import QGuiApplication, QPushButton, QPlainTextEdit, QVBoxLayout, QWidget, Qt
