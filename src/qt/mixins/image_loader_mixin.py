@@ -222,6 +222,8 @@ class ImageLoaderMixin:
         mode = self.editor_state.default_framing
         face_cascade = self.face_cascade if mode == "intelligent" else None
         reference = tuple(self.editor_state.borda_pos)
+        # troca de modo no meio do cálculo invalida o resultado deste lote
+        generation = getattr(self, "_framing_generation", 0)
         type(self)._precompute_seq += 1
         task_id = f"qt_precompute_framing_{self._precompute_seq}"
 
@@ -247,11 +249,19 @@ class ImageLoaderMixin:
             return fits
 
         def on_done(fits):
+            if generation != getattr(self, "_framing_generation", 0):
+                return  # calculado no modo anterior
             bx, by = self.editor_state.borda_pos
             changed = False
             for path, ((rel_x, rel_y), size) in fits.items():
-                if path in self.editor_state.image_list:
-                    changed |= self.editor_state.set_auto_state(path, (bx + rel_x, by + rel_y), size)
+                if path not in self.editor_state.image_list:
+                    continue
+                pos = (bx + rel_x, by + rel_y)
+                if self.editor_state.set_auto_state(path, pos, size):
+                    changed = True
+                    if path == self.current_path and self.image_canvas.image_item is not None:
+                        # imagem na tela sem ajuste do usuário: mostra o novo enquadramento
+                        self.image_canvas.set_image_state(pos, size)
             if changed and hasattr(self, "refresh_list_indicators"):
                 self.refresh_list_indicators()
 

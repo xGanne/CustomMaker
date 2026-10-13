@@ -194,6 +194,24 @@ class TestShortcutsDoNotStealTextKeys(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(relative(), original)
 
+    def test_changing_default_framing_reframes_only_auto_framed_images(self):
+        from src.core.image_processor import ImageProcessor
+        es = self.window.editor_state
+        self.assertTrue(_wait_until(self.app, lambda: all(p in es.image_states for p in self.paths)))
+        # o usuário ajusta a imagem atual; as outras ficam com o automático
+        current = self.window.current_path
+        item = self.window.image_canvas.image_item
+        item.setPos(item.pos().x() + 15, item.pos().y())
+        self.app.processEvents()
+        user_state = dict(es.image_states[current])
+        auto_before = dict(es.image_states[self.paths[2]])
+
+        with patch.object(ImageProcessor, "detect_anime_face", return_value=(60, 40, 90, 90)):
+            self.window.set_default_framing("intelligent")
+            self.assertTrue(_wait_until(self.app, lambda: es.image_states.get(self.paths[2]) not in (None, auto_before)))
+        self.assertEqual(es.image_states[current], user_state)
+        self.assertIn(self.paths[2], es.auto_framed)
+
     def test_arrows_navigate_when_canvas_has_focus(self):
         self.window.image_canvas.setFocus()
         self.QTest.keyClick(self.window.image_canvas, compat.Qt.Key_Right)

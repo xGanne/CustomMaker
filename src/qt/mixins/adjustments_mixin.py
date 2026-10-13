@@ -106,14 +106,33 @@ class AdjustmentsMixin:
         """M11: modo de enquadramento das imagens ainda não enquadradas."""
         if mode not in ("auto_fit", "intelligent"):
             return
+        changed = mode != self.editor_state.default_framing
         self.editor_state.default_framing = mode
         self.app_config.set("default_framing", mode)
         self.app_config.save()
+        if changed:
+            self._reframe_auto_framed_images()
         if hasattr(self, "editor_tab"):
             self.editor_tab.sync_default_framing_combo()
         if announce:
             label = "inteligente (rosto)" if mode == "intelligent" else "auto fit"
             self.show_status(f"Imagens ainda não ajustadas usarão {label}.")
+
+    def _reframe_auto_framed_images(self):
+        """Recalcula no modo novo as imagens com enquadramento automático.
+
+        O enquadramento padrão é calculado ao importar; sem isto, trocar o modo
+        depois não tinha efeito nenhum nas imagens ainda não ajustadas. Ajustes
+        do usuário não são tocados.
+        """
+        self._framing_generation = getattr(self, "_framing_generation", 0) + 1
+        state = self.editor_state
+        stale = [path for path in state.image_list if path in state.auto_framed]
+        for path in stale:
+            state.image_states.pop(path, None)
+            state.auto_framed.discard(path)
+        if stale and hasattr(self, "_precompute_default_framing"):
+            self._precompute_default_framing(stale)
 
     def apply_adjustment_to_all(self, adjustment_name):
         if not self.editor_state.image_list:
