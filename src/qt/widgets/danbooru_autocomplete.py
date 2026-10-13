@@ -3,6 +3,7 @@ import logging
 from collections import OrderedDict
 
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
+from src.qt.worker_signal import WorkerSignal
 
 if QT_AVAILABLE:
     from src.qt.compat import QEvent, QListWidget, QListWidgetItem, QObject, QPoint, QTimer, Qt, Signal
@@ -18,7 +19,6 @@ SUGGESTION_CACHE_MAX = 200
 
 if QT_AVAILABLE:
     class DanbooruAutocomplete(QObject):
-        suggestions_ready = Signal(int, str, object)
 
         def __init__(self, entry_widget, client):
             super().__init__(entry_widget)
@@ -43,7 +43,9 @@ if QT_AVAILABLE:
             self._active_query_seq = 0
             self._current_word = ""
             self._suggestion_cache = OrderedDict()
-            self.suggestions_ready.connect(self._apply_suggestions)
+            # a thread de sugestões emite numa ponte que sobrevive ao autocomplete
+            self._suggestions_signal = WorkerSignal()
+            self._suggestions_signal.ready.connect(self._on_suggestions_ready)
 
             self.entry.textEdited.connect(self._on_text_edited)
             self.entry.installEventFilter(self)
@@ -124,6 +126,7 @@ if QT_AVAILABLE:
                 return
 
             future = self._executor.submit(self.client.fetch_tags, token)
+            signal = self._suggestions_signal
 
             def on_done(done_future):
                 try:
@@ -131,7 +134,7 @@ if QT_AVAILABLE:
                 except Exception as exc:
                     logger.debug("Autocomplete falhou: %s", exc)
                     suggestions = []
-                self.suggestions_ready.emit(query_seq, cache_key, suggestions)
+                signal.ready.emit((query_seq, cache_key, suggestions))
 
             future.add_done_callback(on_done)
 
@@ -152,6 +155,9 @@ if QT_AVAILABLE:
             if n >= 1_000:
                 return f"{n / 1_000:.1f}k"
             return str(n)
+
+        def _on_suggestions_ready(self, payload):
+            self._apply_suggestions(*payload)
 
         def _apply_suggestions(self, query_seq, cache_key, suggestions):
             self._remember_suggestions(cache_key, suggestions)

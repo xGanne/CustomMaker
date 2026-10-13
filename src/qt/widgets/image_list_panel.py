@@ -5,6 +5,7 @@ from PIL import Image
 
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
+from src.qt.worker_signal import WorkerSignal
 from src.utils.file_reveal import reveal_in_file_manager
 
 if QT_AVAILABLE:
@@ -89,7 +90,6 @@ if QT_AVAILABLE:
         remove_requested = Signal(list)  # M9: índices a remover (uma ou várias)
         toggle_individual_requested = Signal(int)
         order_changed = Signal(list)  # C1: emitted after drag-reorder
-        thumbnail_ready = Signal(int, object, object)  # generation, item, PIL image
 
         def __init__(self, parent=None):
             super().__init__(parent)
@@ -126,7 +126,9 @@ if QT_AVAILABLE:
                 max_workers=2, thread_name_prefix="list_thumb"
             )
             self._generation = 0
-            self.thumbnail_ready.connect(self._apply_thumbnail)
+            # as threads de miniatura emitem numa ponte que sobrevive ao painel
+            self._thumbnail_signal = WorkerSignal()
+            self._thumbnail_signal.ready.connect(self._on_thumbnail_ready)
 
         def set_paths(self, paths, edited_set=None, adjusted_set=None):
             self._generation += 1
@@ -203,6 +205,7 @@ if QT_AVAILABLE:
 
         def _load_thumb_async(self, item, path, generation):
             future = self._executor.submit(self._generate_thumb, path)
+            signal = self._thumbnail_signal
 
             def on_done(f):
                 # runs on the executor thread — only emit the signal here so the
@@ -211,9 +214,12 @@ if QT_AVAILABLE:
                     thumb = f.result()
                 except Exception:
                     return
-                self.thumbnail_ready.emit(generation, item, thumb)
+                signal.ready.emit((generation, item, thumb))
 
             future.add_done_callback(on_done)
+
+        def _on_thumbnail_ready(self, payload):
+            self._apply_thumbnail(*payload)
 
         def _apply_thumbnail(self, generation, item, thumb):
             if thumb is None:

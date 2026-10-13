@@ -8,6 +8,7 @@ from PIL import Image
 from src.core.cache_manager import CacheManager
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
+from src.qt.worker_signal import WorkerSignal
 
 if QT_AVAILABLE:
     from src.qt.compat import (
@@ -86,7 +87,6 @@ if QT_AVAILABLE:
 
     class DanbooruResultsGrid(QListWidget):
         selection_count_changed = Signal(int)
-        thumbnail_ready = Signal(int, object, object)
         image_open_requested = Signal(object)
         image_import_requested = Signal(object)  # A2: double-click to import
 
@@ -124,7 +124,10 @@ if QT_AVAILABLE:
             self.itemDoubleClicked.connect(self._on_double_click)  # A2
             self.setContextMenuPolicy(Qt.CustomContextMenu)
             self.customContextMenuRequested.connect(self._show_context_menu)
-            self.thumbnail_ready.connect(self._apply_thumbnail)
+            # as threads de miniatura emitem numa ponte que sobrevive à grade
+            # (fechar a galeria expandida no meio do carregamento corrompia o heap)
+            self._thumbnail_signal = WorkerSignal()
+            self._thumbnail_signal.ready.connect(self._on_thumbnail_ready)
             self._placeholder_text = (
                 "Nenhuma busca executada\n\n"
                 "Digite uma tag acima e clique em Buscar"
@@ -324,6 +327,7 @@ if QT_AVAILABLE:
 
         def _queue_thumbnail_load(self, item, url, generation):
             future = self._executor.submit(self._load_thumbnail_image, url)
+            signal = self._thumbnail_signal
 
             def on_done(done_future):
                 try:
@@ -331,9 +335,12 @@ if QT_AVAILABLE:
                 except Exception as exc:
                     logger.debug("Falha ao carregar thumbnail %s: %s", url, exc)
                     thumb = None
-                self.thumbnail_ready.emit(generation, item, thumb)
+                signal.ready.emit((generation, item, thumb))
 
             future.add_done_callback(on_done)
+
+        def _on_thumbnail_ready(self, payload):
+            self._apply_thumbnail(*payload)
 
         def _apply_thumbnail(self, generation, item, thumb):
             if generation != self._generation or thumb is None:
