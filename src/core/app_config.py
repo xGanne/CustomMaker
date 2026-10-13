@@ -44,7 +44,6 @@ DEFAULT_CONFIG = {
         "Analyze the image and describe the requested visual edit while preserving the original pose, "
         "composition, character identity, and art style. Return only the visual description."
     ),
-    "ui_language": "pt-BR",
     "feature_flags": {},
     "danbooru_pool_connections": DANBOORU_POOL_CONNECTIONS_DEFAULT,
     "danbooru_pool_maxsize": DANBOORU_POOL_MAXSIZE_DEFAULT,
@@ -151,8 +150,9 @@ class AppConfig:
         if not isinstance(migrated.get("ai_base_prompt"), str) or not migrated.get("ai_base_prompt").strip():
             migrated["ai_base_prompt"] = DEFAULT_CONFIG["ai_base_prompt"]
 
-        if not isinstance(migrated.get("ui_language"), str):
-            migrated["ui_language"] = DEFAULT_CONFIG["ui_language"]
+        # M14: "ui_language" nunca teve efeito (o app só existe em pt-BR) —
+        # removida em vez de prometer uma troca de idioma que não acontece
+        migrated.pop("ui_language", None)
 
         migrated["danbooru_pool_connections"] = _coerce_int(
             migrated.get("danbooru_pool_connections"),

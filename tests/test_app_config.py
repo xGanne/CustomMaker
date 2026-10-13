@@ -46,7 +46,7 @@ class TestAppConfig(unittest.TestCase):
             self.assertEqual(cfg.get("config_version"), CURRENT_CONFIG_VERSION)
             self.assertEqual(cfg.get("ai_mode"), "safe")
             self.assertEqual(cfg.get("ai_base_prompt"), DEFAULT_CONFIG["ai_base_prompt"])
-            self.assertEqual(cfg.get("ui_language"), "pt-BR")
+            self.assertIsNone(cfg.get("ui_language"))
             self.assertEqual(cfg.get("ui_theme_variant"), "editorial_dark_v1")
             self.assertEqual(cfg.get("ui_density"), "comfortable")
             self.assertEqual(cfg.get("ui_show_tips"), True)
@@ -129,3 +129,19 @@ class TestDefaultFramingConfig(unittest.TestCase):
             with patch("src.core.app_config.CONFIG_FILE", config_path):
                 cfg = AppConfig()
             self.assertEqual(cfg.get("default_framing"), "intelligent")
+
+
+class TestRemovedKeys(unittest.TestCase):
+    def test_legacy_ui_language_is_dropped_on_load_and_save(self):
+        """M14: a chave decorativa some de configs antigos."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = f"{tmp}/custommaker_config.json"
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump({"ui_language": "en", "last_global_borda": "Red"}, f)
+            with patch("src.core.app_config.CONFIG_FILE", config_path):
+                cfg = AppConfig()
+                cfg.save()
+            self.assertIsNone(cfg.get("ui_language"))
+            self.assertEqual(cfg.get("last_global_borda"), "Red")
+            with open(config_path, encoding="utf-8") as f:
+                self.assertNotIn("ui_language", json.load(f))
