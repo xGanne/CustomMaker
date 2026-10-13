@@ -4,7 +4,9 @@ import os
 import secrets
 import shutil
 import tempfile
+import threading
 import zipfile
+from concurrent.futures.process import BrokenProcessPool
 from typing import List
 
 from PIL import Image
@@ -49,6 +51,11 @@ class BatchController:
         if edited_source_images is None:
             edited_source_images = getattr(app_context, "edited_source_images", {})
         self._edited_source_images = edited_source_images
+        # M15: pool de processos preguiçoso e reutilizado entre exportações —
+        # no Windows (spawn) criar um pool novo custa segundos a cada lote
+        self._executor = None
+        self._executor_workers = None
+        self._executor_lock = threading.Lock()
 
     def _get_task_data(self, path, output_path=None, source_dir=None):
         state = self._image_states().get(path)
@@ -174,6 +181,34 @@ class BatchController:
         results.sort(key=lambda r: order.get(r.get("path"), len(order)))
         return results
 
+    def _get_executor(self, max_workers):
+        """M15: devolve o pool compartilhado, recriando-o só se o número de
+        workers mudou ou se um processo filho morreu (pool quebrado)."""
+        with self._executor_lock:
+            broken = self._executor is not None and getattr(self._executor, "_broken", False)
+            if self._executor is not None and (broken or self._executor_workers != max_workers):
+                self._executor.shutdown(wait=False, cancel_futures=True)
+                self._executor = None
+            if self._executor is None:
+                self._executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+                self._executor_workers = max_workers
+            return self._executor
+
+    def _discard_executor(self, executor):
+        with self._executor_lock:
+            if self._executor is executor:
+                self._executor = None
+                self._executor_workers = None
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    def shutdown(self):
+        """Encerra o pool compartilhado (chamado ao fechar a janela)."""
+        with self._executor_lock:
+            executor, self._executor = self._executor, None
+            self._executor_workers = None
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+
     def _run_batch(self, tasks, on_progress=None, cancel_event=None):
         total = len(tasks)
         completed = 0
@@ -183,37 +218,43 @@ class BatchController:
 
         max_workers = self._resolve_max_workers()
         logger.info("Iniciando processamento em lote com %s task(s), workers=%s", total, max_workers)
-        executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+        executor = self._get_executor(max_workers)
         try:
             futures = {executor.submit(process_image_task, task): task for task in tasks}
-            pending = set(futures.keys())
+        except BrokenProcessPool:
+            # um worker morreu desde o último lote: recria o pool e tenta de novo
+            self._discard_executor(executor)
+            executor = self._get_executor(max_workers)
+            futures = {executor.submit(process_image_task, task): task for task in tasks}
+        pending = set(futures.keys())
 
-            while pending:
-                if cancel_event and cancel_event.is_set():
-                    for future in pending:
-                        future.cancel()
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    return {"results": self._sort_results_by_task_order(results, tasks), "cancelled": True}
+        while pending:
+            if cancel_event and cancel_event.is_set():
+                # o pool é compartilhado: cancela só as tasks deste lote; as que
+                # já estão rodando terminam em segundo plano e são ignoradas
+                for future in pending:
+                    future.cancel()
+                return {"results": self._sort_results_by_task_order(results, tasks), "cancelled": True}
 
-                done, pending = concurrent.futures.wait(
-                    pending,
-                    timeout=0.2,
-                    return_when=concurrent.futures.FIRST_COMPLETED,
-                )
-                for future in done:
-                    try:
-                        res = future.result()
-                        results.append(res)
-                    except Exception as exc:
-                        logger.exception("Erro no batch worker: %s", exc)
-                        src_task = futures[future]
-                        results.append({"status": "error", "path": src_task.get("path"), "error": str(exc)})
+            done, pending = concurrent.futures.wait(
+                pending,
+                timeout=0.2,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            for future in done:
+                try:
+                    res = future.result()
+                    results.append(res)
+                except Exception as exc:
+                    logger.exception("Erro no batch worker: %s", exc)
+                    if isinstance(exc, BrokenProcessPool):
+                        self._discard_executor(executor)
+                    src_task = futures[future]
+                    results.append({"status": "error", "path": src_task.get("path"), "error": str(exc)})
 
-                    completed += 1
-                    if on_progress:
-                        on_progress(completed, total, f"Processando {completed}/{total}")
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+                completed += 1
+                if on_progress:
+                    on_progress(completed, total, f"Processando {completed}/{total}")
 
         return {"results": self._sort_results_by_task_order(results, tasks), "cancelled": False}
 

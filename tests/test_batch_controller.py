@@ -120,3 +120,55 @@ class TestBatchController(unittest.TestCase):
         self.assertEqual(result["processed"], 2)
         self.assertEqual(result["errors"], 1)
         self.assertEqual(result["zip_path"], "out.zip")
+
+
+class FakeExecutor:
+    instances = []
+
+    def __init__(self, max_workers=None):
+        self.max_workers = max_workers
+        self.shutdown_called = False
+        self._broken = False
+        FakeExecutor.instances.append(self)
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        self.shutdown_called = True
+
+
+class TestBatchControllerExecutorReuse(unittest.TestCase):
+    """M15: o pool de processos é preguiçoso e reaproveitado entre lotes."""
+
+    def setUp(self):
+        FakeExecutor.instances = []
+        patcher = patch("src.controllers.batch_controller.concurrent.futures.ProcessPoolExecutor", FakeExecutor)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.controller = BatchController(DummyApp())
+
+    def test_pool_is_created_lazily_and_reused(self):
+        self.assertIsNone(self.controller._executor)
+        first = self.controller._get_executor(2)
+        second = self.controller._get_executor(2)
+        self.assertIs(first, second)
+        self.assertEqual(len(FakeExecutor.instances), 1)
+
+    def test_pool_is_recreated_when_worker_count_changes(self):
+        first = self.controller._get_executor(2)
+        second = self.controller._get_executor(4)
+        self.assertIsNot(first, second)
+        self.assertTrue(first.shutdown_called)
+        self.assertEqual(second.max_workers, 4)
+
+    def test_broken_pool_is_replaced(self):
+        first = self.controller._get_executor(2)
+        first._broken = True
+        second = self.controller._get_executor(2)
+        self.assertIsNot(first, second)
+
+    def test_shutdown_releases_pool(self):
+        executor = self.controller._get_executor(2)
+        self.controller.shutdown()
+        self.assertTrue(executor.shutdown_called)
+        self.assertIsNone(self.controller._executor)
+        # shutdown repetido é inofensivo
+        self.controller.shutdown()

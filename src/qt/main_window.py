@@ -721,6 +721,7 @@ if QT_AVAILABLE:
             self.ui_preferences.save_to_app_config(self.app_config)
             self.app_config.save()
             self.stop_preview_animation()
+            self.batch_controller.shutdown()
             self.online_tab.close()
             self._close_current_original()
             self._clear_preview_cache()
