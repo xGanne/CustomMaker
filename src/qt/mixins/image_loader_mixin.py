@@ -160,23 +160,7 @@ class ImageLoaderMixin:
                 valid_paths.append(path)
 
         if replace:
-            self.editor_state.reset_images()
-            self.stop_preview_animation()
-            for image in self.edited_images.values():
-                try:
-                    image.close()
-                except Exception:
-                    pass
-            self.edited_images.clear()
-            for stack in self._undo_stacks.values():
-                for undo_image, *_rest in stack:
-                    self._dispose_images([undo_image])
-            self._undo_stacks.clear()
-            for stack in self._redo_stack_map().values():
-                for redo_image, *_rest in stack:
-                    self._dispose_images([redo_image])
-            self._redo_stack_map().clear()
-            self._clear_preview_cache()
+            self._reset_workspace()
 
         new_paths = []
         for path in valid_paths:
@@ -268,6 +252,26 @@ class ImageLoaderMixin:
         handle = self.task_runner.submit(task_id, task_fn)
         if handle is not None:
             handle.done.connect(on_done)
+
+    def _reset_workspace(self):
+        """Esvazia a lista e libera tudo que estava em memória para ela."""
+        self.editor_state.reset_images()
+        self.stop_preview_animation()
+        for image in self.edited_images.values():
+            try:
+                image.close()
+            except Exception:
+                pass
+        self.edited_images.clear()
+        for stack in self._undo_stacks.values():
+            for undo_image, *_rest in stack:
+                self._dispose_images([undo_image])
+        self._undo_stacks.clear()
+        for stack in self._redo_stack_map().values():
+            for redo_image, *_rest in stack:
+                self._dispose_images([redo_image])
+        self._redo_stack_map().clear()
+        self._clear_preview_cache()
 
     def load_folder(self, folder=None):
         if not folder:

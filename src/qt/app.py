@@ -39,6 +39,7 @@ def main():
     set_active_theme(app_config.get("ui_theme_variant"))
     app.setStyleSheet(build_stylesheet())
 
-    window = QtMainWindow(app_config)
+    from src.core.session_store import SessionStore
+    window = QtMainWindow(app_config, session_store=SessionStore())
     window.show()
     return app.exec()

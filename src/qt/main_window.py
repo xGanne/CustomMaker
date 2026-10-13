@@ -33,6 +33,7 @@ from src.qt.mixins.adjustments_mixin import AdjustmentsMixin
 from src.qt.mixins.animation_mixin import AnimationMixin
 from src.qt.mixins.export_mixin import ExportMixin
 from src.qt.mixins.image_loader_mixin import ImageLoaderMixin
+from src.qt.mixins.session_mixin import SessionMixin
 from src.qt.tabs.ai_tab import AiTab
 from src.qt.tabs.editor_tab import EditorTab
 from src.qt.tabs.online_tab import OnlineTab
@@ -75,8 +76,9 @@ if QT_AVAILABLE:
         AdjustmentsMixin,
         AnimationMixin,
         ImageLoaderMixin,
+        SessionMixin,
     ):
-        def __init__(self, app_config):
+        def __init__(self, app_config, session_store=None):
             super().__init__()
             self.app_config = app_config
             self.ui_preferences = UiPreferences.from_app_config(app_config)
@@ -131,6 +133,8 @@ if QT_AVAILABLE:
             self.setAcceptDrops(True)
             self._build_ui()
             self._register_shortcuts()
+            # sessão salva automaticamente; o app passa o store, testes não
+            self._init_session(session_store)
             if self.face_cascade is None:
                 # M17: sem o cascade, "Ajuste Inteligente" silenciosamente vira
                 # auto fit — avisar uma vez em vez de esconder a degradação
@@ -841,6 +845,10 @@ if QT_AVAILABLE:
             if dirty_count > 0 and not self._confirm_exit_with_unexported(dirty_count):
                 event.ignore()
                 return
+            # salva a sessão (lista, enquadramentos, edições) antes de liberar tudo
+            if getattr(self, "_session_timer", None) is not None:
+                self._session_timer.stop()
+            self._autosave_session(force=True)
             self.ui_preferences.last_global_borda = self.editor_state.selected_borda
             if self.editor_state.image_list:
                 self.ui_preferences.last_folder = os.path.dirname(self.editor_state.image_list[0])

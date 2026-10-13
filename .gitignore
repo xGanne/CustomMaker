@@ -183,6 +183,9 @@ logo.ico
 # Estado local do usuario (recriado pelo app com defaults)
 custommaker_config.json
 presets.json
+session.json
+session.json.tmp
+session_edits/
 
 # Spec canonico do PyInstaller e versionado (excecao ao *.spec acima)
 !CustomMaker.spec
