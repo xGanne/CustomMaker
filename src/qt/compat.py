@@ -2,7 +2,7 @@ QT_AVAILABLE = False
 PYSIDE_IMPORT_ERROR = None
 
 try:
-    from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRunnable, QSize, Qt, QThreadPool, QTimer, Signal, Slot
+    from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRunnable, QSize, QStandardPaths, Qt, QThreadPool, QTimer, Signal, Slot
     from PySide6.QtGui import QAction, QColor, QFont, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QTransform
     from PySide6.QtWidgets import (
         QAbstractItemView,

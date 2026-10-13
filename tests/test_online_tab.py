@@ -274,6 +274,47 @@ class TestImportDownloadsLargeVersion(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "42.png")))
 
 
+class TestImportFolderName(unittest.TestCase):
+    def test_sanitizes_query_for_windows(self):
+        name = online_module.import_folder_name('hatsune_miku  solo rating:g "x"/y?')
+        self.assertEqual(name, "hatsune_miku solo ratingg xy")
+
+    def test_empty_or_dots_falls_back(self):
+        self.assertEqual(online_module.import_folder_name(""), "importados")
+        self.assertEqual(online_module.import_folder_name(" ... "), "importados")
+        self.assertEqual(len(online_module.import_folder_name("a" * 200)), 60)
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestImportWithoutOpenFolder(unittest.TestCase):
+    """Sem pasta aberta, importar usa Imagens/CustomMaker/<busca>."""
+
+    @classmethod
+    def setUpClass(cls):
+        compat = importlib.import_module("src.qt.compat")
+        cls.app = compat.QApplication.instance() or compat.QApplication([])
+        cls.TaskRunner = importlib.import_module("src.qt.task_runner").QtTaskRunner
+
+    def test_managed_folder_is_used_and_created(self):
+        import shutil
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        main = FakeMainWindow(self.TaskRunner())
+        main.editor_state = SimpleNamespace(image_list=[])
+        main.ui_preferences = SimpleNamespace(last_folder=None)
+        tab = online_module.OnlineTab(main)
+        self.addCleanup(tab.deleteLater)
+        self.addCleanup(tab.close)
+        tab._active_query_label = "hatsune_miku solo"
+        with patch.object(online_module.QStandardPaths, "writableLocation", return_value=tmp):
+            folder = tab._resolve_import_directory()
+        self.assertEqual(folder, os.path.join(tmp, "CustomMaker", "hatsune_miku solo"))
+        self.assertTrue(os.path.isdir(folder))
+
+
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
 class TestAutocompleteCache(unittest.TestCase):
     """M16: sugestões por prefixo ficam em cache durante a sessão."""

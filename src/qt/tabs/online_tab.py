@@ -1,6 +1,7 @@
 import concurrent.futures
 import logging
 import os
+import re
 from io import BytesIO
 
 from PIL import Image
@@ -25,6 +26,7 @@ if QT_AVAILABLE:
         QLineEdit,
         QPushButton,
         QSpinBox,
+        QStandardPaths,
         QVBoxLayout,
         QWidget,
         Qt,
@@ -55,6 +57,13 @@ SORT_TAGS = {
 PORTRAIT_RATIO_TAG = "ratio:0.5..0.85"
 
 _HISTORY_MAX = 15
+
+
+def import_folder_name(query):
+    """Nome de pasta seguro para as imagens importadas de uma busca."""
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", query or "")
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    return name[:60].strip(" .") or "importados"
 # resolução mínima da fonte importada: o dobro da custom, para sobrar margem
 # de zoom/corte no editor (abaixo disso importa o original)
 IMPORT_MIN_SIZE = (BORDA_WIDTH * 2, BORDA_HEIGHT * 2)
@@ -452,7 +461,7 @@ if QT_AVAILABLE:
         def _import_single_post(self, post):
             target_dir = self._resolve_import_directory()
             if not target_dir:
-                self.main_window.show_warning("Importar", "Abra uma pasta na edição antes de importar imagens.")
+                self.main_window.show_warning("Importar", "Não foi possível criar a pasta de importação. Abra uma pasta na edição e tente de novo.")
                 return
 
             file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
@@ -476,7 +485,7 @@ if QT_AVAILABLE:
 
             def on_done(result):
                 self.main_window.add_images([result["path"]], replace=False, select_last=True)
-                self.main_window.show_status(f"Importado: {os.path.basename(result['path'])}")
+                self.main_window.show_status(f"Importado: {result['path']}", timeout_ms=8000)
 
             self.main_window.run_task(
                 f"qt_import_single_{post.get('id')}",
@@ -625,7 +634,20 @@ if QT_AVAILABLE:
             fallback = self.main_window.ui_preferences.last_folder
             if fallback and os.path.isdir(fallback):
                 return fallback
-            return None
+            return self._managed_import_directory()
+
+        def _managed_import_directory(self):
+            """Sem pasta aberta, importa para Imagens/CustomMaker/<busca> em vez
+            de bloquear com "abra uma pasta primeiro"."""
+            pictures = QStandardPaths.writableLocation(QStandardPaths.PicturesLocation)
+            base = pictures or os.path.join(os.path.expanduser("~"), "Pictures")
+            folder = os.path.join(base, "CustomMaker", import_folder_name(self._active_query_label))
+            try:
+                os.makedirs(folder, exist_ok=True)
+            except OSError as exc:
+                logger.warning("Não foi possível criar a pasta de importação %s: %s", folder, exc)
+                return None
+            return folder
 
         def _resolve_download_workers(self):
             configured = self.main_window.app_config.get("max_workers")
@@ -725,7 +747,10 @@ if QT_AVAILABLE:
                     self.main_window.show_warning("Danbooru", "\n".join(errors[:10]))
                 if import_after and result.get("paths"):
                     self.main_window.add_images(result["paths"], replace=False, select_last=True)
-                self.main_window.show_status(f"Download concluído: {len(result.get('paths') or [])} arquivo(s).")
+                self.main_window.show_status(
+                    f"Download concluído: {len(result.get('paths') or [])} arquivo(s) em {target_dir}",
+                    timeout_ms=8000,
+                )
 
             self.main_window.run_task(
                 "qt_online_download",
@@ -744,7 +769,7 @@ if QT_AVAILABLE:
         def import_selected(self):
             target_dir = self._resolve_import_directory()
             if not target_dir:
-                self.main_window.show_warning("Importar", "Abra uma pasta na edição antes de importar imagens.")
+                self.main_window.show_warning("Importar", "Não foi possível criar a pasta de importação. Abra uma pasta na edição e tente de novo.")
                 return
             self._download_posts(target_dir, import_after=True)
 
