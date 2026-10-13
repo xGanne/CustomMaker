@@ -234,6 +234,23 @@ class ImageLoaderMixin:
             return None
         return image.copy()
 
+    def _natural_size_for(self, path):
+        """M8: tamanho em pixels da fonte da exportação (referência do zoom 100%).
+
+        Edição de pixels vira a nova fonte; senão vale o arquivo original — lido
+        só do cabeçalho e memorizado, sem decodificar a imagem."""
+        edited = self.edited_images.get(path)
+        if edited is not None:
+            return edited.size
+        cache = self.__dict__.setdefault("_natural_size_cache", {})
+        if path not in cache:
+            try:
+                with Image.open(path) as source:
+                    cache[path] = source.size
+            except Exception:
+                return None
+        return cache[path]
+
     def set_edited_image_for_current(self, image):
         if not self.current_path:
             return
@@ -248,6 +265,7 @@ class ImageLoaderMixin:
             self.edited_images[self.current_path],
             state=state,
             border_color=self.editor_state.resolve_border_hex(BORDA_HEX, self.current_path),
+            natural_size=self._natural_size_for(self.current_path),
         )
         self._update_preview_animation()
         if hasattr(self, "refresh_list_indicators"):
@@ -272,6 +290,7 @@ class ImageLoaderMixin:
                 display_image,
                 state=state,
                 border_color=self.editor_state.resolve_border_hex(BORDA_HEX, path),
+                natural_size=self._natural_size_for(path),
             )
         else:
             self.image_canvas.clear_image()
@@ -326,6 +345,7 @@ class ImageLoaderMixin:
                     refreshed_image,
                     state=state,
                     border_color=self.editor_state.resolve_border_hex(BORDA_HEX, path),
+                    natural_size=self._natural_size_for(path),
                 )
                 if refreshed_image is not self.edited_images.get(path):
                     try:
@@ -405,6 +425,7 @@ class ImageLoaderMixin:
             image,
             state={"pos": pos, "size": size},
             border_color=self.editor_state.resolve_border_hex(BORDA_HEX, path),
+            natural_size=self._natural_size_for(path),
         )
         self._dispose_images([image])
         self._update_preview_animation()

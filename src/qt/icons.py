@@ -50,6 +50,10 @@ _ICONS: dict[str, str] = {
         "m-7.518-.267A8.25 8.25 0 1 1 20.25 10.5"
         'M8.288 14.212A5.25 5.25 0 1 1 17.25 10.5" />'
     ),
+    "magnifying-glass": (
+        '<path stroke-linecap="round" stroke-linejoin="round"'
+        ' d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />'
+    ),
     "cog": (
         '<path stroke-linecap="round" stroke-linejoin="round"'
         ' d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87'

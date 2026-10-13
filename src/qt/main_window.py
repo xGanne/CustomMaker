@@ -173,7 +173,6 @@ if QT_AVAILABLE:
             self.image_canvas.border_pos_changed.connect(self.on_border_pos_changed)
             self.image_canvas.interaction_started.connect(self.save_state_for_undo)
             self.image_canvas.color_picked.connect(self.on_canvas_color_picked)
-            self.image_canvas.zoom_changed.connect(self._on_zoom_changed)
             left_layout.addWidget(self.image_canvas)
 
             self._image_counter_label = QLabel("")
@@ -248,6 +247,7 @@ if QT_AVAILABLE:
             toolbar.addSeparator()
             toolbar.addWidget(_tool_btn("arrows-pointing-out", "Auto Fit", self.apply_auto_fit, "Alt+B"))
             toolbar.addWidget(_tool_btn("face-smile", "Ajuste Inteligente", self.apply_intelligent_fit, "Alt+F"))
+            toolbar.addWidget(_tool_btn("magnifying-glass", "Zoom 100%", self.zoom_to_actual_size, "Ctrl+0"))
             toolbar.addSeparator()
             self._toolbar_pick_btn = _tool_btn(
                 "eye-dropper", "Pick Color", self._toggle_color_picker_btn, checkable=True
@@ -401,6 +401,7 @@ if QT_AVAILABLE:
                 ("Ctrl+Shift+S", self.save_current_image),
                 ("Alt+F", self.apply_intelligent_fit),
                 ("Alt+B", self.apply_auto_fit),
+                ("Ctrl+0", self.zoom_to_actual_size),
                 ("Ctrl+Q", lambda: self.rotate_current_image("left")),
                 ("Ctrl+E", lambda: self.rotate_current_image("right")),
             ]
@@ -438,8 +439,10 @@ if QT_AVAILABLE:
             filename = os.path.basename(self.current_path) if self.current_path else ""
             self._image_counter_label.setText(f"{filename}  ·  {idx} / {total}")
 
-        def _on_zoom_changed(self, factor):
-            self.show_status(f"Zoom: {int(round(factor * 100))}%", timeout_ms=2000)
+        def zoom_to_actual_size(self):
+            # M8: o indicador permanente no canto do canvas substitui a
+            # mensagem efêmera de zoom na status bar
+            self.image_canvas.zoom_to_actual_size()
 
         # ── Utilitários de UI ──────────────────────────────────────────────
 

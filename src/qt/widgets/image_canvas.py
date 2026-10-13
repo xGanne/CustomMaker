@@ -13,6 +13,7 @@ if QT_AVAILABLE:
         QGraphicsRectItem,
         QGraphicsScene,
         QGraphicsView,
+        QLabel,
         QPainter,
         QPen,
         QPixmap,
@@ -23,6 +24,25 @@ if QT_AVAILABLE:
 
 
 from src.qt.pixmap_utils import pil_to_qpixmap as _pil_to_qpixmap
+
+
+# M8: passo da roda — fino por padrão, rápido com Ctrl pressionado
+ZOOM_STEP_FINE = 1.05
+ZOOM_STEP_FAST = 1.2
+
+
+def scaled_placement(pos, size, factor, anchor):
+    """Escala (pos, size) por `factor` mantendo o ponto `anchor` (coordenadas
+    de cena) parado na tela — o mesmo comportamento de zoom de editores de imagem."""
+    old_w, old_h = size
+    new_w = max(1, int(round(old_w * factor)))
+    new_h = max(1, int(round(old_h * factor)))
+    ratio_x = new_w / max(1, old_w)
+    ratio_y = new_h / max(1, old_h)
+    ax, ay = anchor
+    new_x = ax - (ax - pos[0]) * ratio_x
+    new_y = ay - (ay - pos[1]) * ratio_y
+    return (int(round(new_x)), int(round(new_y))), (new_w, new_h)
 
 
 if QT_AVAILABLE:
@@ -87,12 +107,22 @@ if QT_AVAILABLE:
             self._border_color = "#FFFFFF"
             self._color_pick_enabled = False
             self._zoom_factor = 1.0  # B4
+            self._natural_size = None  # M8: tamanho do original (referência do 100%)
             self._last_wheel_time = 0.0  # F8: debounce do snapshot de undo
             # C2: before/after toggle state
             self._before_after_active = False
             self._original_image = None
             self._saved_edit_pos = None
             self._saved_edit_size = None
+            # M8: indicador permanente de zoom no canto do canvas
+            self._zoom_label = QLabel(self.viewport())
+            self._zoom_label.setObjectName("CanvasZoomLabel")
+            self._zoom_label.setToolTip(
+                "Zoom da imagem em relação ao tamanho natural\n"
+                "Roda: ajuste fino · Ctrl+Roda: zoom rápido\n"
+                "Ctrl+0: 100% · Alt+B: ajustar à borda"
+            )
+            self._zoom_label.setVisible(False)
             self._layout_border(initial=True)
 
         @property
@@ -129,6 +159,29 @@ if QT_AVAILABLE:
         def resizeEvent(self, event):
             super().resizeEvent(event)
             self._layout_border()
+            self._position_zoom_label()
+
+        def _position_zoom_label(self):
+            label = self._zoom_label
+            label.adjustSize()
+            margin = 10
+            viewport_rect = self.viewport().rect()
+            label.move(
+                viewport_rect.width() - label.width() - margin,
+                viewport_rect.height() - label.height() - margin,
+            )
+
+        def _update_zoom_label(self):
+            if self.image_item is None or self._base_image is None:
+                self._zoom_label.setVisible(False)
+                return
+            self._zoom_label.setText(f"{int(round(self._zoom_factor * 100))}%")
+            self._position_zoom_label()
+            self._zoom_label.setVisible(True)
+
+        @property
+        def zoom_factor(self):
+            return self._zoom_factor
 
         def clear_image(self):
             if self.image_item is not None:
@@ -137,12 +190,14 @@ if QT_AVAILABLE:
             self._base_image = None
             self._base_pixmap = None
             self._current_size = None
+            self._natural_size = None
             self._original_image = None
             self._before_after_active = False
             self._saved_edit_pos = None
             self._saved_edit_size = None
             if self.empty_hint_item is not None:
                 self.empty_hint_item.setVisible(True)
+            self._update_zoom_label()
 
         def set_border_color(self, color_hex):
             self._border_color = color_hex
@@ -176,14 +231,18 @@ if QT_AVAILABLE:
             transform = QTransform.fromScale(width / base_width, height / base_height)
             self.image_item.setTransform(transform)
             self._current_size = (width, height)
-            # B4: derive and emit zoom factor relative to natural image size
-            self._zoom_factor = width / max(1, self._base_image.width) if self._base_image else 1.0
+            # B4/M8: zoom relativo ao tamanho do original (o export redimensiona
+            # o original para `size`), não à preview — que pode estar ampliada
+            natural = self._natural_size or (self._base_image.size if self._base_image else None)
+            self._zoom_factor = width / max(1, natural[0]) if natural else 1.0
+            self._update_zoom_label()
 
-        def set_image(self, pil_image, state=None, border_color="#FFFFFF"):
+        def set_image(self, pil_image, state=None, border_color="#FFFFFF", natural_size=None):
             self.clear_image()
             if self.empty_hint_item is not None:
                 self.empty_hint_item.setVisible(False)
             self._base_image = pil_image.convert("RGBA")
+            self._natural_size = tuple(natural_size) if natural_size else self._base_image.size
             self._original_image = self._base_image.copy()  # C2: keep original
             self._base_pixmap = _pil_to_qpixmap(self._base_image)
             self.set_border_color(border_color)
@@ -266,15 +325,42 @@ if QT_AVAILABLE:
                 self.interaction_started.emit()
             self._last_wheel_time = now
             delta = event.angleDelta().y()
-            factor = 1.05 if delta > 0 else 0.95
-            width = max(1, int(self._current_size[0] * factor))
-            height = max(1, int(self._current_size[1] * factor))
-            self.set_image_state(
-                (int(self.image_item.pos().x()), int(self.image_item.pos().y())),
-                (width, height),
-            )
-            self.zoom_changed.emit(self._zoom_factor)  # B4
+            if delta == 0:
+                event.accept()
+                return
+            # M8: Ctrl acelera o zoom; o ponto sob o cursor fica parado
+            step = ZOOM_STEP_FAST if event.modifiers() & Qt.ControlModifier else ZOOM_STEP_FINE
+            factor = step if delta > 0 else 1 / step
+            anchor = self.mapToScene(event.position().toPoint())
+            self.zoom_by(factor, anchor=(anchor.x(), anchor.y()))
             event.accept()
+
+        def zoom_by(self, factor, anchor=None):
+            """Escala a imagem por `factor` em torno de `anchor` (cena); sem
+            âncora, usa o centro da imagem."""
+            if self.image_item is None or self._current_size is None:
+                return
+            pos = (self.image_item.pos().x(), self.image_item.pos().y())
+            if anchor is None:
+                anchor = (pos[0] + self._current_size[0] / 2, pos[1] + self._current_size[1] / 2)
+            new_pos, new_size = scaled_placement(pos, self._current_size, factor, anchor)
+            self.set_image_state(new_pos, new_size)
+
+        def zoom_to_actual_size(self):
+            """M8: volta a imagem a 100% (tamanho do original), centrada no mesmo ponto."""
+            if self.image_item is None or self._natural_size is None or self._current_size is None:
+                return
+            if self._current_size == self._natural_size:
+                return
+            self.interaction_started.emit()
+            width, height = self._current_size
+            center_x = self.image_item.pos().x() + width / 2
+            center_y = self.image_item.pos().y() + height / 2
+            natural_w, natural_h = self._natural_size
+            self.set_image_state(
+                (int(round(center_x - natural_w / 2)), int(round(center_y - natural_h / 2))),
+                (natural_w, natural_h),
+            )
 
         def keyPressEvent(self, event):
             # deixa ←/→ subirem até a janela para navegar entre imagens (F3)

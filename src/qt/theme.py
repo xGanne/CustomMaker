@@ -250,6 +250,16 @@ QToolButton:pressed {{
     padding: 0 8px;
 }}
 
+/* ── Indicador de zoom do canvas (M8) ────────────────────── */
+#CanvasZoomLabel {{
+    background-color: {UI_TOKENS["surface_panel"]};
+    border: 1px solid {UI_TOKENS["border_soft"]};
+    border-radius: {UI_TOKENS["radius_sm"]}px;
+    color: {UI_TOKENS["text_secondary"]};
+    font-size: 11px;
+    padding: 2px 8px;
+}}
+
 /* ── Tabs ─────────────────────────────────────────────────── */
 QTabWidget::pane {{
     border: 1px solid {UI_TOKENS["border_soft"]};
