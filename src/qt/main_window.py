@@ -573,6 +573,7 @@ if QT_AVAILABLE:
             if not self.editor_state.image_list:
                 self.current_path = None
                 self._close_current_original()
+                self.image_canvas.set_loading(False)
                 self.image_canvas.clear_image()
                 self.stop_preview_animation()
                 self.show_status("Lista de imagens vazia.")

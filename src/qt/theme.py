@@ -260,6 +260,16 @@ QToolButton:pressed {{
     padding: 2px 8px;
 }}
 
+/* ── Indicador de carregamento do canvas (M4) ────────────── */
+#CanvasLoadingLabel {{
+    background-color: {UI_TOKENS["surface_elevated"]};
+    border: 1px solid {UI_TOKENS["border_strong"]};
+    border-radius: {UI_TOKENS["radius_md"]}px;
+    color: {UI_TOKENS["text_primary"]};
+    font-size: 12px;
+    padding: 6px 14px;
+}}
+
 /* ── Tabs ─────────────────────────────────────────────────── */
 QTabWidget::pane {{
     border: 1px solid {UI_TOKENS["border_soft"]};

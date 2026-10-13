@@ -17,6 +17,7 @@ if QT_AVAILABLE:
         QPainter,
         QPen,
         QPixmap,
+        QTimer,
         QTransform,
         Qt,
         Signal,
@@ -73,6 +74,8 @@ if QT_AVAILABLE:
         color_picked = Signal(str)
         zoom_changed = Signal(float)  # B4: emits zoom factor (1.0 = original size)
 
+        LOADING_SHOW_DELAY_MS = 150
+
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setRenderHint(QPainter.Antialiasing)
@@ -123,6 +126,20 @@ if QT_AVAILABLE:
                 "Ctrl+0: 100% · Alt+B: ajustar à borda"
             )
             self._zoom_label.setVisible(False)
+            # M4: indicador de carregamento sobre a borda — só aparece se o
+            # carregamento passar de LOADING_SHOW_DELAY_MS, para não piscar
+            self._loading = False
+            self._loading_dots = 0
+            self._loading_label = QLabel(self.viewport())
+            self._loading_label.setObjectName("CanvasLoadingLabel")
+            self._loading_label.setVisible(False)
+            self._loading_show_timer = QTimer(self)
+            self._loading_show_timer.setSingleShot(True)
+            self._loading_show_timer.setInterval(self.LOADING_SHOW_DELAY_MS)
+            self._loading_show_timer.timeout.connect(self._show_loading_label)
+            self._loading_anim_timer = QTimer(self)
+            self._loading_anim_timer.setInterval(300)
+            self._loading_anim_timer.timeout.connect(self._advance_loading_dots)
             self._layout_border(initial=True)
 
         @property
@@ -160,6 +177,57 @@ if QT_AVAILABLE:
             super().resizeEvent(event)
             self._layout_border()
             self._position_zoom_label()
+            self._position_loading_label()
+
+        # ── M4: indicador de carregamento ──────────────────────────────────
+
+        @property
+        def is_loading(self):
+            return self._loading
+
+        def set_loading(self, active):
+            """Marca o início/fim do carregamento da imagem exibida."""
+            active = bool(active)
+            if active == self._loading:
+                return
+            self._loading = active
+            if active:
+                # a orientação de "canvas vazio" não faz sentido enquanto carrega
+                if self.empty_hint_item is not None:
+                    self.empty_hint_item.setVisible(False)
+                self._loading_show_timer.start()
+            else:
+                self._loading_show_timer.stop()
+                self._loading_anim_timer.stop()
+                self._loading_label.setVisible(False)
+                if self.empty_hint_item is not None:
+                    self.empty_hint_item.setVisible(self.image_item is None)
+
+        def _show_loading_label(self):
+            if not self._loading:
+                return
+            self._loading_dots = 0
+            self._render_loading_text()
+            self._loading_label.setVisible(True)
+            self._loading_label.raise_()
+            self._loading_anim_timer.start()
+
+        def _advance_loading_dots(self):
+            self._loading_dots = (self._loading_dots + 1) % 4
+            self._render_loading_text()
+
+        def _render_loading_text(self):
+            # largura fixa dos pontos evita que o rótulo "dance" a cada quadro
+            dots = "." * self._loading_dots
+            self._loading_label.setText(f"Carregando{dots}{' ' * (3 - self._loading_dots)}")
+            self._position_loading_label()
+
+        def _position_loading_label(self):
+            label = self._loading_label
+            label.adjustSize()
+            bx, by = self._border_pos
+            center = self.mapFromScene(bx + BORDA_WIDTH / 2, by + BORDA_HEIGHT / 2)
+            label.move(int(center.x() - label.width() / 2), int(center.y() - label.height() / 2))
 
         def _position_zoom_label(self):
             label = self._zoom_label
@@ -196,7 +264,7 @@ if QT_AVAILABLE:
             self._saved_edit_pos = None
             self._saved_edit_size = None
             if self.empty_hint_item is not None:
-                self.empty_hint_item.setVisible(True)
+                self.empty_hint_item.setVisible(not self._loading)
             self._update_zoom_label()
 
         def set_border_color(self, color_hex):

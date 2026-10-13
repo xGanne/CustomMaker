@@ -185,6 +185,7 @@ class ImageLoaderMixin:
 
         if not self.editor_state.image_list:
             self.current_path = None
+            self.image_canvas.set_loading(False)
             self.image_canvas.clear_image()
             return
 
@@ -284,6 +285,9 @@ class ImageLoaderMixin:
         self.editor_state.borda_pos = self.image_canvas.border_pos
         self.editor_tab.refresh_from_state()
         display_image = self.edited_images.get(path) or self._get_preview_cache_copy(path)
+        # M4: sem nada em cache o canvas fica vazio até o disco responder —
+        # indicar o carregamento em vez de exibir a orientação de canvas vazio
+        self.image_canvas.set_loading(display_image is None)
         if display_image is not None:
             state = self._ensure_state_for_current(display_image)
             self.image_canvas.set_image(
@@ -315,6 +319,7 @@ class ImageLoaderMixin:
                 self._dispose_image_load_result(result)
                 return
             self._active_image_load_task_id = None
+            self.image_canvas.set_loading(False)
             if result.get("cancelled"):
                 return
             if result.get("index") != self.editor_state.current_image_index or result.get("path") != self.current_path:
@@ -358,11 +363,13 @@ class ImageLoaderMixin:
         def on_error(exc):
             if task_id == self._active_image_load_task_id:
                 self._active_image_load_task_id = None
+                self.image_canvas.set_loading(False)
             self.show_error("Erro", f"Falha ao carregar imagem: {exc}")
 
         handle = self.task_runner.submit(task_id, task_fn)
         if handle is None:
             self._active_image_load_task_id = None
+            self.image_canvas.set_loading(False)
             self.show_warning("Carregamento", "Não foi possível iniciar o carregamento da imagem.")
             return
         handle.done.connect(on_done)

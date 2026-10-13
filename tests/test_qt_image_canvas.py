@@ -114,3 +114,49 @@ class TestQtImageCanvasNaturalSize(unittest.TestCase):
         canvas.zoom_to_actual_size()
         self.assertEqual(canvas._current_size, (500, 700))
         self.assertAlmostEqual(canvas.zoom_factor, 1.0)
+
+
+@unittest.skipUnless(getattr(image_canvas_module, "QT_AVAILABLE", False), "PySide6 not installed")
+class TestQtImageCanvasLoading(unittest.TestCase):
+    """M4: indicador de carregamento no canvas."""
+
+    @classmethod
+    def setUpClass(cls):
+        compat = importlib.import_module("src.qt.compat")
+        cls.compat = compat
+        cls.app = compat.QApplication.instance() or compat.QApplication([])
+
+    def _wait(self, ms):
+        loop_timer = self.compat.QTimer()
+        loop_timer.setSingleShot(True)
+        done = []
+        loop_timer.timeout.connect(lambda: done.append(True))
+        loop_timer.start(ms)
+        while not done:
+            self.app.processEvents()
+
+    def test_loading_hides_empty_hint_and_shows_label_after_delay(self):
+        canvas = image_canvas_module.ImageCanvas()
+        canvas.resize(800, 700)
+        canvas.show()
+        canvas.set_loading(True)
+        canvas.clear_image()
+        self.assertFalse(canvas.empty_hint_item.isVisible())
+        # carregamentos rápidos não piscam o indicador
+        self.assertFalse(canvas._loading_label.isVisible())
+        self._wait(canvas.LOADING_SHOW_DELAY_MS + 100)
+        self.assertTrue(canvas._loading_label.isVisible())
+        self.assertTrue(canvas._loading_label.text().startswith("Carregando"))
+
+        canvas.set_loading(False)
+        self.assertFalse(canvas._loading_label.isVisible())
+        self.assertTrue(canvas.empty_hint_item.isVisible())
+
+    def test_fast_load_never_shows_label(self):
+        canvas = image_canvas_module.ImageCanvas()
+        canvas.set_loading(True)
+        canvas.set_image(Image.new("RGBA", (100, 100), "white"))
+        canvas.set_loading(False)
+        self._wait(canvas.LOADING_SHOW_DELAY_MS + 100)
+        self.assertFalse(canvas._loading_label.isVisible())
+        self.assertFalse(canvas.empty_hint_item.isVisible())
