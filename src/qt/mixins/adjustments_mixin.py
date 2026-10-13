@@ -44,19 +44,30 @@ class AdjustmentsMixin:
             return
         if push_undo:
             self.save_state_for_undo()
-        face = ImageProcessor.detect_anime_face(image, self.face_cascade)
-        if not face:
+        faces = ImageProcessor.detect_faces_ranked(image, self.face_cascade)
+        if not faces:
             self.show_warning("Ajuste", "Nenhum rosto detectado. Aplicando auto fit.")
             self.apply_auto_fit(push_undo=False)
             return
-        result = ImageProcessor.calculate_intelligent_frame_pos(image, face, self.editor_state.borda_pos)
+        # repetir o ajuste na mesma imagem passa para o próximo rosto (do maior
+        # para o menor): em imagens com várias pessoas, a personagem da custom
+        # nem sempre é o maior rosto
+        cycle = self.__dict__.setdefault("_face_cycle", {})
+        index = cycle.get(self.current_path, -1) + 1
+        if index >= len(faces):
+            index = 0
+        cycle[self.current_path] = index
+        result = ImageProcessor.calculate_intelligent_frame_pos(image, faces[index], self.editor_state.borda_pos)
         if not result:
             self.show_warning("Ajuste", "Não foi possível aplicar o ajuste inteligente.")
             return
         new_w, new_h, pos_x, pos_y = result
         self.editor_state.set_image_state(self.current_path, (pos_x, pos_y), (new_w, new_h))
         self.image_canvas.set_image_state((pos_x, pos_y), (new_w, new_h))
-        self.show_status("Ajuste inteligente aplicado.")
+        if len(faces) > 1:
+            self.show_status(f"Rosto {index + 1} de {len(faces)} — Alt+F de novo para o próximo.", timeout_ms=8000)
+        else:
+            self.show_status("Ajuste inteligente aplicado.")
 
     def rotate_current_image(self, direction):
         if not self.current_path:

@@ -160,6 +160,31 @@ class ImageProcessor:
             return []
 
     @staticmethod
+    def detect_faces_ranked(original_image, face_cascade, overlap=0.3):
+        """Rostos do maior para o menor, sem detecções repetidas do mesmo rosto.
+
+        O cascade às vezes devolve caixas sobrepostas para um mesmo rosto; uma
+        caixa que cobre mais de `overlap` (IoU) de outra maior é descartada.
+        """
+        faces = ImageProcessor.detect_all_anime_faces(original_image, face_cascade)
+        ranked = sorted((tuple(int(v) for v in f) for f in faces), key=lambda f: f[2] * f[3], reverse=True)
+        kept = []
+        for face in ranked:
+            if all(ImageProcessor._iou(face, other) <= overlap for other in kept):
+                kept.append(face)
+        return kept
+
+    @staticmethod
+    def _iou(a, b):
+        ax, ay, aw, ah = a
+        bx, by, bw, bh = b
+        ix = max(0, min(ax + aw, bx + bw) - max(ax, bx))
+        iy = max(0, min(ay + ah, by + bh) - max(ay, by))
+        inter = ix * iy
+        union = aw * ah + bw * bh - inter
+        return inter / union if union else 0.0
+
+    @staticmethod
     def detect_anime_face(original_image, face_cascade):
         """
         Detects anime face in the image using the provided cascade.

@@ -271,7 +271,9 @@ if QT_AVAILABLE:
             toolbar.addWidget(_tool_btn("arrow-uturn-left", "Desfazer", self.undo_current_image, "Ctrl+Z"))
             toolbar.addSeparator()
             toolbar.addWidget(_tool_btn("arrows-pointing-out", "Auto Fit", self.apply_auto_fit, "Alt+B"))
-            self._toolbar_smart_fit_btn = _tool_btn("face-smile", "Ajuste Inteligente", self.apply_intelligent_fit, "Alt+F")
+            self._toolbar_smart_fit_btn = _tool_btn(
+                "face-smile", "Ajuste Inteligente — repita para alternar entre rostos", self.apply_intelligent_fit, "Alt+F"
+            )
             toolbar.addWidget(self._toolbar_smart_fit_btn)
             toolbar.addWidget(_tool_btn("magnifying-glass", "Zoom 100%", self.zoom_to_actual_size, "Ctrl+0"))
             toolbar.addSeparator()

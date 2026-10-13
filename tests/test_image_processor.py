@@ -136,3 +136,20 @@ class TestSuggestBorderColor(unittest.TestCase):
         self.assertRegex(color, r"^#[0-9a-f]{6}$")
         brightness = max(int(color[i:i + 2], 16) for i in (1, 3, 5))
         self.assertGreaterEqual(brightness, 0.74 * 255)  # clara o bastante (piso 0,75, com arredondamento)
+
+
+class TestDetectFacesRanked(unittest.TestCase):
+    """Rostos do maior para o menor, sem caixas repetidas do mesmo rosto."""
+
+    def test_orders_by_area_and_drops_overlapping_duplicates(self):
+        from unittest.mock import patch
+        faces = [(10, 10, 40, 40), (200, 50, 120, 120), (205, 55, 110, 110), (400, 300, 80, 80)]
+        with patch.object(ImageProcessor, "detect_all_anime_faces", return_value=faces):
+            ranked = ImageProcessor.detect_faces_ranked(Image.new("RGB", (10, 10)), object())
+        # a caixa (205,55,110,110) é o mesmo rosto que (200,50,120,120): sai
+        self.assertEqual(ranked, [(200, 50, 120, 120), (400, 300, 80, 80), (10, 10, 40, 40)])
+
+    def test_no_faces(self):
+        from unittest.mock import patch
+        with patch.object(ImageProcessor, "detect_all_anime_faces", return_value=[]):
+            self.assertEqual(ImageProcessor.detect_faces_ranked(Image.new("RGB", (10, 10)), object()), [])

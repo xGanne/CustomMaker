@@ -163,3 +163,39 @@ class TestApplyPresetOptionalParts(unittest.TestCase):
         adj = self._adjuster()
         adj.apply_preset({"default_framing": "qualquer"})
         self.assertEqual(adj.editor_state.default_framing, "auto_fit")
+
+
+class TestIntelligentFitCyclesFaces(unittest.TestCase):
+    """Repetir o Ajuste Inteligente alterna entre os rostos da imagem."""
+
+    def _adjuster(self):
+        from src.qt.mixins.adjustments_mixin import AdjustmentsMixin
+        adj = _FakeAdjuster()
+        adj.current_path = "/grupo.png"
+        adj.editor_state.image_list = ["/grupo.png"]
+        adj.face_cascade = object()
+        image = _make_image(800, 600)
+        adj.get_active_image_copy = lambda: image.copy()
+        return adj
+
+    def test_each_press_frames_the_next_face_and_wraps_around(self):
+        from src.core.image_processor import ImageProcessor
+        adj = self._adjuster()
+        faces = [(300, 100, 150, 150), (50, 80, 100, 100), (600, 300, 60, 60)]
+        expected = [ImageProcessor.calculate_intelligent_frame_pos(_make_image(800, 600), f, (0, 0)) for f in faces]
+        seen = []
+        with patch.object(ImageProcessor, "detect_faces_ranked", return_value=faces):
+            for _ in range(4):
+                adj.apply_intelligent_fit()
+                state = adj.editor_state.image_states["/grupo.png"]
+                seen.append((state["size"][0], state["size"][1], state["pos"][0], state["pos"][1]))
+        self.assertEqual(seen, [tuple(expected[0]), tuple(expected[1]), tuple(expected[2]), tuple(expected[0])])
+        self.assertIn("Rosto 1 de 3", adj._statuses[-1])
+
+    def test_single_face_keeps_simple_message(self):
+        from src.core.image_processor import ImageProcessor
+        adj = self._adjuster()
+        with patch.object(ImageProcessor, "detect_faces_ranked", return_value=[(300, 100, 150, 150)]):
+            adj.apply_intelligent_fit()
+            adj.apply_intelligent_fit()
+        self.assertEqual(adj._statuses[-1], "Ajuste inteligente aplicado.")
