@@ -250,6 +250,30 @@ QToolButton:pressed {{
     padding: 0 8px;
 }}
 
+/* ── Campo de página da busca online (M16) ───────────────── */
+#PageJumpField {{
+    background-color: transparent;
+    font-size: 11px;
+    color: {UI_TOKENS["text_secondary"]};
+    min-height: 24px;
+    max-height: 26px;
+    padding: 0 4px;
+}}
+#PageJumpField:disabled {{
+    color: {UI_TOKENS["text_muted"]};
+    border-color: {UI_TOKENS["surface_muted"]};
+}}
+#PageJumpField::up-button, #PageJumpField::down-button {{
+    width: 0px;
+    border: none;
+    image: none;
+}}
+#PageJumpField::up-arrow, #PageJumpField::down-arrow {{
+    width: 0px;
+    height: 0px;
+    image: none;
+}}
+
 /* ── Indicador de zoom do canvas (M8) ────────────────────── */
 #CanvasZoomLabel {{
     background-color: {UI_TOKENS["surface_panel"]};

@@ -21,6 +21,7 @@ if QT_AVAILABLE:
         QLabel,
         QLineEdit,
         QPushButton,
+        QSpinBox,
         QVBoxLayout,
         QWidget,
         Qt,
@@ -45,6 +46,8 @@ SORT_TAGS = {
 }
 
 _HISTORY_MAX = 15
+# limite de paginação do Danbooru para contas comuns
+_MAX_PAGE = 1000
 
 
 if QT_AVAILABLE:
@@ -61,6 +64,8 @@ if QT_AVAILABLE:
             self._active_search_task_id = None
             self._active_search_tags = ""
             self._active_query_label = ""
+            self._search_restore_state = None  # M16: estado a restaurar se cancelar
+            self._page_before_request = None
             self._expanded_dialog = None
             self._image_viewers = []  # F21: todos os viewers abertos
             self.selection_state = DanbooruSelectionState()
@@ -88,7 +93,8 @@ if QT_AVAILABLE:
             self._load_search_history()
             self.search_button = QPushButton("Buscar")
             self.search_button.setMinimumWidth(84)
-            self.search_button.clicked.connect(self.search)
+            # M16: durante a busca o mesmo botão vira "Cancelar"
+            self.search_button.clicked.connect(self._on_search_button_clicked)
             query_row.addWidget(self.search_combo, 1)
             query_row.addWidget(self.search_button)
 
@@ -150,10 +156,18 @@ if QT_AVAILABLE:
             self.prev_button.setFixedWidth(30)
             self.prev_button.setToolTip("Página anterior")
             self.prev_button.clicked.connect(lambda: self.change_page(-1))
-            self.page_label = QLabel("Pág. 1")
+            # M16: campo editável — digitar um número e Enter pula para a página
+            self.page_label = QSpinBox()
+            self.page_label.setObjectName("PageJumpField")
+            self.page_label.setRange(1, _MAX_PAGE)
+            self.page_label.setPrefix("Pág. ")
+            # sem setButtonSymbols(NoButtons): com stylesheet ativo o Qt colapsa
+            # o campo de texto para 1px — as setas são zeradas no QSS (#PageJumpField)
+            self.page_label.setKeyboardTracking(False)
             self.page_label.setAlignment(Qt.AlignCenter)
-            self.page_label.setMinimumWidth(52)
-            self.page_label.setStyleSheet("font-size: 11px; color: #A8B3C7;")
+            self.page_label.setFixedWidth(76)
+            self.page_label.setToolTip("Digite o número da página e pressione Enter")
+            self.page_label.editingFinished.connect(self._jump_to_typed_page)
             self.next_button = QPushButton("→")
             self.next_button.setProperty("class", "pager")
             self.next_button.setFixedWidth(30)
@@ -302,10 +316,58 @@ if QT_AVAILABLE:
                 self.summary_label.setText("")
 
         def _update_page_controls(self):
-            self.page_label.setText(f"Pág. {self.current_page}")
+            self.page_label.blockSignals(True)
+            self.page_label.setValue(self.current_page)
+            self.page_label.blockSignals(False)
             has_search = bool(self._active_search_tags)
-            self.prev_button.setEnabled(has_search and self.current_page > 1)
-            self.next_button.setEnabled(has_search and self._has_next_page)
+            searching = self._is_searching()
+            self.page_label.setEnabled(has_search and not searching)
+            self.prev_button.setEnabled(has_search and not searching and self.current_page > 1)
+            self.next_button.setEnabled(has_search and not searching and self._has_next_page)
+
+        def _is_searching(self):
+            return self._active_search_task_id is not None
+
+        def _set_search_button_mode(self, searching):
+            self.search_button.setText("Cancelar" if searching else "Buscar")
+            self.search_button.setProperty("class", "secondary" if searching else "")
+            self.search_button.setToolTip("Cancelar a busca em andamento" if searching else "")
+            self.search_button.style().unpolish(self.search_button)
+            self.search_button.style().polish(self.search_button)
+
+        def _on_search_button_clicked(self):
+            if self._is_searching():
+                self.cancel_search()
+            else:
+                self.search()
+
+        def _jump_to_typed_page(self):
+            page = self.page_label.value()
+            if not self._active_search_tags or page == self.current_page or self._is_searching():
+                return
+            self.search(page=page, use_active_tags=True)
+
+        def cancel_search(self):
+            """M16: abandona a busca em andamento e volta ao que estava na tela.
+
+            A requisição HTTP em si não é interrompível; a resposta que chegar
+            depois é descartada porque a task deixa de ser a ativa."""
+            task_id = self._active_search_task_id
+            if task_id is None:
+                return
+            self.main_window.task_runner.cancel(task_id)
+            self._active_search_task_id = None
+            restore = self._search_restore_state or {}
+            self.current_page = restore.get("page", 1)
+            self._active_search_tags = restore.get("tags", "")
+            self._active_query_label = restore.get("label", "")
+            self._has_next_page = restore.get("has_next", False)
+            self._search_restore_state = None
+            self._set_search_button_mode(False)
+            self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
+            self._set_results_summary()
+            self._update_page_controls()
+            self.main_window.show_status("Busca cancelada.")
 
         def _posts_with_selected_thumbnails(self, posts):
             selected_posts = list(self.selection_state.selected_posts_details.values())
@@ -390,7 +452,16 @@ if QT_AVAILABLE:
             if self._active_search_task_id and self.main_window.task_runner.is_running(self._active_search_task_id):
                 self.main_window.task_runner.cancel(self._active_search_task_id)
 
-            self.current_page = max(1, int(page or 1))
+            if self._search_restore_state is None:
+                # M16: o que está na tela agora é o que volta se o usuário cancelar
+                self._search_restore_state = {
+                    "page": self.current_page,
+                    "tags": self._active_search_tags,
+                    "label": self._active_query_label,
+                    "has_next": self._has_next_page,
+                }
+            self._page_before_request = self.current_page if use_active_tags else None
+            self.current_page = max(1, min(_MAX_PAGE, int(page or 1)))
             if not use_active_tags:
                 self._active_search_tags = tags
                 self._active_query_label = self.search_edit.text().strip() or tags
@@ -402,14 +473,13 @@ if QT_AVAILABLE:
                     self._push_search_history(raw_query)
 
             self._has_next_page = False
-            self.search_button.setEnabled(False)
-            self._update_page_controls()
-            self.results_grid.display_loading()
-            self.summary_label.setText(f"Buscando página {self.current_page}...")
-
             self._search_seq += 1
             task_id = f"qt_online_search_{self._search_seq}"
             self._active_search_task_id = task_id
+            self._set_search_button_mode(True)
+            self._update_page_controls()
+            self.results_grid.display_loading()
+            self.summary_label.setText(f"Buscando página {self.current_page}...")
             active_page = self.current_page
             active_tags = self._active_search_tags
 
@@ -422,19 +492,27 @@ if QT_AVAILABLE:
                 return {"task_id": task_id, "page": active_page, "posts": posts}
 
             def on_done(result):
-                self.search_button.setEnabled(True)
                 if result.get("task_id") != self._active_search_task_id:
                     return
                 self._active_search_task_id = None
+                self._search_restore_state = None
+                self._set_search_button_mode(False)
                 self.current_page = result.get("page") or self.current_page
-                self.posts = result.get("posts") or []
-                self._has_next_page = len(self.posts) >= self._page_size
+                posts = result.get("posts") or []
                 # F22: página vazia após avançar = fim dos resultados; volta
-                # automaticamente para a última página com conteúdo
-                if not self.posts and self.current_page > 1:
-                    self.main_window.show_status("Fim dos resultados — voltando para a página anterior.")
-                    self.search(page=self.current_page - 1, use_active_tags=True)
+                # automaticamente para a última página com conteúdo. M16: depois
+                # de um salto (ex.: pág. 500) volta direto para a página de onde
+                # saiu, em vez de recuar uma por uma
+                if not posts and self.current_page > 1:
+                    previous = self._page_before_request
+                    target = previous if previous and previous < self.current_page else self.current_page - 1
+                    self.main_window.show_status(
+                        f"Página {self.current_page} não tem resultados — voltando para a página {target}."
+                    )
+                    self.search(page=target, use_active_tags=True)
                     return
+                self.posts = posts
+                self._has_next_page = len(self.posts) >= self._page_size
                 self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
                 self._set_results_summary()
                 self._update_page_controls()
@@ -443,10 +521,11 @@ if QT_AVAILABLE:
                 )
 
             def on_error(exc):
-                self.search_button.setEnabled(True)
                 if task_id != self._active_search_task_id:
                     return
                 self._active_search_task_id = None
+                self._search_restore_state = None
+                self._set_search_button_mode(False)
                 self.posts = []
                 self._has_next_page = False
                 self.results_grid.display_posts(self._posts_with_selected_thumbnails([]))
@@ -457,6 +536,9 @@ if QT_AVAILABLE:
 
             handle = self.main_window.task_runner.submit(task_id, task_fn)
             if handle is None:
+                self._active_search_task_id = None
+                self._set_search_button_mode(False)
+                self._update_page_controls()
                 return
             handle.done.connect(on_done)
             handle.error.connect(on_error)

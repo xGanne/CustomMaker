@@ -1,5 +1,6 @@
 import concurrent.futures
 import logging
+from collections import OrderedDict
 
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 
@@ -10,9 +11,14 @@ if QT_AVAILABLE:
 logger = logging.getLogger(__name__)
 
 
+# M16: sugestões por prefixo memorizadas na sessão (apagar/redigitar não
+# repete a chamada de rede)
+SUGGESTION_CACHE_MAX = 200
+
+
 if QT_AVAILABLE:
     class DanbooruAutocomplete(QObject):
-        suggestions_ready = Signal(int, object)
+        suggestions_ready = Signal(int, str, object)
 
         def __init__(self, entry_widget, client):
             super().__init__(entry_widget)
@@ -36,6 +42,7 @@ if QT_AVAILABLE:
             self._query_seq = 0
             self._active_query_seq = 0
             self._current_word = ""
+            self._suggestion_cache = OrderedDict()
             self.suggestions_ready.connect(self._apply_suggestions)
 
             self.entry.textEdited.connect(self._on_text_edited)
@@ -109,6 +116,13 @@ if QT_AVAILABLE:
             query_seq = self._query_seq
             self._active_query_seq = query_seq
 
+            cache_key = token.lower()
+            cached = self._suggestion_cache.get(cache_key)
+            if cached is not None:
+                self._suggestion_cache.move_to_end(cache_key)
+                self._apply_suggestions(query_seq, cache_key, cached)
+                return
+
             future = self._executor.submit(self.client.fetch_tags, token)
 
             def on_done(done_future):
@@ -117,9 +131,19 @@ if QT_AVAILABLE:
                 except Exception as exc:
                     logger.debug("Autocomplete falhou: %s", exc)
                     suggestions = []
-                self.suggestions_ready.emit(query_seq, suggestions)
+                self.suggestions_ready.emit(query_seq, cache_key, suggestions)
 
             future.add_done_callback(on_done)
+
+        def _remember_suggestions(self, cache_key, suggestions):
+            # fetch_tags devolve [] também em erro de rede — só resultados
+            # não vazios entram no cache, para não esconder sugestões depois
+            if not suggestions:
+                return
+            self._suggestion_cache[cache_key] = list(suggestions)
+            self._suggestion_cache.move_to_end(cache_key)
+            while len(self._suggestion_cache) > SUGGESTION_CACHE_MAX:
+                self._suggestion_cache.popitem(last=False)
 
         @staticmethod
         def _fmt_count(n):
@@ -129,7 +153,8 @@ if QT_AVAILABLE:
                 return f"{n / 1_000:.1f}k"
             return str(n)
 
-        def _apply_suggestions(self, query_seq, suggestions):
+        def _apply_suggestions(self, query_seq, cache_key, suggestions):
+            self._remember_suggestions(cache_key, suggestions)
             if query_seq != self._active_query_seq:
                 return
             if not suggestions:
