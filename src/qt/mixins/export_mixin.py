@@ -240,6 +240,11 @@ class ExportMixin:
         if not open_with_default_app(ENV_FILE):
             self.show_error("Upload", f"Não foi possível abrir o arquivo:\n{ENV_FILE}")
 
+    @staticmethod
+    def mudae_command(title, links):
+        """Comando do Mudae que adiciona as imagens à custom `title`."""
+        return f"$ai {title} $\n" + " $\n".join(links)
+
     def _show_links_dialog(self, title, links):
         from src.qt.compat import QGuiApplication, QPushButton, QPlainTextEdit, QVBoxLayout, QWidget, Qt
         dialog = QWidget(self, Qt.Dialog)
@@ -252,8 +257,7 @@ class ExportMixin:
         copy_button = QPushButton("Copiar comando", dialog)
 
         def copy_links():
-            command = f"$ai {title} $\n" + " $\n".join(links)
-            QGuiApplication.clipboard().setText(command)
+            QGuiApplication.clipboard().setText(self.mudae_command(title, links))
             self.show_status("Comando copiado para a área de transferência.")
 
         copy_button.clicked.connect(copy_links)

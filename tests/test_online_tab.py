@@ -316,6 +316,91 @@ class TestImportWithoutOpenFolder(unittest.TestCase):
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestGenerateCustoms(unittest.TestCase):
+    """Fluxo em um clique: baixar → enquadrar → exportar/enviar."""
+
+    @classmethod
+    def setUpClass(cls):
+        compat = importlib.import_module("src.qt.compat")
+        cls.app = compat.QApplication.instance() or compat.QApplication([])
+        cls.TaskRunner = importlib.import_module("src.qt.task_runner").QtTaskRunner
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from types import SimpleNamespace
+        from src.qt.mixins.export_mixin import ExportMixin
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        main = FakeMainWindow(self.TaskRunner())
+        main.editor_state = SimpleNamespace(image_list=[], image_states={})
+        main.ui_preferences = SimpleNamespace(last_folder=self.tmp)
+        main.added, main.infos, main.links = [], [], []
+        main.add_images = lambda paths, **_kw: main.added.extend(paths)
+        main.show_info = lambda _t, msg: main.infos.append(msg)
+        main.mudae_command = ExportMixin.mudae_command
+        main._show_links_dialog = lambda title, links: main.links.append((title, links))
+        main.choose_directory = lambda _title: os.path.join(self.tmp, "out")
+        main.uploader = SimpleNamespace(api_token="token", reload_token=lambda: "token")
+        main.batch_calls = []
+
+        class FakeBatch:
+            def save_all_images(_self, out_dir, paths=None, **_kw):
+                main.batch_calls.append(("folder", out_dir, list(paths)))
+                return {"processed": len(paths), "errors": 0, "cancelled": False,
+                        "generated_states": {paths[0]: {"pos": (1, 2), "size": (3, 4)}}}
+
+            def upload_to_imgchest(_self, title, paths=None, **_kw):
+                main.batch_calls.append(("imgchest", title, list(paths)))
+                return {"links": [f"https://imgchest/{i}" for i in range(len(paths))], "errors": [],
+                        "cancelled": False, "generated_states": {}}
+
+        main.batch_controller = FakeBatch()
+
+        def run_task(_task_id, _title, task_fn, on_done, **_kw):
+            on_done(task_fn(threading.Event(), None))
+
+        main.run_task = run_task
+        self.main = main
+        self.tab = online_module.OnlineTab(main)
+        self.addCleanup(self.tab.deleteLater)
+        self.addCleanup(self.tab.close)
+        self.tab.client.download_image = lambda url: b"data"
+        for post_id in (7, 8):
+            self.tab.selection_state.selected_posts_details[post_id] = {
+                "id": post_id, "file_ext": "jpg", "file_url": f"https://cdn/{post_id}.jpg",
+            }
+
+    def test_folder_destination_exports_only_downloaded_files(self):
+        self.tab.generate_customs("folder")
+        expected = [os.path.join(self.tmp, "7.jpg"), os.path.join(self.tmp, "8.jpg")]
+        self.assertEqual(self.main.batch_calls, [("folder", os.path.join(self.tmp, "out"), expected)])
+        self.assertEqual(self.main.added, expected)
+        # o editor adota o enquadramento usado no export
+        self.assertEqual(self.main.editor_state.image_states[expected[0]], {"pos": (1, 2), "size": (3, 4)})
+        self.assertIn("2 custom(s) salva(s)", self.main.infos[-1])
+
+    def test_imgchest_destination_copies_mudae_command(self):
+        from unittest.mock import patch
+        from src.qt.compat import QGuiApplication
+        self.tab._active_query_label = "miku"
+        with patch("src.qt.compat.QInputDialog.getText", return_value=("Miku", True)):
+            self.tab.generate_customs("imgchest")
+        self.assertEqual(self.main.batch_calls[0][:2], ("imgchest", "Miku"))
+        self.assertEqual(self.main.links, [("Miku", ["https://imgchest/0", "https://imgchest/1"])])
+        self.assertEqual(
+            QGuiApplication.clipboard().text(),
+            "$ai Miku $\nhttps://imgchest/0 $\nhttps://imgchest/1",
+        )
+
+    def test_no_selection_warns_without_downloading(self):
+        self.tab.selection_state.clear()
+        self.tab.generate_customs("folder")
+        self.assertEqual(self.main.batch_calls, [])
+        self.assertTrue(self.main.warnings)
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
 class TestAutocompleteCache(unittest.TestCase):
     """M16: sugestões por prefixo ficam em cache durante a sessão."""
 

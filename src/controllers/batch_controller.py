@@ -63,10 +63,12 @@ class BatchController:
 
     def _get_task_data(self, path, output_path=None, source_dir=None):
         state = self._image_states().get(path)
+        generated_state = False
         if not state:
             state = self._default_state_for(path)
             if not state:
                 return None
+            generated_state = True
 
         anim_type = self._animation_type()
         b_name = self._individual_bordas().get(path, self._selected_borda())
@@ -82,11 +84,18 @@ class BatchController:
             "anim_type": anim_type,
             "border_color": b_hex,
             "output_path": output_path,
+            "generated_state": generated_state,
         }
         source_image = self._edited_source_images.get(path)
         if source_image is not None:
             data["source_path"] = self._save_source_override(path, source_image, source_dir)
         return data
+
+    @staticmethod
+    def _generated_states(tasks):
+        """Enquadramentos calculados no export para imagens sem estado — o
+        editor adota os mesmos, para mostrar exatamente o que foi exportado."""
+        return {task["path"]: task["state"] for task in tasks if task.get("generated_state")}
 
     def _default_framing(self):
         mode = _resolve_value(self._state_attr("default_framing", "auto_fit"), "auto_fit")
@@ -312,6 +321,7 @@ class BatchController:
                 "target_dir": target_dir,
                 "total": len(tasks),
                 "skipped": skipped,
+                "generated_states": self._generated_states(tasks),
             }
         finally:
             shutil.rmtree(source_dir, ignore_errors=True)
@@ -345,6 +355,7 @@ class BatchController:
                     "errors": len(errors),
                     "total": len(tasks),
                     "skipped": skipped,
+                    "generated_states": self._generated_states(tasks),
                 }
 
             written = 0
@@ -361,6 +372,7 @@ class BatchController:
                 "errors": len(errors),
                 "total": len(tasks),
                 "skipped": skipped,
+                "generated_states": self._generated_states(tasks),
             }
 
     def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None, paths=None):
@@ -392,6 +404,7 @@ class BatchController:
                     "uploaded": 0,
                     "total": len(tasks),
                     "skipped": skipped,
+                    "generated_states": self._generated_states(tasks),
                 }
 
             files = []
@@ -421,4 +434,5 @@ class BatchController:
                 "uploaded": len(files),
                 "total": len(tasks),
                 "skipped": skipped,
+                "generated_states": self._generated_states(tasks),
             }

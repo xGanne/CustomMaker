@@ -24,6 +24,7 @@ if QT_AVAILABLE:
         QHBoxLayout,
         QLabel,
         QLineEdit,
+        QMenu,
         QPushButton,
         QSpinBox,
         QStandardPaths,
@@ -235,9 +236,25 @@ if QT_AVAILABLE:
             selection_row.addWidget(self.select_all_button, 1)
             selection_row.addWidget(self.clear_sel_button, 1)
 
+            # Fluxo em um clique: baixar → enquadrar → exportar/enviar
+            self.generate_button = QPushButton("⚡ Gerar customs")
+            self.generate_button.setToolTip(
+                "Baixa as selecionadas, aplica o enquadramento padrão e a borda/animação\n"
+                "atuais e já exporta ou envia ao ImgChest. As imagens entram na lista\n"
+                "de edição para revisão."
+            )
+            generate_menu = QMenu(self.generate_button)
+            generate_menu.addAction(
+                "Enviar ao ImgChest (copia o comando Mudae)",
+                lambda: self.generate_customs("imgchest"),
+            )
+            generate_menu.addAction("Salvar em pasta…", lambda: self.generate_customs("folder"))
+            self.generate_button.setMenu(generate_menu)
+
             actions_row = QHBoxLayout()
             actions_row.setSpacing(6)
             self.import_button = QPushButton("Importar")
+            self.import_button.setProperty("class", "secondary")
             self.import_button.setToolTip("Baixar e adicionar à lista de edição")
             self.import_button.clicked.connect(self.import_selected)
             self.download_button = QPushButton("Baixar")
@@ -257,6 +274,7 @@ if QT_AVAILABLE:
             result_layout.addSpacing(2)
             result_layout.addLayout(selection_row)
             result_layout.addLayout(actions_row)
+            result_layout.addWidget(self.generate_button)
 
             # A4: detail panel — below the grid, hidden until something is selected
             self.detail_panel = _PostDetailPanel(self)
@@ -768,6 +786,118 @@ if QT_AVAILABLE:
                 on_done=on_done,
                 maximum=max(1, len(selected_posts)),
             )
+
+        # ── Fluxo em um clique: Danbooru → customs prontas ──────────────────
+        def generate_customs(self, destination):
+            """Baixa as selecionadas e já gera as customs (destination:
+            "imgchest" envia e copia o comando Mudae; "folder" salva em pasta)."""
+            posts = self._selected_posts()
+            if not posts:
+                self.main_window.show_warning("Gerar customs", "Selecione ao menos um resultado.")
+                return
+            import_dir = self._resolve_import_directory()
+            if not import_dir:
+                self.main_window.show_warning("Gerar customs", "Não foi possível criar a pasta de importação.")
+                return
+
+            title = out_dir = None
+            if destination == "imgchest":
+                uploader = self.main_window.uploader
+                if not getattr(uploader, "api_token", None) and not uploader.reload_token():
+                    self.main_window._show_missing_token_dialog()
+                    return
+                from src.qt.compat import QInputDialog
+                title, ok = QInputDialog.getText(
+                    self, "Gerar customs", "Título do álbum / custom:",
+                    text=self._active_query_label or "CustomMaker",
+                )
+                if not ok:
+                    return
+                title = title.strip() or "CustomMaker"
+            else:
+                out_dir = self.main_window.choose_directory("Pasta para salvar as customs")
+                if not out_dir:
+                    return
+
+            batch = self.main_window.batch_controller
+
+            def task_fn(cancel_event, on_progress):
+                download = self._download_post_files(posts, import_dir, cancel_event, on_progress, for_editing=True)
+                if download["cancelled"] or not download["paths"]:
+                    return {"download": download, "export": None}
+                if destination == "imgchest":
+                    export = batch.upload_to_imgchest(
+                        title, progress_callback=on_progress, cancel_event=cancel_event, paths=download["paths"],
+                    )
+                else:
+                    export = batch.save_all_images(
+                        out_dir, progress_callback=on_progress, cancel_event=cancel_event, paths=download["paths"],
+                    )
+                return {"download": download, "export": export}
+
+            def on_done(result):
+                self._finish_generate_customs(result, destination, title, out_dir)
+
+            self.main_window.run_task(
+                "qt_generate_customs",
+                "Gerando customs",
+                task_fn,
+                on_done=on_done,
+                maximum=max(1, len(posts)),
+            )
+
+        def _finish_generate_customs(self, result, destination, title, out_dir):
+            download = result.get("download") or {}
+            export = result.get("export") or {}
+            paths = download.get("paths") or []
+            mw = self.main_window
+            if paths:
+                # o editor adota o mesmo enquadramento usado no export (sem
+                # marcar como "não exportado"), para a revisão bater com o resultado
+                for path, state in (export.get("generated_states") or {}).items():
+                    mw.editor_state.image_states.setdefault(path, state)
+                mw.add_images(paths, replace=False, select_last=True)
+
+            errors = list(download.get("errors") or [])
+            export_errors = export.get("errors")
+            if isinstance(export_errors, list):
+                errors.extend(export_errors)
+
+            if download.get("cancelled") or export.get("cancelled"):
+                mw.show_status("Geração de customs cancelada.")
+                return
+            if not paths:
+                mw.show_warning("Gerar customs", "Nenhuma imagem foi baixada.\n\n" + "\n".join(errors[:10]))
+                return
+
+            if destination == "imgchest":
+                links = export.get("links") or []
+                if links:
+                    from src.qt.compat import QGuiApplication
+                    QGuiApplication.clipboard().setText(mw.mudae_command(title, links))
+                    mw._show_links_dialog(title, links)
+                    mw.show_status(
+                        f"{len(links)} custom(s) enviada(s) — comando Mudae copiado para a área de transferência.",
+                        timeout_ms=10000,
+                    )
+                if errors or not links:
+                    mw.show_warning(
+                        "Gerar customs",
+                        f"{len(links)} de {len(paths)} enviada(s).\n\n" + "\n".join(str(e) for e in errors[:10]),
+                    )
+            else:
+                processed = export.get("processed", 0)
+                failed = export.get("errors", 0) if isinstance(export.get("errors"), int) else 0
+                if errors or failed:
+                    mw.show_warning(
+                        "Gerar customs",
+                        f"{processed - failed} de {len(paths)} custom(s) salva(s) em {out_dir}.\n\n"
+                        + "\n".join(str(e) for e in errors[:10]),
+                    )
+                else:
+                    # diálogo (como no "Salvar Todas"): a status bar seria sobrescrita
+                    # pelo carregamento da imagem recém-adicionada ao editor
+                    mw.show_info("Gerar customs", f"{processed} custom(s) salva(s) em:\n{out_dir}")
 
         def download_selected(self):
             target_dir = self.main_window.choose_directory("Selecione a pasta de destino")

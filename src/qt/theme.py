@@ -47,7 +47,7 @@ def _svg_icon_url(name, svg):
         return ""
 
 
-def _chevron_icon_url(direction, color, variant):
+def _chevron_icon_url(direction, color, variant, name_suffix=""):
     """Chevron de combos/spinboxes como SVG.
 
     O truque CSS de "triângulo por bordas" não funciona no Qt — ele desenha um
@@ -60,7 +60,7 @@ def _chevron_icon_url(direction, color, variant):
         'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
         "</svg>"
     )
-    return _svg_icon_url(f"chevron-{direction}-{variant}", svg)
+    return _svg_icon_url(f"chevron-{direction}{name_suffix}-{variant}", svg)
 
 
 def _check_icon_url(color, variant):
@@ -81,6 +81,7 @@ def build_stylesheet(variant=None):
     chevron_down = _chevron_icon_url("down", T["text_secondary"], variant)
     chevron_up = _chevron_icon_url("up", T["text_secondary"], variant)
     check_mark = _check_icon_url(T["on_accent"], variant)
+    chevron_on_accent = _chevron_icon_url("down", T["on_accent"], variant, "-on-accent")
     return f"""
 QWidget {{
     background-color: {T["surface_bg"]};
@@ -197,6 +198,15 @@ QPushButton {{
 }}
 QPushButton:hover {{
     background-color: {T["accent_hover"]};
+}}
+/* seta de botões com menu (ex.: "Gerar customs"): a padrão sumia no azul */
+QPushButton::menu-indicator {{
+    image: url({chevron_on_accent});
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    right: 10px;
+    width: 10px;
+    height: 7px;
 }}
 QPushButton:disabled {{
     background-color: {T["surface_muted"]};
