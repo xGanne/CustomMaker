@@ -18,6 +18,12 @@ def process_image_task(task_data):
 
     try:
         with Image.open(source_path) as source:
+            # JPEG pode ser decodificado já reduzido (1/2, 1/4, 1/8). Como o
+            # render redimensiona para state["size"], basta decodificar com o
+            # dobro disso: 2-4x mais rápido em originais grandes, com diferença
+            # média de ~0,15/255 numa ilustração real. Outros formatos ignoram.
+            target_w, target_h = state["size"]
+            source.draft(source.mode, (int(target_w) * 2, int(target_h) * 2))
             orig = source.convert("RGBA")
 
         try:
