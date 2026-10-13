@@ -1,5 +1,7 @@
 # CustomMaker
 
+[![Testes](https://github.com/xGanne/CustomMaker/actions/workflows/tests.yml/badge.svg)](https://github.com/xGanne/CustomMaker/actions/workflows/tests.yml)
+
 CustomMaker é um editor desktop para criar customs do Mudae no formato 225x350. A interface principal usa Qt/PySide6 e reúne edição de borda, ajustes de enquadramento, processamento em lote, busca online, presets, exportação e upload.
 
 ## Recursos
@@ -58,17 +60,20 @@ Fluxo básico:
 
 ## Testes
 
-Rode a suíte automatizada:
+Rode a suíte automatizada (inclui testes da interface Qt, sem abrir janelas):
 
 ```sh
 python -m pytest -q
 ```
 
-Para uma checagem rápida de sintaxe:
+No PowerShell, para rodar os testes de interface sem tela:
 
-```sh
-python -m py_compile main.py src/core/ai_pipeline.py src/core/app_config.py src/controllers/batch_controller.py src/qt/main_window.py src/qt/tabs/ai_tab.py src/qt/tabs/editor_tab.py src/qt/tabs/online_tab.py
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"; python -m pytest -q
 ```
+
+A cada push e pull request a suíte roda no GitHub Actions em Windows
+(`.github/workflows/tests.yml`); o selo no topo mostra o resultado do `main`.
 
 ## Sobre
 
