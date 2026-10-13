@@ -124,10 +124,16 @@ if QT_AVAILABLE:
             upload_button.setToolTip("Upload para ImgChest e copiar comando Mudae")
             upload_button.clicked.connect(self.main_window.upload_to_imgchest)
 
+            review_button = QPushButton("Revisar")
+            review_button.setProperty("class", "secondary")
+            review_button.setToolTip("Ver todas as customs lado a lado, como serão exportadas")
+            review_button.clicked.connect(lambda: self.main_window.open_review())
+
             save_layout.addWidget(save_images_button, 2)
             save_layout.addWidget(save_current_button, 1)
             save_layout.addWidget(save_zip_button, 1)
             save_layout.addWidget(upload_button, 2)
+            save_layout.addWidget(review_button, 1)
 
             # ── Presets ────────────────────────────────────────────────────
             preset_group = QGroupBox("Presets")

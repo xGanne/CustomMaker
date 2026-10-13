@@ -40,6 +40,29 @@ def process_image_task(task_data):
         return {"status": "error", "path": path, "error": str(exc)}
 
 
+def render_custom_preview(task_data):
+    """Custom estática (225x350 com borda) a partir dos dados de uma task.
+
+    Mesmo caminho da exportação (enquadramento, borda individual, imagem
+    editada), sem salvar: usado pela revisão em grade. Animações aparecem como
+    a borda estática na cor escolhida.
+    """
+    source_path = task_data.get("source_path") or task_data["path"]
+    state = task_data["state"]
+    with Image.open(source_path) as source:
+        target_w, target_h = state["size"]
+        source.draft(source.mode, (int(target_w) * 2, int(target_h) * 2))
+        orig = source.convert("RGBA")
+    try:
+        cropped = ImageProcessor.render_image_to_borda(orig, state["pos"], state["size"], task_data["borda_pos"])
+    finally:
+        orig.close()
+    try:
+        return ImageProcessor.add_borda_to_image(cropped, task_data["border_color"])
+    finally:
+        cropped.close()
+
+
 def _process_cropped(cropped, anim_type, border_color, output_path, path):
     if anim_type == "Nenhuma":
         final = ImageProcessor.add_borda_to_image(cropped, border_color)

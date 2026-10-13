@@ -397,6 +397,8 @@ class TestGenerateCustoms(unittest.TestCase):
         main.mudae_commands = ExportMixin.mudae_commands
         main._show_links_dialog = lambda title, links: main.links.append((title, links))
         main.choose_directory = lambda _title: os.path.join(self.tmp, "out")
+        main.reviews = []
+        main.open_review = lambda paths=None, summary=None: main.reviews.append((list(paths or []), summary))
         main.uploader = SimpleNamespace(api_token="token", reload_token=lambda: "token")
         main.batch_calls = []
 
@@ -440,7 +442,9 @@ class TestGenerateCustoms(unittest.TestCase):
         # enquadramento automático: não conta como ajuste nem como "não exportado"
         self.assertEqual(self.main.editor_state.user_adjusted, set())
         self.assertEqual(self.main.editor_state.image_dirty, set())
-        self.assertIn("2 custom(s) salva(s)", self.main.infos[-1])
+        # o resultado é mostrado na revisão em grade das customs geradas
+        self.assertEqual(self.main.reviews[-1][0], expected)
+        self.assertIn("2 custom(s) salva(s)", self.main.reviews[-1][1])
 
     def test_imgchest_destination_copies_mudae_command(self):
         from unittest.mock import patch

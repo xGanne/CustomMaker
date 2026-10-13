@@ -915,6 +915,7 @@ if QT_AVAILABLE:
                     commands = mw.mudae_commands(title, links)
                     QGuiApplication.clipboard().setText(commands[0])
                     mw._show_links_dialog(title, links)
+                    mw.open_review(paths, summary=f"{len(links)} custom(s) enviada(s) ao ImgChest.")
                     copied = "comando Mudae copiado" if len(commands) == 1 else (
                         f"parte 1 de {len(commands)} do comando Mudae copiada (as outras estão no diálogo)"
                     )
@@ -937,9 +938,8 @@ if QT_AVAILABLE:
                         + "\n".join(str(e) for e in errors[:10]),
                     )
                 else:
-                    # diálogo (como no "Salvar Todas"): a status bar seria sobrescrita
-                    # pelo carregamento da imagem recém-adicionada ao editor
-                    mw.show_info("Gerar customs", f"{processed} custom(s) salva(s) em:\n{out_dir}")
+                    # a revisão em grade mostra o resultado (e permite achar as ruins)
+                    mw.open_review(paths, summary=f"{processed} custom(s) salva(s) em: {out_dir}")
 
         def download_selected(self):
             target_dir = self.main_window.choose_directory("Selecione a pasta de destino")
