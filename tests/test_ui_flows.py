@@ -1,0 +1,230 @@
+"""M18: testes dos fluxos críticos de UI que viviam sem cobertura (F1, F2, F3, F5)."""
+import importlib
+import logging
+import os
+import shutil
+import tempfile
+import threading
+import time
+import unittest
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
+
+from PIL import Image, ImageDraw
+
+
+compat = importlib.import_module("src.qt.compat")
+QT_AVAILABLE = compat.QT_AVAILABLE
+
+
+def _app():
+    return compat.QApplication.instance() or compat.QApplication([])
+
+
+def _wait_until(app, condition, timeout=5.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        app.processEvents()
+        if condition():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestBeforeAfterPreservesFraming(unittest.TestCase):
+    """F2: segurar B/crase mostra o original sem corromper o enquadramento."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _app()
+        cls.canvas_module = importlib.import_module("src.qt.widgets.image_canvas")
+
+    def test_before_after_round_trip(self):
+        canvas = self.canvas_module.ImageCanvas()
+        canvas.resize(800, 700)
+        canvas.set_image(Image.new("RGBA", (400, 600), "white"), state={"pos": (120, 80), "size": (300, 450)})
+        emitted = []
+        canvas.state_changed.connect(lambda pos, size: emitted.append((pos, size)))
+
+        canvas.show_original_preview()
+        self.app.processEvents()
+        # a posição temporária do "antes" nunca chega ao editor_state
+        self.assertEqual(emitted, [])
+
+        canvas.restore_edit_preview()
+        self.app.processEvents()
+        self.assertEqual(emitted, [])
+        self.assertEqual((canvas.image_item.pos().x(), canvas.image_item.pos().y()), (120, 80))
+        self.assertEqual(canvas._current_size, (300, 450))
+
+    def test_restore_without_preview_is_harmless(self):
+        canvas = self.canvas_module.ImageCanvas()
+        canvas.restore_edit_preview()  # sem imagem: não pode lançar
+        canvas.set_image(Image.new("RGBA", (50, 50), "white"))
+        canvas.restore_edit_preview()  # sem "antes" ativo: não altera nada
+        self.assertEqual(canvas._current_size, (50, 50))
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestShortcutsDoNotStealTextKeys(unittest.TestCase):
+    """F3: ←/→/Ctrl+V/Ctrl+Z pertencem ao campo de texto focado."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _app()
+        from PySide6.QtTest import QTest
+        cls.QTest = QTest
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        patchers = [
+            patch("src.core.app_config.CONFIG_FILE", os.path.join(self.tmp, "config.json")),
+            patch("src.core.preset_manager.PRESETS_FILE", os.path.join(self.tmp, "presets.json")),
+        ]
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        from src.core.app_config import AppConfig
+        from src.qt.main_window import QtMainWindow
+        self.window = QtMainWindow(AppConfig())
+        self.window.resize(1200, 800)
+        self.window.show()
+        self.paths = []
+        for i in range(3):
+            path = os.path.join(self.tmp, f"img{i}.png")
+            Image.new("RGBA", (300, 400), (60 * i, 80, 120, 255)).save(path)
+            self.paths.append(path)
+        self.window.add_images(self.paths, replace=True)
+        _wait_until(self.app, lambda: self.window._active_image_load_task_id is None)
+
+    def tearDown(self):
+        self.window.editor_state.image_dirty.clear()  # evita o diálogo de "sair mesmo assim?"
+        self.window.close()
+        self.window.deleteLater()
+        self.app.processEvents()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _focused_line_edit(self):
+        edit = self.window.options_color_edit
+        self.window.options_border_combo.setCurrentText("Cor Personalizada")  # habilita o campo
+        edit.setText("#123456")
+        edit.setFocus()
+        edit.setCursorPosition(3)
+        return edit
+
+    def test_arrows_move_text_cursor_instead_of_navigating(self):
+        edit = self._focused_line_edit()
+        self.QTest.keyClick(edit, compat.Qt.Key_Right)
+        self.assertEqual(edit.cursorPosition(), 4)
+        self.assertEqual(self.window.current_path, self.paths[0])
+
+    def test_ctrl_v_and_ctrl_z_go_to_the_text_field(self):
+        edit = self._focused_line_edit()
+        with patch.object(self.window, "paste_image") as paste, \
+                patch.object(self.window, "undo_current_image") as undo:
+            self.QTest.keyClick(edit, compat.Qt.Key_V, compat.Qt.ControlModifier)
+            self.QTest.keyClick(edit, compat.Qt.Key_Z, compat.Qt.ControlModifier)
+        paste.assert_not_called()
+        undo.assert_not_called()
+
+    def test_arrows_navigate_when_canvas_has_focus(self):
+        self.window.image_canvas.setFocus()
+        self.QTest.keyClick(self.window.image_canvas, compat.Qt.Key_Right)
+        self.assertEqual(self.window.current_path, self.paths[1])
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestListThumbnailsOnGuiThread(unittest.TestCase):
+    """F1: QPixmap/QIcon da lista só são criados na GUI thread."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _app()
+
+    def test_thumbnails_are_applied_on_main_thread(self):
+        panel_module = importlib.import_module("src.qt.widgets.image_list_panel")
+        tmp = tempfile.mkdtemp()
+        try:
+            paths = []
+            for i in range(4):
+                path = os.path.join(tmp, f"t{i}.png")
+                Image.new("RGBA", (80, 100), "white").save(path)
+                paths.append(path)
+            panel = panel_module.ImageListPanel()
+            threads = []
+            original = panel._apply_thumbnail
+            panel.thumbnail_ready.disconnect()
+            panel.thumbnail_ready.connect(
+                lambda *args: (threads.append(threading.current_thread()), original(*args))
+            )
+            panel.set_paths(paths)
+            self.assertTrue(_wait_until(self.app, lambda: len(threads) == len(paths)))
+            self.assertTrue(all(t is threading.main_thread() for t in threads))
+            panel._executor.shutdown(wait=True)
+            panel.close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestBatchResultOrder(unittest.TestCase):
+    """F5: resultados do lote saem na ordem da lista, não na de conclusão."""
+
+    def test_results_follow_task_order_even_when_first_task_finishes_last(self):
+        from src.controllers.batch_controller import BatchController
+        from src.core.editor_state import EditorState
+
+        tmp = tempfile.mkdtemp()
+        controller = None
+        try:
+            paths = []
+            # a primeira imagem é bem maior, então tende a terminar por último
+            for i, size in enumerate([(3000, 4000), (200, 300), (200, 300), (200, 300)]):
+                path = os.path.join(tmp, f"o{i}.png")
+                image = Image.new("RGBA", size, (40 * i, 90, 160, 255))
+                ImageDraw.Draw(image).line((0, 0) + size, fill="white", width=5)
+                image.save(path)
+                paths.append(path)
+            state = EditorState(image_list=paths)
+
+            class Cfg:
+                def get(self, key, default=None):
+                    return 4 if key == "max_workers" else default
+
+            controller = BatchController(editor_state=state, app_config=Cfg(), borda_hex={"White": "#FFFFFF"})
+            out_dir = os.path.join(tmp, "out")
+            os.makedirs(out_dir)
+            tasks = [
+                controller._get_task_data(p, os.path.join(out_dir, os.path.basename(p)), source_dir=tmp)
+                for p in paths
+            ]
+            batch = controller._run_batch(tasks)
+            self.assertEqual([r.get("path") for r in batch["results"]], paths)
+            self.assertTrue(all(r.get("status") == "success" for r in batch["results"]))
+        finally:
+            if controller is not None:
+                controller.shutdown()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestFaceDetectionConcurrency(unittest.TestCase):
+    """A detecção de rosto pode ser chamada de várias threads ao mesmo tempo."""
+
+    def test_concurrent_detection_does_not_fail(self):
+        from src.core.image_processor import ImageProcessor
+
+        cascade = ImageProcessor.load_face_cascade()
+        if cascade is None:
+            self.skipTest("lbpcascade_animeface.xml indisponível")
+        image = Image.new("RGBA", (1000, 750), (200, 80, 80, 255))
+        logger = logging.getLogger("src.core.image_processor")
+        with self.assertNoLogs(logger, level="WARNING"):
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(executor.map(
+                    lambda _i: ImageProcessor.detect_all_anime_faces(image, cascade), range(8)
+                ))
+        self.assertEqual(results, [[]] * 8)
+
+
+if __name__ == "__main__":
+    unittest.main()
