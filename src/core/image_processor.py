@@ -122,6 +122,10 @@ class ImageProcessor:
             return []
 
         try:
+            # A detecção recebe arrays NumPy (não UMat), então o OpenCL não
+            # acelera nada aqui — só cobrava ~2s de inicialização na primeira
+            # detecção. A flag é por thread no OpenCV 4, por isso fica aqui.
+            cv2.ocl.setUseOpenCL(False)
             open_cv_image_rgb = np.array(original_image.convert("RGB"))
             open_cv_image_bgr = cv2.cvtColor(open_cv_image_rgb, cv2.COLOR_RGB2BGR)
             gray_image = cv2.cvtColor(open_cv_image_bgr, cv2.COLOR_BGR2GRAY)
