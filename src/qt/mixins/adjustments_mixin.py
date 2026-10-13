@@ -177,7 +177,8 @@ class AdjustmentsMixin:
             if hasattr(self, "refresh_list_indicators"):
                 self.refresh_list_indicators()
             label = "Auto fit" if adjustment_name == "auto_fit" else "Ajuste inteligente"
-            self.show_info("Ajuste", f"{label} aplicado em {len(updated)} imagem(ns).")
+            # M1: confirmação não crítica vai para a status bar, sem modal
+            self.show_status(f"{label} aplicado em {len(updated)} imagem(ns).", timeout_ms=6000)
 
         self.run_task(
             f"qt_adjust_all_{adjustment_name}",
