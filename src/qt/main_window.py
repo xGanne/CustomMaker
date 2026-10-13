@@ -221,9 +221,11 @@ if QT_AVAILABLE:
             self.editor_tab = EditorTab(self, self.tabs)
             self.online_tab = OnlineTab(self, self.tabs)
             self.ai_tab = AiTab(self, self.tabs)
-            self.tabs.addTab(self.editor_tab, "Edição")
-            self.tabs.addTab(self.online_tab, "Online")
-            self.tabs.addTab(self.ai_tab, "IA")
+            # Cada aba rola em vez de impor sua altura mínima ao painel: numa
+            # tela de 1080p a aba Online não cabia inteira, o Qt espremia os
+            # widgets uns sobre os outros e a lista de imagens ia para o rodapé.
+            for page, title in ((self.editor_tab, "Edição"), (self.online_tab, "Online"), (self.ai_tab, "IA")):
+                self.tabs.addTab(self._scrollable_tab(page), title)
 
             self.image_list_panel = ImageListPanel(self)
             self.image_list_panel.selection_changed.connect(self.load_image)
@@ -233,6 +235,7 @@ if QT_AVAILABLE:
 
             right_splitter.addWidget(self.tabs)
             right_splitter.addWidget(self.image_list_panel)
+            right_splitter.setChildrenCollapsible(False)
             # As abas precisam de mais altura que a lista: a grade de resultados
             # da aba Online só mostra uma linha inteira de cards a partir daqui.
             right_splitter.setStretchFactor(0, 3)
@@ -241,6 +244,15 @@ if QT_AVAILABLE:
             right_outer.addWidget(right_splitter)
             splitter.addWidget(right_widget)
             splitter.setSizes([980, 460])
+
+        def _scrollable_tab(self, page):
+            from src.qt.compat import QScrollArea
+
+            area = QScrollArea(self.tabs)
+            area.setWidgetResizable(True)
+            area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            area.setWidget(page)
+            return area
 
         def _build_toolbar(self):
             from src.qt.icons import make_icon
