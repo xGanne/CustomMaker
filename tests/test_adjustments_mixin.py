@@ -112,3 +112,54 @@ class TestAdjustmentsMixin(unittest.TestCase):
         adj.apply_style_to_all()
         self.assertEqual(adj.editor_state.individual_bordas["/a.png"], "Red")
         self.assertEqual(adj.editor_state.individual_bordas["/b.png"], "Red")
+
+
+class _FakeConfig:
+    def __init__(self):
+        self.data = {}
+        self.saves = 0
+
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
+    def set(self, key, value):
+        self.data[key] = value
+
+    def save(self):
+        self.saves += 1
+
+
+class TestApplyPresetOptionalParts(unittest.TestCase):
+    """M11: presets podem trazer enquadramento padrão e blacklist."""
+
+    def _adjuster(self):
+        adj = _FakeAdjuster()
+        adj.app_config = _FakeConfig()
+        adj.editor_tab = MagicMock()
+        adj.online_tab = MagicMock()
+        return adj
+
+    def test_preset_without_optional_parts_keeps_them(self):
+        adj = self._adjuster()
+        adj.app_config.data["danbooru_tag_blacklist"] = "gore"
+        adj.apply_preset({"border_name": "Red", "animation_type": "Nenhuma"})
+        self.assertEqual(adj.editor_state.default_framing, "auto_fit")
+        self.assertEqual(adj.app_config.get("danbooru_tag_blacklist"), "gore")
+        adj.online_tab.refresh_from_config.assert_not_called()
+
+    def test_preset_applies_framing_and_blacklist(self):
+        adj = self._adjuster()
+        adj.apply_preset({
+            "border_name": "Red",
+            "default_framing": "intelligent",
+            "danbooru_blacklist": " gore  violence ",
+        })
+        self.assertEqual(adj.editor_state.default_framing, "intelligent")
+        self.assertEqual(adj.app_config.get("default_framing"), "intelligent")
+        self.assertEqual(adj.app_config.get("danbooru_tag_blacklist"), "gore  violence")
+        adj.online_tab.refresh_from_config.assert_called_once()
+
+    def test_invalid_framing_is_ignored(self):
+        adj = self._adjuster()
+        adj.apply_preset({"default_framing": "qualquer"})
+        self.assertEqual(adj.editor_state.default_framing, "auto_fit")

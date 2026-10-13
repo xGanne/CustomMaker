@@ -78,7 +78,10 @@ if QT_AVAILABLE:
             super().__init__()
             self.app_config = app_config
             self.ui_preferences = UiPreferences.from_app_config(app_config)
-            self.editor_state = EditorState(selected_borda=self.ui_preferences.last_global_borda)
+            self.editor_state = EditorState(
+                selected_borda=self.ui_preferences.last_global_borda,
+                default_framing=app_config.get("default_framing", "auto_fit"),
+            )
             self.preset_manager = PresetManager()
             self.uploader = ImgChestUploader()
             self.face_cascade = ImageProcessor.load_face_cascade()

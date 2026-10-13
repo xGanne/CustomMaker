@@ -56,6 +56,10 @@ class BatchController:
         self._executor = None
         self._executor_workers = None
         self._executor_lock = threading.Lock()
+        # M11: cascade próprio (carregado sob demanda) para o enquadramento
+        # inteligente padrão — não compartilha o classificador da GUI entre threads
+        self._face_cascade = None
+        self._face_cascade_loaded = False
 
     def _get_task_data(self, path, output_path=None, source_dir=None):
         state = self._image_states().get(path)
@@ -84,18 +88,35 @@ class BatchController:
             data["source_path"] = self._save_source_override(path, source_image, source_dir)
         return data
 
+    def _default_framing(self):
+        mode = _resolve_value(self._state_attr("default_framing", "auto_fit"), "auto_fit")
+        return mode if mode in ("auto_fit", "intelligent") else "auto_fit"
+
+    def _get_face_cascade(self):
+        if not self._face_cascade_loaded:
+            self._face_cascade = ImageProcessor.load_face_cascade()
+            self._face_cascade_loaded = True
+        return self._face_cascade
+
     def _default_state_for(self, path):
-        """Auto fit padrão para imagens nunca abertas no canvas — evita que a
-        exportação as pule silenciosamente (F4)."""
+        """Enquadramento padrão para imagens nunca abertas no canvas — evita que
+        a exportação as pule silenciosamente (F4). Segue o modo escolhido pelo
+        usuário (auto fit ou inteligente) (M11)."""
+        mode = self._default_framing()
+        face_cascade = self._get_face_cascade() if mode == "intelligent" else None
         source_image = self._edited_source_images.get(path)
         try:
             if source_image is not None:
-                fit = ImageProcessor.calculate_auto_fit_pos(source_image, self._resolve_borda_pos())
+                fit = ImageProcessor.calculate_default_fit(
+                    source_image, self._resolve_borda_pos(), mode, face_cascade
+                )
             else:
                 with Image.open(path) as image:
-                    fit = ImageProcessor.calculate_auto_fit_pos(image, self._resolve_borda_pos())
+                    fit = ImageProcessor.calculate_default_fit(
+                        image, self._resolve_borda_pos(), mode, face_cascade
+                    )
         except Exception as exc:
-            logger.warning("Sem estado e sem auto fit possível para %s: %s", path, exc)
+            logger.warning("Sem estado e sem enquadramento possível para %s: %s", path, exc)
             return None
         if not fit:
             return None

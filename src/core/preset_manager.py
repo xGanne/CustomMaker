@@ -57,3 +57,16 @@ class PresetManager:
 
     def list_presets(self):
         return list(self.presets.keys())
+
+    @staticmethod
+    def swatch_color(data, borda_hex):
+        """M11: cor exibida ao lado do nome do preset no combo."""
+        if not isinstance(data, dict):
+            return None
+        border_name = data.get("border_name")
+        if border_name == "Cor Personalizada":
+            color = data.get("border_color")
+            if isinstance(color, str) and color.startswith("#") and len(color) == 7:
+                return color
+            return None
+        return borda_hex.get(border_name)

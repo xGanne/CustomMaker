@@ -109,3 +109,23 @@ class TestAppConfig(unittest.TestCase):
             self.assertEqual(cfg.get("thumbnail_memory_cache_mb"), DEFAULT_CONFIG["thumbnail_memory_cache_mb"])
             self.assertEqual(cfg.get("thumbnail_disk_cache_mb"), DEFAULT_CONFIG["thumbnail_disk_cache_mb"])
             self.assertEqual(cfg.get("image_cache_max_mb"), DEFAULT_CONFIG["image_cache_max_mb"])
+
+
+class TestDefaultFramingConfig(unittest.TestCase):
+    def test_invalid_default_framing_falls_back_to_auto_fit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = f"{tmp}/custommaker_config.json"
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump({"default_framing": "aleatorio"}, f)
+            with patch("src.core.app_config.CONFIG_FILE", config_path):
+                cfg = AppConfig()
+            self.assertEqual(cfg.get("default_framing"), "auto_fit")
+
+    def test_intelligent_default_framing_is_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = f"{tmp}/custommaker_config.json"
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump({"default_framing": "intelligent"}, f)
+            with patch("src.core.app_config.CONFIG_FILE", config_path):
+                cfg = AppConfig()
+            self.assertEqual(cfg.get("default_framing"), "intelligent")

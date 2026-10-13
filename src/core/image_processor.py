@@ -199,6 +199,45 @@ class ImageProcessor:
         return new_w, new_h, pos_x, pos_y
 
     @staticmethod
+    def calculate_default_fit(image, borda_pos, mode="auto_fit", face_cascade=None):
+        """M11: enquadramento aplicado a imagens ainda não enquadradas.
+
+        `mode` "intelligent" centraliza o rosto quando há cascade e um rosto é
+        detectado; em qualquer outro caso cai no auto fit.
+        Returns (new_w, new_h, pos_x, pos_y) or None.
+        """
+        if mode == "intelligent" and face_cascade is not None:
+            face = ImageProcessor._detect_face_downscaled(image, face_cascade)
+            if face is not None:
+                fit = ImageProcessor.calculate_intelligent_frame_pos(image, face, borda_pos)
+                if fit:
+                    return fit
+        return ImageProcessor.calculate_auto_fit_pos(image, borda_pos)
+
+    DEFAULT_FIT_DETECTION_MAX_SIDE = 1000
+
+    @staticmethod
+    def _detect_face_downscaled(image, face_cascade):
+        """Detecta o rosto numa cópia reduzida e devolve o retângulo na escala
+        de `image` — a preview pode chegar a 2400px e a detecção nesse tamanho
+        leva segundos, atrasando a primeira exibição da imagem."""
+        max_side = ImageProcessor.DEFAULT_FIT_DETECTION_MAX_SIDE
+        scale = max(image.width, image.height) / max_side
+        if scale <= 1:
+            return ImageProcessor.detect_anime_face(image, face_cascade)
+        small = image.resize(
+            (max(1, round(image.width / scale)), max(1, round(image.height / scale))),
+            Image.BILINEAR,
+        )
+        try:
+            face = ImageProcessor.detect_anime_face(small, face_cascade)
+        finally:
+            small.close()
+        if face is None:
+            return None
+        return tuple(int(round(value * scale)) for value in face)
+
+    @staticmethod
     def calculate_auto_fit_pos(original_image, borda_pos):
         """
         Calculates size and position to fill the border area.

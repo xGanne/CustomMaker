@@ -61,6 +61,7 @@ DEFAULT_CONFIG = {
     "danbooru_tag_blacklist": "",
     "recent_folders": [],
     "strobe_warning_acknowledged": False,
+    "default_framing": "auto_fit",
 }
 
 
@@ -121,6 +122,9 @@ class AppConfig:
 
         if not isinstance(migrated.get("ui_show_tips"), bool):
             migrated["ui_show_tips"] = DEFAULT_CONFIG["ui_show_tips"]
+
+        if migrated.get("default_framing") not in {"auto_fit", "intelligent"}:
+            migrated["default_framing"] = DEFAULT_CONFIG["default_framing"]
 
         if not isinstance(migrated.get("strobe_warning_acknowledged"), bool):
             migrated["strobe_warning_acknowledged"] = DEFAULT_CONFIG["strobe_warning_acknowledged"]

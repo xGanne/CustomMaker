@@ -63,3 +63,43 @@ class TestImageProcessor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _FakeCascade:
+    """Cascade que "detecta" um rosto fixo — evita depender do XML real."""
+
+    def __init__(self, face=(300, 100, 120, 120)):
+        self.face = face
+
+    def detectMultiScale(self, *_args, **_kwargs):
+        return [self.face] if self.face else []
+
+
+class TestDefaultFit(unittest.TestCase):
+    """M11: enquadramento padrão auto fit / inteligente."""
+
+    def setUp(self):
+        self.img = Image.new("RGBA", (800, 600), "white")
+        self.borda_pos = (15, 15)
+
+    def test_auto_fit_mode_matches_auto_fit(self):
+        self.assertEqual(
+            ImageProcessor.calculate_default_fit(self.img, self.borda_pos, "auto_fit", _FakeCascade()),
+            ImageProcessor.calculate_auto_fit_pos(self.img, self.borda_pos),
+        )
+
+    def test_intelligent_mode_centers_detected_face(self):
+        face = (300, 100, 120, 120)
+        self.assertEqual(
+            ImageProcessor.calculate_default_fit(self.img, self.borda_pos, "intelligent", _FakeCascade(face)),
+            ImageProcessor.calculate_intelligent_frame_pos(self.img, face, self.borda_pos),
+        )
+
+    def test_intelligent_mode_falls_back_to_auto_fit(self):
+        auto = ImageProcessor.calculate_auto_fit_pos(self.img, self.borda_pos)
+        # sem cascade (XML ausente) e sem rosto detectado
+        self.assertEqual(ImageProcessor.calculate_default_fit(self.img, self.borda_pos, "intelligent", None), auto)
+        self.assertEqual(
+            ImageProcessor.calculate_default_fit(self.img, self.borda_pos, "intelligent", _FakeCascade(face=None)),
+            auto,
+        )

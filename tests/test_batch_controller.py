@@ -172,3 +172,34 @@ class TestBatchControllerExecutorReuse(unittest.TestCase):
         self.assertIsNone(self.controller._executor)
         # shutdown repetido é inofensivo
         self.controller.shutdown()
+
+
+class TestBatchControllerDefaultFraming(unittest.TestCase):
+    """M11: imagens nunca abertas seguem o enquadramento padrão escolhido."""
+
+    def _controller(self, mode):
+        from src.core.editor_state import EditorState
+        state = EditorState(image_list=["img.png"], default_framing=mode)
+        state.borda_pos = (0, 0)
+        return BatchController(editor_state=state, edited_source_images={"img.png": Image.new("RGBA", (800, 600))})
+
+    def test_auto_fit_mode_does_not_load_cascade(self):
+        controller = self._controller("auto_fit")
+        with patch("src.controllers.batch_controller.ImageProcessor.load_face_cascade") as load:
+            state = controller._default_state_for("img.png")
+        load.assert_not_called()
+        self.assertIsNotNone(state)
+
+    def test_intelligent_mode_uses_own_cascade_once(self):
+        controller = self._controller("intelligent")
+        fake_cascade = object()
+        with patch(
+            "src.controllers.batch_controller.ImageProcessor.load_face_cascade", return_value=fake_cascade
+        ) as load, patch(
+            "src.controllers.batch_controller.ImageProcessor.calculate_default_fit", return_value=(10, 20, 3, 4)
+        ) as default_fit:
+            first = controller._default_state_for("img.png")
+            controller._default_state_for("img.png")
+        load.assert_called_once()
+        self.assertEqual(default_fit.call_args.args[2:], ("intelligent", fake_cascade))
+        self.assertEqual(first, {"pos": (3, 4), "size": (10, 20)})

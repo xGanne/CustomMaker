@@ -7,6 +7,7 @@ try:
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
+        QCheckBox,
         QComboBox,
         QDialog,
         QFileDialog,

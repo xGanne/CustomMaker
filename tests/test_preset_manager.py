@@ -64,3 +64,21 @@ class TestPresetManager(unittest.TestCase):
             json.dump({"carregado": {"border": "White"}}, f)
         manager = PresetManager()
         self.assertEqual(manager.get_preset("carregado"), {"border": "White"})
+
+
+class TestPresetSwatchColor(unittest.TestCase):
+    """M11: cor exibida ao lado do preset no combo."""
+
+    BORDA_HEX = {"Red": "#f38ba8"}
+
+    def test_named_border_uses_palette_color(self):
+        self.assertEqual(PresetManager.swatch_color({"border_name": "Red"}, self.BORDA_HEX), "#f38ba8")
+
+    def test_custom_border_uses_saved_hex(self):
+        data = {"border_name": "Cor Personalizada", "border_color": "#123456"}
+        self.assertEqual(PresetManager.swatch_color(data, self.BORDA_HEX), "#123456")
+
+    def test_invalid_data_has_no_swatch(self):
+        self.assertIsNone(PresetManager.swatch_color({"border_name": "Cor Personalizada", "border_color": "x"}, {}))
+        self.assertIsNone(PresetManager.swatch_color({"border_name": "Inexistente"}, self.BORDA_HEX))
+        self.assertIsNone(PresetManager.swatch_color(None, self.BORDA_HEX))

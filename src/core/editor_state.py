@@ -6,6 +6,12 @@ from src.core.app_config import DEFAULT_CONFIG
 
 ImagePlacement = Dict[str, Tuple[int, int]]
 
+# M11: como enquadrar imagens que ainda não têm enquadramento próprio
+FRAMING_MODES = {
+    "auto_fit": "Auto fit",
+    "intelligent": "Inteligente (rosto)",
+}
+
 
 @dataclass
 class EditorState:
@@ -20,6 +26,7 @@ class EditorState:
     uploaded_links: List[str] = field(default_factory=list)
     borda_pos: Tuple[int, int] = (0, 0)
     image_dirty: Set[str] = field(default_factory=set)
+    default_framing: str = "auto_fit"
 
     @property
     def current_image_path(self) -> Optional[str]:

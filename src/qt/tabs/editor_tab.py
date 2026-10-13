@@ -1,12 +1,19 @@
+from src.config.settings import BORDA_HEX
+from src.core.editor_state import FRAMING_MODES
+from src.core.preset_manager import PresetManager
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 
 if QT_AVAILABLE:
     from src.qt.compat import (
+        QCheckBox,
+        QColor,
         QComboBox,
+        QIcon,
         QGroupBox,
         QHBoxLayout,
         QLabel,
         QLineEdit,
+        QPixmap,
         QPushButton,
         QScrollArea,
         Qt,
@@ -72,8 +79,24 @@ if QT_AVAILABLE:
             copy_frame_btn.setToolTip("Aplica o enquadramento (pos+tamanho) da imagem atual a todas as outras")
             copy_frame_btn.clicked.connect(self.main_window.copy_framing_to_all)
 
+            # M11: enquadramento aplicado a imagens ainda não enquadradas
+            default_row = QHBoxLayout()
+            default_row.setSpacing(6)
+            default_label = QLabel("Padrão:")
+            self.default_framing_combo = QComboBox()
+            for mode, label in FRAMING_MODES.items():
+                self.default_framing_combo.addItem(label, mode)
+            self.default_framing_combo.setToolTip(
+                "Enquadramento aplicado às imagens que ainda não foram ajustadas\n"
+                "(ao abrir no editor e ao exportar). Não altera as já ajustadas."
+            )
+            self.default_framing_combo.currentIndexChanged.connect(self._on_default_framing_changed)
+            default_row.addWidget(default_label)
+            default_row.addWidget(self.default_framing_combo, 1)
+
             fit_layout.addLayout(fit_row1)
             fit_layout.addWidget(copy_frame_btn)
+            fit_layout.addLayout(default_row)
 
             # ── Saída ──────────────────────────────────────────────────────
             save_group = QGroupBox("Saída")
@@ -123,6 +146,17 @@ if QT_AVAILABLE:
             row_save.addWidget(self.preset_name_edit, 1)
             row_save.addWidget(save_preset_button)
 
+            # M11: partes opcionais do preset
+            row_options = QHBoxLayout()
+            row_options.setSpacing(10)
+            self.preset_include_framing = QCheckBox("Enquadramento padrão")
+            self.preset_include_framing.setToolTip("Salvar também o enquadramento padrão (auto fit/inteligente)")
+            self.preset_include_blacklist = QCheckBox("Blacklist Danbooru")
+            self.preset_include_blacklist.setToolTip("Salvar também as tags excluídas da busca online")
+            row_options.addWidget(self.preset_include_framing)
+            row_options.addWidget(self.preset_include_blacklist)
+            row_options.addStretch(1)
+
             row_load = QHBoxLayout()
             row_load.setSpacing(6)
             self.preset_combo = QComboBox()
@@ -137,6 +171,7 @@ if QT_AVAILABLE:
             row_load.addWidget(delete_preset_button)
 
             preset_layout.addLayout(row_save)
+            preset_layout.addLayout(row_options)
             preset_layout.addLayout(row_load)
 
             layout.addWidget(fit_group)
@@ -145,18 +180,44 @@ if QT_AVAILABLE:
             layout.addStretch(1)
 
             self.refresh_presets()
+            self.sync_default_framing_combo()
+
+        @staticmethod
+        def _swatch_icon(color):
+            pixmap = QPixmap(14, 14)
+            pixmap.fill(QColor(color))
+            return QIcon(pixmap)
 
         def refresh_presets(self):
-            presets = self.main_window.preset_manager.list_presets()
+            manager = self.main_window.preset_manager
             self.preset_combo.blockSignals(True)
             self.preset_combo.clear()
             self.preset_combo.addItem("Selecione...")
-            self.preset_combo.addItems(presets)
+            for name in manager.list_presets():
+                # M11: amostra da cor da borda ao lado do nome
+                color = PresetManager.swatch_color(manager.get_preset(name), BORDA_HEX)
+                if color:
+                    self.preset_combo.addItem(self._swatch_icon(color), name)
+                else:
+                    self.preset_combo.addItem(name)
             self.preset_combo.blockSignals(False)
 
         def refresh_from_state(self):
             """Called whenever editor_state changes externally. Syncs options bar."""
             self.main_window.refresh_options_bar()
+            self.sync_default_framing_combo()
+
+        def sync_default_framing_combo(self):
+            index = self.default_framing_combo.findData(self.main_window.editor_state.default_framing)
+            if index >= 0 and index != self.default_framing_combo.currentIndex():
+                self.default_framing_combo.blockSignals(True)
+                self.default_framing_combo.setCurrentIndex(index)
+                self.default_framing_combo.blockSignals(False)
+
+        def _on_default_framing_changed(self, _index):
+            mode = self.default_framing_combo.currentData()
+            if mode:
+                self.main_window.set_default_framing(mode)
 
         def sync_from_options_bar(self):
             """No-op — state is driven by main_window options bar and editor_state."""
@@ -168,14 +229,16 @@ if QT_AVAILABLE:
                 self.main_window.show_warning("Preset", "Informe um nome para o preset.")
                 return
             state = self.main_window.editor_state
-            self.main_window.preset_manager.add_preset(
-                name,
-                {
-                    "border_name": state.selected_borda,
-                    "border_color": state.custom_borda_hex,
-                    "animation_type": state.animation_type,
-                },
-            )
+            data = {
+                "border_name": state.selected_borda,
+                "border_color": state.custom_borda_hex,
+                "animation_type": state.animation_type,
+            }
+            if self.preset_include_framing.isChecked():
+                data["default_framing"] = state.default_framing
+            if self.preset_include_blacklist.isChecked():
+                data["danbooru_blacklist"] = self.main_window.app_config.get("danbooru_tag_blacklist", "") or ""
+            self.main_window.preset_manager.add_preset(name, data)
             self.refresh_presets()
             self.preset_combo.setCurrentText(name)
             self.main_window.show_status(f"Preset '{name}' salvo.")

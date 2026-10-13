@@ -308,10 +308,22 @@ class ImageLoaderMixin:
         self._active_image_load_task_id = task_id
         preview_max_dim = self._preview_max_dimension()
         include_preview = path not in self.edited_images and path not in self._preview_cache
+        # M11: o enquadramento padrão de uma imagem nova é calculado no worker —
+        # o modo inteligente roda detecção de rosto, cara demais para a GUI thread
+        needs_default_fit = path not in self.editor_state.image_states
+        framing_mode = self.editor_state.default_framing
+        borda_pos = tuple(self.editor_state.borda_pos)
+        face_cascade = self.face_cascade
 
         def task_fn(cancel_event, _on_progress):
             result = self._build_image_load_result(index, path, preview_max_dim, include_preview, cancel_event)
             result["task_id"] = task_id
+            if needs_default_fit and not result.get("cancelled"):
+                fit_source = result.get("preview") or result.get("original")
+                if fit_source is not None:
+                    result["default_fit"] = ImageProcessor.calculate_default_fit(
+                        fit_source, borda_pos, framing_mode, face_cascade
+                    )
             return result
 
         def on_done(result):
@@ -345,7 +357,7 @@ class ImageLoaderMixin:
                 self._remember_preview_cache(path, refreshed_image)
 
             if refreshed_image is not None and path == self.current_path:
-                state = self._ensure_state_for_current(refreshed_image)
+                state = self._ensure_state_for_current(refreshed_image, default_fit=result.get("default_fit"))
                 self.image_canvas.set_image(
                     refreshed_image,
                     state=state,
@@ -465,13 +477,15 @@ class ImageLoaderMixin:
         self._apply_snapshot(stack.pop())
         self.show_status("Alteração refeita.")
 
-    def _ensure_state_for_current(self, image):
+    def _ensure_state_for_current(self, image, default_fit=None):
         if not self.current_path:
             return None
         state = self.editor_state.image_states.get(self.current_path)
         if state:
             return state
-        fit = ImageProcessor.calculate_auto_fit_pos(image, self.editor_state.borda_pos)
+        # default_fit vem do worker de carregamento (M11); sem ele, o fallback
+        # síncrono é sempre o auto fit, barato o bastante para a GUI thread
+        fit = default_fit or ImageProcessor.calculate_auto_fit_pos(image, self.editor_state.borda_pos)
         if fit:
             new_w, new_h, pos_x, pos_y = fit
             state = {"pos": (pos_x, pos_y), "size": (new_w, new_h)}

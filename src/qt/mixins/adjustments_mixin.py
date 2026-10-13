@@ -83,9 +83,32 @@ class AdjustmentsMixin:
         animation_type = data.get("animation_type")
         if isinstance(animation_type, str):
             self.editor_state.animation_type = animation_type
+        # M11: partes opcionais — só existem se o preset foi salvo com elas
+        framing = data.get("default_framing")
+        if framing in ("auto_fit", "intelligent"):
+            self.set_default_framing(framing, announce=False)
+        blacklist = data.get("danbooru_blacklist")
+        if isinstance(blacklist, str):
+            self.app_config.set("danbooru_tag_blacklist", blacklist.strip())
+            self.app_config.save()
+            if hasattr(self, "online_tab"):
+                self.online_tab.refresh_from_config()
         self.editor_tab.refresh_from_state()
         self.refresh_current_canvas()
         self.show_status("Preset aplicado.")
+
+    def set_default_framing(self, mode, announce=True):
+        """M11: modo de enquadramento das imagens ainda não enquadradas."""
+        if mode not in ("auto_fit", "intelligent"):
+            return
+        self.editor_state.default_framing = mode
+        self.app_config.set("default_framing", mode)
+        self.app_config.save()
+        if hasattr(self, "editor_tab"):
+            self.editor_tab.sync_default_framing_combo()
+        if announce:
+            label = "inteligente (rosto)" if mode == "intelligent" else "auto fit"
+            self.show_status(f"Imagens ainda não ajustadas usarão {label}.")
 
     def apply_adjustment_to_all(self, adjustment_name):
         if not self.editor_state.image_list:
