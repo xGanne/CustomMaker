@@ -60,6 +60,7 @@ DEFAULT_CONFIG = {
     "danbooru_search_history": [],
     "danbooru_tag_blacklist": "",
     "recent_folders": [],
+    "strobe_warning_acknowledged": False,
 }
 
 
@@ -120,6 +121,9 @@ class AppConfig:
 
         if not isinstance(migrated.get("ui_show_tips"), bool):
             migrated["ui_show_tips"] = DEFAULT_CONFIG["ui_show_tips"]
+
+        if not isinstance(migrated.get("strobe_warning_acknowledged"), bool):
+            migrated["strobe_warning_acknowledged"] = DEFAULT_CONFIG["strobe_warning_acknowledged"]
 
         max_workers = migrated.get("max_workers")
         if max_workers is not None:

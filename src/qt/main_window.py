@@ -333,11 +333,28 @@ if QT_AVAILABLE:
                 self.refresh_current_canvas()
 
         def _on_options_anim_changed(self, value):
+            if value == "Strobe (Pisca)":
+                self._warn_strobe_once()
             self.editor_state.animation_type = value
             if hasattr(self, "editor_tab"):
                 self.editor_tab.sync_from_options_bar()
             self.refresh_current_canvas()
             self.show_status(f"Animação: {value}")
+
+        def _warn_strobe_once(self):
+            """M10: aviso de fotossensibilidade exibido só na primeira seleção."""
+            if self.app_config.get("strobe_warning_acknowledged"):
+                return
+            QMessageBox.warning(
+                self,
+                "Aviso de fotossensibilidade",
+                "A animação Strobe alterna cores saturadas rapidamente e pode "
+                "desencadear crises em pessoas com epilepsia fotossensível.\n\n"
+                "A frequência foi limitada a menos de 3 flashes por segundo, mas "
+                "avise quem for ver o custom.",
+            )
+            self.app_config.set("strobe_warning_acknowledged", True)
+            self.app_config.save()
 
         def _on_options_color_swatch_clicked(self):
             self.toggle_color_picker()

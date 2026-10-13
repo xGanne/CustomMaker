@@ -5,6 +5,10 @@ import colorsys
 from PIL import Image, ImageColor, ImageDraw
 
 
+# M10: duração por quadro do Strobe — abaixo de 3 flashes/s (WCAG 2.3.1)
+STROBE_FRAME_DURATION_MS = 350
+
+
 class AnimationProcessor:
     @staticmethod
     def _clear_center(image, border_width):
@@ -114,7 +118,8 @@ class AnimationProcessor:
                 frame.paste(content_image, (border_width, border_width), content_image)
             frames.append(frame)
 
-        return frames, 100
+        # M10: antes eram 100ms/quadro (10 flashes/s)
+        return frames, STROBE_FRAME_DURATION_MS
 
     @staticmethod
     def generate_glitch_frames(base_image, total_frames=20, border_width=10, overlay_only=False):

@@ -72,6 +72,13 @@ class TestAnimationProcessor(unittest.TestCase):
         for f in frames:
             f.close()
 
+    def test_strobe_stays_below_three_flashes_per_second(self):
+        """M10: WCAG 2.3.1 — no máximo 3 flashes por segundo."""
+        frames, duration = AnimationProcessor.generate_strobe_frames((50, 50), total_frames=2, overlay_only=True)
+        self.assertGreaterEqual(duration, 1000 / 3)
+        for f in frames:
+            f.close()
+
     def test_glitch_frame_count(self):
         frames, duration = AnimationProcessor.generate_glitch_frames(self.img, total_frames=5)
         self.assertEqual(len(frames), 5)
