@@ -100,17 +100,31 @@ class TestUndoStack(unittest.TestCase):
         self.loader._preview_cache_limit_bytes = 256 * 1024 * 1024
 
     def test_undo_stack_capped_at_20(self):
-        img = _make_image()
         self.loader.editor_state.image_states["/img.png"] = {"pos": (0, 0), "size": (10, 10)}
-        # Simulate get_active_image_copy returning a copy
-        with patch.object(self.loader, "get_active_image_copy", return_value=img.copy()):
-            for _ in range(25):
-                self.loader.save_state_for_undo()
+        for _ in range(25):
+            self.loader.save_state_for_undo()
         stack = self.loader._undo_stacks.get("/img.png", [])
-        self.assertLessEqual(len(stack), 20)
-        img.close()
-        for snapshot_img, *_ in stack:
-            snapshot_img.close()
+        self.assertEqual(len(stack), 20)
+
+    def test_framing_snapshots_do_not_copy_the_image(self):
+        """Arrastar/zoom não guarda cópia da imagem (era ~97 MB por gesto)."""
+        self.loader.editor_state.image_states["/img.png"] = {"pos": (1, 2), "size": (10, 10)}
+        self.loader.current_original_image = _make_image()
+        self.loader.save_state_for_undo()
+        image, pos, size, was_edited = self.loader._undo_stacks["/img.png"][-1]
+        self.assertIsNone(image)
+        self.assertEqual((pos, size, was_edited), ((1, 2), (10, 10), False))
+
+    def test_pixel_edited_snapshot_keeps_its_own_copy(self):
+        self.loader.editor_state.image_states["/img.png"] = {"pos": (0, 0), "size": (10, 10)}
+        edited = _make_image()
+        self.loader.edited_images["/img.png"] = edited
+        self.loader.save_state_for_undo()
+        image, _pos, _size, was_edited = self.loader._undo_stacks["/img.png"][-1]
+        self.assertTrue(was_edited)
+        self.assertIsNot(image, edited)
+        self.assertEqual(image.size, edited.size)
+        image.close()
 
     def test_undo_empty_stack_shows_status(self):
         statuses = []

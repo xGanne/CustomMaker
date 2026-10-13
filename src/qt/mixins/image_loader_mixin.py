@@ -460,19 +460,49 @@ class ImageLoaderMixin:
         return self._redo_stacks
 
     def _capture_current_snapshot(self):
-        """Snapshot (imagem, pos, size, tinha_pixels_editados) do estado atual."""
+        """Snapshot (imagem|None, pos, size, tinha_pixels_editados) do estado atual.
+
+        A imagem só é guardada quando há edição de pixels (rotação, IA): gestos
+        de enquadramento não mudam os pixels, e copiar o original a cada arrasto
+        custava ~97 MB por gesto numa imagem de 24 MP. None = arquivo original.
+        """
         if not self.current_path:
             return None
-        image = self.get_active_image_copy()
-        if image is None:
-            return None
-        state = self.editor_state.image_states.get(self.current_path) or self._ensure_state_for_current(image)
+        edited = self.edited_images.get(self.current_path)
+        state = self.editor_state.image_states.get(self.current_path)
+        if state is None:
+            reference = edited or self.current_original_image or self._preview_cache.get(self.current_path)
+            if reference is None:
+                return None
+            state = self._ensure_state_for_current(reference)
         return (
-            image,
-            tuple(state.get("pos", self.editor_state.borda_pos)),
-            tuple(state.get("size", image.size)),
-            self.current_path in self.edited_images,
+            edited.copy() if edited is not None else None,
+            tuple(state["pos"]),
+            tuple(state["size"]),
+            edited is not None,
         )
+
+    def _original_display_image(self, path):
+        """Preview do arquivo original (para desfazer até antes de uma edição de pixels)."""
+        preview_max_dim = self._preview_max_dimension()
+        source = self.current_original_image if path == self.current_path else None
+        try:
+            if source is None:
+                with Image.open(path) as opened:
+                    source = opened.convert("RGBA")
+                owned = True
+            else:
+                owned = False
+            preview = ImageProcessor.resize_image(source, preview_max_dim, preview_max_dim)
+            if preview is source:
+                preview = source.copy()
+            if owned:
+                source.close()
+        except Exception as exc:
+            logger.warning("Não foi possível recarregar o original de %s: %s", path, exc)
+            return None
+        self._remember_preview_cache(path, preview)
+        return preview
 
     def _drop_redo_stack(self, path):
         for image, *_rest in self._redo_stack_map().pop(path, []):
@@ -495,22 +525,37 @@ class ImageLoaderMixin:
     def _apply_snapshot(self, snapshot):
         image, pos, size, was_pixel_edited = snapshot
         path = self.current_path
+        currently_edited = path in self.edited_images
+        if not was_pixel_edited and not currently_edited:
+            # só o enquadramento muda: a imagem na tela continua a mesma
+            self.editor_state.set_image_state(path, pos, size)
+            self.image_canvas.set_image_state(pos, size)
+            if hasattr(self, "refresh_list_indicators"):
+                self.refresh_list_indicators()
+            return
+
         previous = self.edited_images.pop(path, None)
         if previous is not None:
             self._dispose_images([previous])
-        if was_pixel_edited:
+        owned_display = None
+        if was_pixel_edited and image is not None:
             # F15: só volta para edited_images se o estado restaurado tinha
             # edição de pixels — senão o indicador "editada" ficava para sempre
             self.edited_images[path] = image.copy()
-        self._remember_preview_cache(path, image)
-        self.editor_state.set_image_state(path, pos, size)
-        self.image_canvas.set_image(
-            image,
-            state={"pos": pos, "size": size},
-            border_color=self.editor_state.resolve_border_hex(BORDA_HEX, path),
-            natural_size=self._natural_size_for(path),
-        )
+            display = self.edited_images[path]
+            self._remember_preview_cache(path, display)
+        else:
+            display = owned_display = self._original_display_image(path)
         self._dispose_images([image])
+        self.editor_state.set_image_state(path, pos, size)
+        if display is not None:
+            self.image_canvas.set_image(
+                display,
+                state={"pos": pos, "size": size},
+                border_color=self.editor_state.resolve_border_hex(BORDA_HEX, path),
+                natural_size=self._natural_size_for(path),
+            )
+        self._dispose_images([owned_display])
         self._update_preview_animation()
         if hasattr(self, "refresh_list_indicators"):
             self.refresh_list_indicators()
