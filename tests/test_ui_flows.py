@@ -411,6 +411,57 @@ class TestAiOffMode(unittest.TestCase):
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestCloseWithRunningOperation(unittest.TestCase):
+    """Fechar no meio de uma exportação/upload pergunta e cancela as tasks."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _app()
+
+    def setUp(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for patcher in (
+            patch("src.core.app_config.CONFIG_FILE", os.path.join(tmp, "config.json")),
+            patch("src.core.preset_manager.PRESETS_FILE", os.path.join(tmp, "presets.json")),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        from src.core.app_config import AppConfig
+        from src.qt.main_window import QtMainWindow
+        self.window = QtMainWindow(AppConfig())
+        self.addCleanup(self.window.deleteLater)
+        self.cancelled = threading.Event()
+
+        def long_upload(cancel_event, _progress):
+            for _ in range(200):
+                if cancel_event.is_set():
+                    self.cancelled.set()
+                    return "cancelada"
+                time.sleep(0.02)
+            return "completa"
+
+        self.window.task_runner.submit("qt_upload_imgchest", long_upload)
+        self.assertTrue(_wait_until(self.app, lambda: self.window.task_runner.is_running("qt_upload_imgchest")))
+
+    def tearDown(self):
+        self.window.task_runner.cancel_all()
+        _wait_until(self.app, lambda: not self.window.task_runner.running_task_ids())
+
+    def test_answering_no_keeps_window_and_operation(self):
+        with patch.object(compat.QMessageBox, "question", return_value=compat.QMessageBox.No) as ask:
+            self.window.close()
+        ask.assert_called_once()
+        self.assertTrue(self.window.isVisible() or not self.cancelled.is_set())
+        self.assertFalse(self.cancelled.wait(0.2))
+
+    def test_answering_yes_cancels_running_tasks(self):
+        with patch.object(compat.QMessageBox, "question", return_value=compat.QMessageBox.Yes):
+            self.window.close()
+        self.assertTrue(self.cancelled.wait(2))
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
 class TestListThumbnailsOnGuiThread(unittest.TestCase):
     """F1: QPixmap/QIcon da lista só são criados na GUI thread."""
 

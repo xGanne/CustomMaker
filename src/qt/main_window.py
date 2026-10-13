@@ -808,7 +808,34 @@ if QT_AVAILABLE:
                 self.app_config.set("confirm_exit_with_unexported", False)
             return confirmed
 
+        # operações que o usuário espera ver concluídas (resultado, links...)
+        _USER_OPERATION_PREFIXES = (
+            "qt_save", "qt_upload", "qt_generate", "qt_online_download", "qt_import",
+            "qt_adjust_all", "qt_auto_select", "qt_ai_apply",
+        )
+
+        def _running_user_operations(self):
+            return [
+                task_id for task_id in self.task_runner.running_task_ids()
+                if task_id.startswith(self._USER_OPERATION_PREFIXES)
+            ]
+
         def closeEvent(self, event):
+            # sair no meio de um upload/exportação: a janela sumia, mas o processo
+            # seguia vivo até a operação acabar, e o resultado (links, comando
+            # Mudae) se perdia
+            if self._running_user_operations():
+                answer = QMessageBox.question(
+                    self,
+                    "Sair",
+                    "Há uma operação em andamento (exportação, upload ou download).\n"
+                    "Cancelar e sair?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if answer != QMessageBox.Yes:
+                    event.ignore()
+                    return
             # M2: avisa antes de sair se há ajustes/edições ainda não exportados
             dirty_count = len(self.editor_state.image_dirty)
             if dirty_count > 0 and not self._confirm_exit_with_unexported(dirty_count):
@@ -820,6 +847,9 @@ if QT_AVAILABLE:
             self.ui_preferences.save_to_app_config(self.app_config)
             self.app_config.save()
             self.stop_preview_animation()
+            # tasks em andamento param no próximo ponto de checagem, em vez de
+            # manter o processo vivo depois que a janela fecha
+            self.task_runner.cancel_all()
             self.batch_controller.shutdown()
             self.online_tab.close()
             self._close_current_original()

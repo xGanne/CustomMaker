@@ -20,16 +20,27 @@ if QT_AVAILABLE:
         @Slot()
         def run(self):
             try:
-                result = self.fn(self.handle.cancel_event, self.handle.progress.emit)
+                result = self.fn(self.handle.cancel_event, self._emit_progress)
                 if self.handle.cancel_event.is_set():
-                    self.handle.cancelled.emit()
+                    self._emit(self.handle.cancelled)
                 else:
-                    self.handle.done.emit(result)
+                    self._emit(self.handle.done, result)
             except Exception as exc:
                 # M21: garante rastro no log mesmo se nenhum slot estiver
                 # conectado ao sinal de erro
                 logger.exception("Falha na task '%s': %s", self.handle.task_id, exc)
-                self.handle.error.emit(exc)
+                self._emit(self.handle.error, exc)
+
+        def _emit_progress(self, *args):
+            self._emit(self.handle.progress, *args)
+
+        def _emit(self, signal, *args):
+            # a janela pode ter sido fechada (e o handle destruído) enquanto a
+            # task terminava: não há mais quem receber o resultado
+            try:
+                signal.emit(*args)
+            except RuntimeError:
+                logger.debug("Task '%s' terminou após o fechamento da janela.", self.handle.task_id)
 
 
     class QtTaskHandle(QObject):
@@ -105,6 +116,14 @@ if QT_AVAILABLE:
         def is_running(self, task_id):
             handle = self._tasks.get(task_id)
             return bool(handle and handle.is_running())
+
+        def running_task_ids(self):
+            return [task_id for task_id, handle in self._tasks.items() if handle.is_running()]
+
+        def cancel_all(self):
+            """Sinaliza cancelamento a todas as tasks (ao fechar o app)."""
+            for handle in list(self._tasks.values()):
+                handle.cancel()
 else:
     class QtTaskRunner:
         def __init__(self, *_args, **_kwargs):
