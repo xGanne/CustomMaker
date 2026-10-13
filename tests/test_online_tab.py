@@ -148,6 +148,12 @@ class TestOnlineTabSearch(unittest.TestCase):
         self.assertEqual(self.tab.current_page, 1)
         self.assertEqual(len(self.tab.posts), 20)
 
+    def test_search_keeps_typed_tags_in_the_field(self):
+        self.pages[1] = _posts(3)
+        self._search_and_wait()
+        self.assertEqual(self.tab.search_edit.text(), "hatsune_miku")
+        self.assertEqual(self.main.app_config.get("danbooru_search_history"), ["hatsune_miku"])
+
     def test_empty_next_page_still_steps_back_one(self):
         """F22 continua valendo para o avanço normal com →."""
         self.pages[1] = _posts(20)

@@ -260,7 +260,11 @@ if QT_AVAILABLE:
             history = history[:_HISTORY_MAX]
             self.main_window.app_config.set("danbooru_search_history", history)
             self.main_window.app_config.save()
+            # recarregar o combo limpa o campo — manter as tags que o usuário
+            # acabou de buscar visíveis para ele poder refinar a busca
+            current_text = self.search_combo.lineEdit().text()
             self._load_search_history()
+            self.search_combo.lineEdit().setText(current_text)
 
         # ── A6: blacklist ─────────────────────────────────────────────────
         def _save_blacklist(self):
