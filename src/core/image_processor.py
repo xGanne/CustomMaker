@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 
 import cv2
 import numpy as np
@@ -9,6 +10,11 @@ from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH, BORDER_THICKNESS, FAC
 
 
 logger = logging.getLogger(__name__)
+
+# O CascadeClassifier do OpenCV não suporta detectMultiScale concorrente na
+# mesma instância (assert em LBPEvaluator::setWindow); a detecção roda na GUI
+# thread e em workers (carregamento, ajuste em lote, auto-seleção)
+_FACE_DETECTION_LOCK = threading.Lock()
 
 
 class ImageProcessor:
@@ -125,21 +131,22 @@ class ImageProcessor:
             min_dim = min(h, w)
             min_size_strict = max(60, int(min_dim * 0.15))
 
-            faces = face_cascade.detectMultiScale(
-                gray_image,
-                scaleFactor=1.1,
-                minNeighbors=5,
-                minSize=(min_size_strict, min_size_strict),
-            )
-
-            if faces is None or len(faces) == 0:
-                min_size_relaxed = max(40, int(min_dim * 0.05))
+            with _FACE_DETECTION_LOCK:
                 faces = face_cascade.detectMultiScale(
                     gray_image,
-                    scaleFactor=1.05,
-                    minNeighbors=3,
-                    minSize=(min_size_relaxed, min_size_relaxed),
+                    scaleFactor=1.1,
+                    minNeighbors=5,
+                    minSize=(min_size_strict, min_size_strict),
                 )
+
+                if faces is None or len(faces) == 0:
+                    min_size_relaxed = max(40, int(min_dim * 0.05))
+                    faces = face_cascade.detectMultiScale(
+                        gray_image,
+                        scaleFactor=1.05,
+                        minNeighbors=3,
+                        minSize=(min_size_relaxed, min_size_relaxed),
+                    )
 
             if faces is None or len(faces) == 0:
                 return []
