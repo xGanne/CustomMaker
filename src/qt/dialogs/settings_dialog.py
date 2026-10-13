@@ -9,8 +9,10 @@ if QT_AVAILABLE:
         QDialog,
         QDialogButtonBox,
         QFormLayout,
+        QHBoxLayout,
         QLabel,
         QLineEdit,
+        QPushButton,
         QSpinBox,
         QTabWidget,
         QTextEdit,
@@ -127,8 +129,63 @@ if QT_AVAILABLE:
             ]:
                 form.addRow(label, widget_ref)
             layout.addLayout(form)
+
+            layout.addSpacing(10)
+            account_hint = QLabel(
+                "Conta (opcional): sem login o Danbooru aceita só 2 tags por busca; Gold "
+                "aceita 6 e Platinum 12. A chave de API fica em danbooru.donmai.us › "
+                "My Account › API Key e é salva só no arquivo .env, nunca no config."
+            )
+            account_hint.setWordWrap(True)
+            account_hint.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px;")
+            layout.addWidget(account_hint)
+            from src.core.danbooru import DANBOORU_API_KEY_KEY, DANBOORU_LOGIN_KEY
+            from src.core.env_file import read_env_values
+            env = read_env_values()
+            account_form = QFormLayout()
+            self._danbooru_login = QLineEdit(env.get(DANBOORU_LOGIN_KEY, ""))
+            self._danbooru_login.setPlaceholderText("seu nome de usuário")
+            self._danbooru_api_key = QLineEdit(env.get(DANBOORU_API_KEY_KEY, ""))
+            self._danbooru_api_key.setEchoMode(QLineEdit.Password)
+            self._danbooru_api_key.setPlaceholderText("chave de API")
+            account_form.addRow("Login:", self._danbooru_login)
+            account_form.addRow("Chave de API:", self._danbooru_api_key)
+            layout.addLayout(account_form)
+            test_row = QHBoxLayout()
+            self._test_account_button = QPushButton("Testar conexão")
+            self._test_account_button.setProperty("class", "secondary")
+            self._test_account_button.clicked.connect(self._test_danbooru_account)
+            self._account_status = QLabel("")
+            self._account_status.setWordWrap(True)
+            test_row.addWidget(self._test_account_button)
+            test_row.addWidget(self._account_status, 1)
+            layout.addLayout(test_row)
             layout.addStretch(1)
             return widget
+
+        def _test_danbooru_account(self):
+            from src.core.danbooru import DanbooruClient
+            from src.qt.compat import QApplication, Qt
+            login = self._danbooru_login.text().strip()
+            api_key = self._danbooru_api_key.text().strip()
+            auth = (login, api_key) if login and api_key else None
+            client = DanbooruClient(config=self.app_config)
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                profile = client.fetch_profile(auth=auth)
+                if auth is None:
+                    text = f"Sem conta: limite de {profile['tag_query_limit']} tags por busca."
+                else:
+                    text = (
+                        f"Conectado como {profile['name']} ({profile['level']}): "
+                        f"limite de {profile['tag_query_limit']} tags por busca."
+                    )
+            except Exception as exc:
+                text = str(exc)
+            finally:
+                QApplication.restoreOverrideCursor()
+                client.close()
+            self._account_status.setText(text)
 
         # ── Aba Performance ───────────────────────────────────────────────
 
@@ -186,6 +243,19 @@ if QT_AVAILABLE:
             self.app_config.set("danbooru_timeout_search_s", self._timeout_search.value())
             self.app_config.set("danbooru_timeout_download_s", self._timeout_download.value())
             self.app_config.set("danbooru_page_size", self._page_size.value())
+            from src.core.danbooru import DANBOORU_API_KEY_KEY, DANBOORU_LOGIN_KEY
+            from src.core.env_file import read_env_values, update_env_values
+            account = {
+                DANBOORU_LOGIN_KEY: self._danbooru_login.text().strip(),
+                DANBOORU_API_KEY_KEY: self._danbooru_api_key.text().strip(),
+            }
+            current = read_env_values()
+            if any((current.get(k) or "") != v for k, v in account.items()):
+                try:
+                    update_env_values(account)
+                except OSError as exc:
+                    from src.qt.compat import QMessageBox
+                    QMessageBox.warning(self, "Configurações", f"Não foi possível salvar a conta no .env: {exc}")
 
             workers = self._max_workers.value()
             self.app_config.set("max_workers", workers if workers > 0 else None)

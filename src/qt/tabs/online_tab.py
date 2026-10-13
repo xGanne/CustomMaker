@@ -338,6 +338,7 @@ if QT_AVAILABLE:
             saved_blacklist = self.main_window.app_config.get("danbooru_tag_blacklist", "")
             if self.blacklist_edit.text().strip() != (saved_blacklist or "").strip():
                 self.blacklist_edit.setText(saved_blacklist or "")
+            self.client.load_credentials()  # conta do Danbooru salva em Configurações
             self.client.timeout_search_s = self.client._cfg_int("danbooru_timeout_search_s", 10, minimum=1, maximum=120)
             self.client.timeout_download_s = self.client._cfg_int("danbooru_timeout_download_s", 15, minimum=1, maximum=300)
 

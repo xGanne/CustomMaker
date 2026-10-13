@@ -9,11 +9,10 @@ import requests
 from dotenv import dotenv_values
 
 from src.config.settings import IMG_CHEST_API_TOKEN, UPLOAD_BATCH_SIZE
-from src.utils.resource_loader import app_data_path
 
 
 # .env editado pelo usuário a partir do aviso de token ausente (F6)
-ENV_FILE = app_data_path(".env")
+from src.core.env_file import ENV_FILE  # noqa: E402
 ENV_TEMPLATE = "IMG_CHEST_API_TOKEN=seu_token_aqui\n"
 
 

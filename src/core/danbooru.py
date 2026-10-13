@@ -10,6 +10,10 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
+# chaves do .env com a conta do Danbooru (opcional)
+DANBOORU_LOGIN_KEY = "DANBOORU_LOGIN"
+DANBOORU_API_KEY_KEY = "DANBOORU_API_KEY"
+
 # Campos de post que o app usa — pedir só eles (only=) deixa a resposta da
 # busca ~4x menor. Ao ler um campo novo de `post`, acrescente-o aqui.
 POST_FIELDS = (
@@ -87,7 +91,7 @@ def filter_blacklisted(posts, blacklist):
     ]
 
 
-def _tag_limit_message(response):
+def _tag_limit_message(response, authenticated=False):
     """Mensagem clara para o 422 de limite de tags, ou None se for outro 422."""
     try:
         payload = response.json()
@@ -95,13 +99,18 @@ def _tag_limit_message(response):
         return None
     if not isinstance(payload, dict) or payload.get("error") != "PostQuery::TagLimitError":
         return None
-    return (
+    message = (
         "Danbooru: a busca passou do limite de tags da sua conta "
         f"({payload.get('message', 'limite de tags')}).\n\n"
-        "Sem login o limite é de 2 tags. A ordenação (Melhor avaliados / Mais favoritos) "
-        "conta como uma tag; o filtro de classificação não conta. Remova uma tag ou "
-        "use a ordenação \"Mais recentes\"."
+        "A ordenação (Melhor avaliados / Mais favoritos) conta como uma tag; o filtro "
+        "de classificação não conta. Remova uma tag ou use a ordenação \"Mais recentes\"."
     )
+    if not authenticated:
+        message += (
+            "\n\nSem login o limite é de 2 tags. Com uma conta Gold (6 tags) ou Platinum "
+            "(12), informe seu login e chave de API em Configurações › Danbooru."
+        )
+    return message
 
 
 class DanbooruClient:
@@ -114,7 +123,62 @@ class DanbooruClient:
         self.timeout_search_s = self._cfg_int("danbooru_timeout_search_s", 10, minimum=1, maximum=120)
         self.timeout_tags_s = self._cfg_int("danbooru_timeout_tags_s", 5, minimum=1, maximum=120)
         self.timeout_download_s = self._cfg_int("danbooru_timeout_download_s", 15, minimum=1, maximum=300)
+        self._auth = None
+        self.load_credentials()
         self._configure_session()
+
+    def load_credentials(self, env_values=None):
+        """Conta do Danbooru (login + chave de API) lida do .env.
+
+        Com conta o limite de tags por busca sobe (Gold: 6, Platinum: 12). As
+        credenciais vão só nas chamadas à API do Danbooru, nunca nos downloads
+        de imagem (que podem ir para outros servidores).
+        """
+        if env_values is None:
+            from src.core.env_file import read_env_values
+            env_values = read_env_values()
+        login = (env_values.get(DANBOORU_LOGIN_KEY) or "").strip()
+        api_key = (env_values.get(DANBOORU_API_KEY_KEY) or "").strip()
+        self._auth = (login, api_key) if login and api_key else None
+        return self._auth is not None
+
+    @property
+    def is_authenticated(self):
+        return self._auth is not None
+
+    _SAVED_AUTH = object()
+
+    def fetch_profile(self, auth=_SAVED_AUTH):
+        """Perfil da conta: {"name", "level", "tag_query_limit"}.
+
+        Sem `auth`, usa a conta salva; `auth=(login, chave)` testa credenciais
+        ainda não salvas; `auth=None` consulta como anônimo. 401 vira uma
+        mensagem clara de login/chave inválidos.
+        """
+        if auth is DanbooruClient._SAVED_AUTH:
+            auth = self._auth
+        try:
+            response = self.session.get(
+                f"{self.base_url}/profile.json",
+                headers=self.headers,
+                auth=auth,
+                timeout=self.timeout_search_s,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise RuntimeError("Danbooru: falha de conexão. Verifique sua internet.") from exc
+        if response.status_code == 401:
+            raise PermissionError("Danbooru: login ou chave de API inválidos.")
+        if response.status_code != 200:
+            raise RuntimeError(f"Danbooru: erro HTTP {response.status_code} ao consultar a conta.")
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Danbooru: resposta inválida do servidor.") from exc
+        return {
+            "name": data.get("name") or "Anonymous",
+            "level": data.get("level_string") or ("Anônimo" if not data.get("id") else str(data.get("level"))),
+            "tag_query_limit": data.get("tag_query_limit"),
+        }
 
     def _cfg_int(self, key, default, minimum=None, maximum=None):
         value = default
@@ -203,6 +267,7 @@ class DanbooruClient:
                 url,
                 params=params,
                 headers=self.headers,
+                auth=self._auth,
                 timeout=self.timeout_search_s,
             )
             response.raise_for_status()
@@ -218,7 +283,7 @@ class DanbooruClient:
                     "Danbooru: acesso negado (403). O conteúdo pode estar restrito por rating ou sua conta não tem permissão."
                 ) from exc
             if status_code == 422 and response is not None:
-                message = _tag_limit_message(response)
+                message = _tag_limit_message(response, authenticated=self.is_authenticated)
                 if message:
                     logger.info("Danbooru: limite de tags excedido para tags='%s'.", tags)
                     raise RuntimeError(message) from exc
@@ -259,6 +324,7 @@ class DanbooruClient:
                 url,
                 params=params,
                 headers=self.headers,
+                auth=self._auth,
                 timeout=self.timeout_tags_s,
             )
             if response.status_code == 200:
