@@ -33,10 +33,7 @@ if QT_AVAILABLE:
             layout.setSpacing(10)
 
             # ── Status da pipeline ─────────────────────────────────────────
-            self.info_label = QLabel(
-                "Modo seguro ativo: a IA gera uma descrição textual da edição "
-                "quando edição de imagem não está disponível."
-            )
+            self.info_label = QLabel(self.SAFE_MODE_TEXT)
             self.info_label.setWordWrap(True)
             self.info_label.setStyleSheet(
                 f"color: {tokens()['text_muted']}; font-size: 11px; padding: 2px 2px 4px 2px;"
@@ -106,6 +103,31 @@ if QT_AVAILABLE:
             base_layout.addWidget(save_base_btn)
             layout.addWidget(base_group)
             layout.addStretch(1)
+            self.refresh_from_config()
+
+        SAFE_MODE_TEXT = (
+            "Modo seguro ativo: a IA gera uma descrição textual da edição "
+            "quando edição de imagem não está disponível."
+        )
+        OFF_MODE_TEXT = (
+            "IA desativada em Configurações › IA (modo off): nenhuma imagem é "
+            "enviada ao Gemini."
+        )
+
+        def _ai_disabled(self):
+            return self.main_window.app_config.get("ai_mode", "safe") == "off"
+
+        def refresh_from_config(self):
+            """Aplica o modo da IA e a instrução base salvos em Configurações."""
+            disabled = self._ai_disabled()
+            self.prompt_edit.setEnabled(not disabled)
+            self.apply_button.setEnabled(not disabled)
+            self.info_label.setText(self.OFF_MODE_TEXT if disabled else self.SAFE_MODE_TEXT)
+            saved_prompt = self.main_window.app_config.get("ai_base_prompt", "")
+            if saved_prompt and saved_prompt != self.base_prompt_edit.toPlainText().strip():
+                self.base_prompt_edit.setPlainText(saved_prompt)
+            # recria o pipeline com o modo/instrução atuais na próxima geração
+            self.pipeline_manager = None
 
         def _set_status(self, text):
             """Mostra o status só quando há mensagem — evita uma faixa vazia."""
@@ -128,7 +150,11 @@ if QT_AVAILABLE:
                 from src.core.ai_pipeline import AIPipelineManager
                 base_prompt = self.main_window.app_config.get("ai_base_prompt")
                 model_name = self.main_window.app_config.get("ai_model")
-                self.pipeline_manager = AIPipelineManager(base_prompt=base_prompt, model_name=model_name)
+                self.pipeline_manager = AIPipelineManager(
+                    base_prompt=base_prompt,
+                    model_name=model_name,
+                    mode=self.main_window.app_config.get("ai_mode", "safe"),
+                )
                 caps = self.pipeline_manager.get_capabilities()
                 self._strength_row.setVisible(bool(caps.image_edit))
                 if caps.image_edit:
@@ -138,6 +164,9 @@ if QT_AVAILABLE:
             return self.pipeline_manager
 
         def on_apply_click(self):
+            if self._ai_disabled():
+                self.main_window.show_info("IA", self.OFF_MODE_TEXT)
+                return
             image = self.main_window.get_active_image_copy()
             if image is None:
                 self.main_window.show_warning("IA", "Carregue uma imagem primeiro.")
@@ -185,7 +214,15 @@ if QT_AVAILABLE:
                 self._set_status("Erro")
                 self.main_window.show_error("IA", str(exc))
 
-            self.main_window.run_task("qt_ai_apply", "Processando IA", task_fn, on_done=on_done, on_error=on_error)
+            handle = self.main_window.run_task(
+                "qt_ai_apply", "Processando IA", task_fn, on_done=on_done, on_error=on_error
+            )
+            if handle is None:
+                # tarefa não iniciou (outra já em andamento): sem isto o botão
+                # ficava desabilitado para sempre
+                _dispose_input()
+                self.apply_button.setEnabled(True)
+                self._set_status("")
 else:
     class AiTab:
         def __init__(self, *_args, **_kwargs):

@@ -54,3 +54,15 @@ class TestAIPipeline(unittest.TestCase):
         self.assertEqual(provider.last_args["prompt"], "descreva mantendo pose cabelo azul")
         self.assertNotIn("Flamengo", provider.last_args["prompt"])
         self.assertEqual(provider.last_args["options"]["strength"], 0.33)
+
+
+@unittest.skipUnless(HAS_GENAI, "google-generativeai not installed")
+class TestAIPipelineOffMode(unittest.TestCase):
+    def test_off_mode_never_calls_the_provider(self):
+        """Com a IA em modo off, nenhuma imagem sai do app."""
+        provider = FakeTextProvider()
+        manager = AIPipelineManager(provider=provider, mode="off")
+        result = manager.apply_uniform(image=Image.new("RGBA", (10, 10), "white"), prompt_suffix="x")
+        self.assertEqual(result.kind, "error")
+        self.assertIn("desativada", result.error_message)
+        self.assertIsNone(provider.last_args)

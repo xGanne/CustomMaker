@@ -349,6 +349,50 @@ class TestMissingTokenDialog(unittest.TestCase):
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestAiOffMode(unittest.TestCase):
+    """O modo "off" da IA (Configurações) desativa a aba e bloqueia o envio."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _app()
+
+    def setUp(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for patcher in (
+            patch("src.core.app_config.CONFIG_FILE", os.path.join(tmp, "config.json")),
+            patch("src.core.preset_manager.PRESETS_FILE", os.path.join(tmp, "presets.json")),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        from src.core.app_config import AppConfig
+        from src.qt.main_window import QtMainWindow
+        self.window = QtMainWindow(AppConfig())
+        self.addCleanup(self.window.deleteLater)
+        self.tab = self.window.ai_tab
+
+    def test_off_mode_disables_tab_and_blocks_sending(self):
+        self.window.app_config.set("ai_mode", "off")
+        self.tab.refresh_from_config()
+        self.assertFalse(self.tab.apply_button.isEnabled())
+        self.assertIn("desativada", self.tab.info_label.text())
+        with patch.object(self.window, "run_task") as run_task,                 patch.object(self.window, "show_info") as show_info,                 patch.object(self.window, "get_active_image_copy") as get_image:
+            self.tab.on_apply_click()
+        run_task.assert_not_called()
+        get_image.assert_not_called()
+        show_info.assert_called_once()
+
+        self.window.app_config.set("ai_mode", "safe")
+        self.tab.refresh_from_config()
+        self.assertTrue(self.tab.apply_button.isEnabled())
+
+    def test_button_is_reenabled_when_task_does_not_start(self):
+        with patch.object(self.window, "get_active_image_copy", return_value=Image.new("RGBA", (8, 8))),                 patch.object(self.window, "run_task", return_value=None):
+            self.tab.on_apply_click()
+        self.assertTrue(self.tab.apply_button.isEnabled())
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
 class TestListThumbnailsOnGuiThread(unittest.TestCase):
     """F1: QPixmap/QIcon da lista só são criados na GUI thread."""
 

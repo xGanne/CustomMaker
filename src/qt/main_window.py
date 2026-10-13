@@ -674,6 +674,7 @@ if QT_AVAILABLE:
             if dialog.exec():
                 # F12: refletir imediatamente o que dá para aplicar a quente
                 self.online_tab.refresh_from_config()
+                self.ai_tab.refresh_from_config()
                 if dialog.theme_changed:
                     self.show_info("Tema", "O novo tema será aplicado na próxima vez que o programa abrir.")
                 self.show_status(

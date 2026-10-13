@@ -72,7 +72,9 @@ class AIPipelineManager:
         provider: Optional[AIProvider] = None,
         base_prompt: Optional[str] = None,
         model_name: Optional[str] = None,
+        mode: str = "safe",
     ):
+        self.mode = mode
         self.provider = provider or GeminiTextOnlyProvider(model_name=model_name)
         self.base_prompt = (base_prompt or self.DEFAULT_BASE_PROMPT).strip()
 
@@ -96,6 +98,9 @@ class AIPipelineManager:
         strength: float = 0.75,
         status_callback=None,
     ) -> AIResult:
+        if self.mode == "off":
+            # barreira final: com a IA desligada nenhuma imagem sai do app
+            return AIResult(kind="error", error_message="IA desativada nas Configurações (modo off).")
         options = {"strength": strength}
         merged_prompt = f"{self.base_prompt} {prompt_suffix}".strip()
         return self.provider.apply(image=image, prompt=merged_prompt, options=options, status_callback=status_callback)
