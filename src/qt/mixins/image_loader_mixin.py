@@ -282,7 +282,9 @@ class ImageLoaderMixin:
         self.editor_state.current_image_index = index
         self.image_list_panel.set_current_index(index)
         self._update_image_counter()
-        self.editor_state.borda_pos = self.image_canvas.border_pos
+        # passa pelo mesmo ajuste do resize: se a borda tiver mudado, os
+        # enquadramentos salvos acompanham o deslocamento
+        self.on_border_pos_changed(self.image_canvas.border_pos)
         self.editor_tab.refresh_from_state()
         display_image = self.edited_images.get(path) or self._get_preview_cache_copy(path)
         # M4: sem nada em cache o canvas fica vazio até o disco responder —

@@ -188,6 +188,10 @@ if QT_AVAILABLE:
             self.image_canvas = ImageCanvas(self)
             self.image_canvas.state_changed.connect(self.on_canvas_state_changed)
             self.image_canvas.border_pos_changed.connect(self.on_border_pos_changed)
+            # a borda do canvas já existe: sincronizar desde já, para que
+            # enquadramentos calculados antes de abrir uma imagem (ex.: "Gerar
+            # customs") usem a mesma referência que o editor
+            self.editor_state.borda_pos = self.image_canvas.border_pos
             self.image_canvas.interaction_started.connect(self.save_state_for_undo)
             self.image_canvas.color_picked.connect(self.on_canvas_color_picked)
             left_layout.addWidget(self.image_canvas)
@@ -528,6 +532,16 @@ if QT_AVAILABLE:
             self.editor_state.set_image_state(self.current_path, pos, size)
 
         def on_border_pos_changed(self, pos):
+            # O enquadramento é guardado em coordenadas absolutas da cena. Quando
+            # a borda se recentraliza (janela redimensionada/maximizada, divisor
+            # arrastado), o canvas só move a imagem visível — as demais tinham
+            # que acompanhar, senão o corte delas ficava deslocado na exportação.
+            old_x, old_y = self.editor_state.borda_pos
+            dx, dy = pos[0] - old_x, pos[1] - old_y
+            if dx or dy:
+                for state in self.editor_state.image_states.values():
+                    x, y = state["pos"]
+                    state["pos"] = (x + dx, y + dy)
             self.editor_state.borda_pos = pos
 
         # ── Color picker ───────────────────────────────────────────────────

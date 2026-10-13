@@ -128,6 +128,24 @@ class TestShortcutsDoNotStealTextKeys(unittest.TestCase):
         paste.assert_not_called()
         undo.assert_not_called()
 
+    def test_resize_keeps_framing_of_hidden_images(self):
+        """Redimensionar recentraliza a borda: imagens fora da tela acompanham."""
+        es = self.window.editor_state
+
+        def relative(path):
+            x, y = es.image_states[path]["pos"]
+            return x - es.borda_pos[0], y - es.borda_pos[1]
+
+        first = self.paths[0]
+        before = relative(first)
+        self.window.navigate_images(1)
+        _wait_until(self.app, lambda: self.window._active_image_load_task_id is None)
+        self.window.resize(900, 650)
+        self.assertTrue(_wait_until(self.app, lambda: es.borda_pos == self.window.image_canvas.border_pos))
+        self.app.processEvents()
+        self.assertEqual(relative(first), before)
+        self.assertEqual(es.borda_pos, self.window.image_canvas.border_pos)
+
     def test_arrows_navigate_when_canvas_has_focus(self):
         self.window.image_canvas.setFocus()
         self.QTest.keyClick(self.window.image_canvas, compat.Qt.Key_Right)
