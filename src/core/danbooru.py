@@ -17,6 +17,17 @@ POST_FIELDS = (
     "file_url,large_file_url,preview_file_url,uploader_id"
 )
 
+# Formatos que viram custom. Vídeos (mp4/webm), ugoira (zip) e flash não:
+# baixá-los para editar só gastava banda e falhava depois, em silêncio.
+IMAGE_FILE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "bmp"}
+
+
+def is_image_post(post):
+    """True se o post é uma imagem (pode virar custom)."""
+    ext = str((post or {}).get("file_ext") or "").lower()
+    return not ext or ext in IMAGE_FILE_EXTENSIONS
+
+
 # Largura da versão "large" (sample) que o Danbooru gera para imagens maiores
 DANBOORU_SAMPLE_WIDTH = 850
 
@@ -29,6 +40,8 @@ def import_source(post, min_size):
     sempre que cobre `min_size` (largura, altura); senão, como em imagens muito
     largas onde o corte precisa de mais pixels na vertical, baixa o original.
     """
+    if not is_image_post(post):
+        return None, None
     file_url = post.get("file_url")
     large_url = post.get("large_file_url")
     width = post.get("image_width") or 0

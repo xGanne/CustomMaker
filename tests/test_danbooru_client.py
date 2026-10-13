@@ -252,3 +252,20 @@ class TestSearchRequestsOnlyUsedFields(unittest.TestCase):
         for field in ("id", "rating", "tag_string", "file_url", "large_file_url", "preview_file_url"):
             self.assertIn(field, POST_FIELDS.split(","))
         client.close()
+
+
+class TestNonImagePosts(unittest.TestCase):
+    """Vídeo/ugoira não viram custom: importar os ignora sem baixar."""
+
+    def test_is_image_post(self):
+        from src.core.danbooru import is_image_post
+        for ext in ("jpg", "PNG", "gif", "webp"):
+            self.assertTrue(is_image_post({"file_ext": ext}))
+        for ext in ("mp4", "webm", "zip", "swf"):
+            self.assertFalse(is_image_post({"file_ext": ext}))
+        self.assertTrue(is_image_post({}))  # sem file_ext: tenta como imagem
+
+    def test_import_source_skips_videos(self):
+        from src.core.danbooru import import_source
+        post = {"file_ext": "mp4", "file_url": "https://cdn/a.mp4", "large_file_url": "https://cdn/a.mp4"}
+        self.assertEqual(import_source(post, (450, 700)), (None, None))

@@ -8,7 +8,7 @@ from PIL import Image
 
 from src.core.custom_scorer import metadata_score, visual_score
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
-from src.core.danbooru import DanbooruClient, filter_blacklisted, import_source, parse_tag_list
+from src.core.danbooru import DanbooruClient, filter_blacklisted, import_source, is_image_post, parse_tag_list
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
 from src.qt.dialogs.danbooru_gallery_dialog import DanbooruGalleryDialog
@@ -482,6 +482,9 @@ if QT_AVAILABLE:
                 self.main_window.show_warning("Importar", "Não foi possível criar a pasta de importação. Abra uma pasta na edição e tente de novo.")
                 return
 
+            if not is_image_post(post):
+                self.main_window.show_warning("Importar", self._not_an_image_message(post))
+                return
             file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
             if not file_url:
                 self.main_window.show_warning("Importar", f"Post #{post.get('id')}: URL não encontrada.")
@@ -689,6 +692,12 @@ if QT_AVAILABLE:
             self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
             self._update_selection_summary(count)
 
+        @staticmethod
+        def _not_an_image_message(post):
+            ext = str(post.get("file_ext") or "").lower()
+            kind = "animação ugoira" if ext == "zip" else f"vídeo ({ext})"
+            return f"Post #{post.get('id')}: é {kind} e não pode virar custom — ignorado."
+
         def _download_post_files(self, posts, target_dir, cancel_event, on_progress, for_editing=True):
             """Baixa `posts` em paralelo para `target_dir` (roda em worker).
 
@@ -705,6 +714,8 @@ if QT_AVAILABLE:
                     return {"cancelled": True, "post_id": post.get("id")}
 
                 if for_editing:
+                    if not is_image_post(post):
+                        return {"error": self._not_an_image_message(post)}
                     # importar para editar: a versão large basta e é muito menor
                     file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
                 else:
@@ -935,7 +946,8 @@ if QT_AVAILABLE:
             # F1: pontuação de metadado é síncrona e barata — roda aqui mesmo,
             # sem worker. Só o refinamento visual (que baixa imagem) vai para
             # a task em background.
-            ranked = sorted(self.posts, key=metadata_score, reverse=True)
+            # vídeos/ugoira não viram custom: fora da disputa
+            ranked = sorted((p for p in self.posts if is_image_post(p)), key=metadata_score, reverse=True)
             shortlist_size = min(len(ranked), max(count * 2, count + 5))
             shortlist = ranked[:shortlist_size]
             face_cascade = self.main_window.face_cascade

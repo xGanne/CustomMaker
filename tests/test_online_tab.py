@@ -266,6 +266,15 @@ class TestImportDownloadsLargeVersion(unittest.TestCase):
         self.assertEqual(self.urls, ["https://cdn/sample/42.jpg"])
         self.assertEqual([os.path.basename(p) for p in self.main.added], ["42.jpg"])
 
+    def test_video_posts_are_skipped_when_importing_but_not_when_downloading(self):
+        video = {"id": 9, "file_ext": "mp4", "file_url": "https://cdn/9.mp4", "large_file_url": "https://cdn/9.mp4"}
+        self.tab.selection_state.selected_posts_details[9] = video
+        self.tab._download_posts(self.tmp, import_after=True)
+        self.assertEqual(self.urls, [])
+        self.assertTrue(any("vídeo (mp4)" in msg for _title, msg in self.main.warnings))
+        self.tab._download_posts(self.tmp, import_after=False)
+        self.assertEqual(self.urls, ["https://cdn/9.mp4"])
+
     def test_batch_import_uses_large_but_download_keeps_original(self):
         self.tab.selection_state.selected_posts_details[42] = self.post
         self.tab._download_posts(self.tmp, import_after=True)
