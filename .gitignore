@@ -192,3 +192,6 @@ session_edits/
 
 # Assets de UI gerados em runtime (chevrons SVG do tema)
 .ui/
+
+# Relatório JUnit do pytest (CI)
+test-report.xml

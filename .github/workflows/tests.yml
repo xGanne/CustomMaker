@@ -33,4 +33,9 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Rodar testes
-        run: python -m pytest -q
+        run: python -m pytest -q --junitxml=test-report.xml
+
+      # falhas viram anotações no resumo da execução, legíveis sem abrir o log
+      - name: Anotar falhas
+        if: failure()
+        run: python .github/scripts/annotate_failures.py test-report.xml
