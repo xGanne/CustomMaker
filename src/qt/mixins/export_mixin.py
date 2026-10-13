@@ -66,11 +66,12 @@ class ExportMixin:
         if not file_path:
             return
         source_path = self.current_path
+        batch = self.batch_controller.frozen()
 
         def task_fn(_cancel_event, on_progress):
             if on_progress:
                 on_progress(0, 1, "Exportando imagem atual...")
-            result = self.batch_controller.save_single_image(source_path, file_path)
+            result = batch.save_single_image(source_path, file_path)
             if on_progress:
                 on_progress(1, 1, "Concluído.")
             return result
@@ -91,8 +92,10 @@ class ExportMixin:
         if not target_dir:
             return
 
+        batch = self.batch_controller.frozen()
+
         def task_fn(cancel_event, on_progress):
-            return self.batch_controller.save_all_images(
+            return batch.save_all_images(
                 target_dir,
                 progress_callback=on_progress,
                 cancel_event=cancel_event,
@@ -129,8 +132,10 @@ class ExportMixin:
         if not file_path:
             return
 
+        batch = self.batch_controller.frozen()
+
         def task_fn(cancel_event, on_progress):
-            return self.batch_controller.save_zip(
+            return batch.save_zip(
                 file_path,
                 progress_callback=on_progress,
                 cancel_event=cancel_event,
@@ -173,8 +178,10 @@ class ExportMixin:
             return
         album_title = album_title.strip() or "CustomMaker"
 
+        batch = self.batch_controller.frozen()
+
         def task_fn(cancel_event, on_progress):
-            return self.batch_controller.upload_to_imgchest(
+            return batch.upload_to_imgchest(
                 album_title,
                 progress_callback=on_progress,
                 cancel_event=cancel_event,

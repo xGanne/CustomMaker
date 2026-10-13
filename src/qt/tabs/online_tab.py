@@ -819,7 +819,8 @@ if QT_AVAILABLE:
                 if not out_dir:
                     return
 
-            batch = self.main_window.batch_controller
+            # estado congelado agora (GUI thread); o lote roda no worker
+            batch = self.main_window.batch_controller.frozen()
 
             def task_fn(cancel_event, on_progress):
                 download = self._download_post_files(posts, import_dir, cancel_event, on_progress, for_editing=True)

@@ -271,3 +271,49 @@ class TestUniqueOutputNames(unittest.TestCase):
         self.assertEqual(set(uploaded), {"001_custom.png", "001_custom_2.png"})
         # cada arquivo enviado é a sua própria custom (vermelha e azul)
         self.assertEqual(sorted(uploaded.values()), sorted([(255, 0, 0), (0, 0, 255)]))
+
+
+class TestFrozenBatch(unittest.TestCase):
+    """Um lote trabalha sobre o estado do momento em que foi iniciado."""
+
+    def _controller(self):
+        from src.core.editor_state import EditorState
+        state = EditorState(image_list=["a.png", "b.png", "c.png"])
+        state.borda_pos = (100, 100)
+        for path in state.image_list:
+            state.image_states[path] = {"pos": (90, 80), "size": (250, 350)}
+        return BatchController(editor_state=state, borda_hex={"White": "#FFFFFF"})
+
+    def test_resize_during_batch_does_not_mix_states(self):
+        controller = self._controller()
+        live = controller.editor_state
+        batch = controller.frozen()
+
+        def resize_window():
+            # o que on_border_pos_changed faz num resize: desloca borda e estados
+            for state in live.image_states.values():
+                x, y = state["pos"]
+                state["pos"] = (x + 30, y + 7)
+            live.borda_pos = (130, 107)
+
+        tasks = []
+        for index, path in enumerate(batch._image_list()):
+            tasks.append(batch._get_task_data(path, f"{path}.out"))
+            if index == 0:
+                resize_window()  # a janela é redimensionada no meio do lote
+        relative = {(t["state"]["pos"][0] - t["borda_pos"][0], t["state"]["pos"][1] - t["borda_pos"][1]) for t in tasks}
+        self.assertEqual(relative, {(-10, -20)})
+
+    def test_frozen_copy_is_isolated_and_shares_the_pool(self):
+        controller = self._controller()
+        batch = controller.frozen()
+        controller.editor_state.image_list.append("novo.png")
+        controller.editor_state.image_states["a.png"]["size"] = (1, 1)
+        self.assertEqual(batch._image_list(), ["a.png", "b.png", "c.png"])
+        self.assertEqual(batch._image_states()["a.png"]["size"], (250, 350))
+        with patch("src.controllers.batch_controller.concurrent.futures.ProcessPoolExecutor", FakeExecutor):
+            FakeExecutor.instances = []
+            self.assertIs(batch._get_executor(2), controller._get_executor(2))
+            self.assertEqual(len(FakeExecutor.instances), 1)
+            controller.shutdown()
+            self.assertTrue(FakeExecutor.instances[0].shutdown_called)

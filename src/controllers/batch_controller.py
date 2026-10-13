@@ -1,4 +1,5 @@
 import concurrent.futures
+import copy
 import logging
 import os
 import secrets
@@ -78,10 +79,30 @@ class BatchController:
         self._executor = None
         self._executor_workers = None
         self._executor_lock = threading.Lock()
+        # cópias congeladas (frozen) usam o pool deste controlador
+        self._pool_owner = self
         # M11: cascade próprio (carregado sob demanda) para o enquadramento
         # inteligente padrão — não compartilha o classificador da GUI entre threads
         self._face_cascade = None
         self._face_cascade_loaded = False
+
+    def frozen(self):
+        """Cópia com o estado do editor congelado, para um lote.
+
+        Chamar na GUI thread ao iniciar uma exportação: o lote roda num worker
+        e lia o estado aos poucos, enquanto a janela seguia viva — redimensionar
+        (que desloca a borda e os enquadramentos) ou editar no meio misturava
+        estados antigos e novos entre as customs do mesmo lote. A cópia
+        compartilha o pool de processos deste controlador.
+        """
+        clone = copy.copy(self)
+        if self.editor_state is not None:
+            clone.editor_state = copy.deepcopy(self.editor_state)
+        # cópias próprias: o editor fecha a imagem editada anterior ao rotacionar
+        clone._edited_source_images = {
+            path: image.copy() for path, image in (self._edited_source_images or {}).items()
+        }
+        return clone
 
     def _get_task_data(self, path, output_path=None, source_dir=None):
         state = self._image_states().get(path)
@@ -236,28 +257,31 @@ class BatchController:
     def _get_executor(self, max_workers):
         """M15: devolve o pool compartilhado, recriando-o só se o número de
         workers mudou ou se um processo filho morreu (pool quebrado)."""
-        with self._executor_lock:
-            broken = self._executor is not None and getattr(self._executor, "_broken", False)
-            if self._executor is not None and (broken or self._executor_workers != max_workers):
-                self._executor.shutdown(wait=False, cancel_futures=True)
-                self._executor = None
-            if self._executor is None:
-                self._executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
-                self._executor_workers = max_workers
-            return self._executor
+        owner = self._pool_owner
+        with owner._executor_lock:
+            broken = owner._executor is not None and getattr(owner._executor, "_broken", False)
+            if owner._executor is not None and (broken or owner._executor_workers != max_workers):
+                owner._executor.shutdown(wait=False, cancel_futures=True)
+                owner._executor = None
+            if owner._executor is None:
+                owner._executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+                owner._executor_workers = max_workers
+            return owner._executor
 
     def _discard_executor(self, executor):
-        with self._executor_lock:
-            if self._executor is executor:
-                self._executor = None
-                self._executor_workers = None
+        owner = self._pool_owner
+        with owner._executor_lock:
+            if owner._executor is executor:
+                owner._executor = None
+                owner._executor_workers = None
         executor.shutdown(wait=False, cancel_futures=True)
 
     def shutdown(self):
         """Encerra o pool compartilhado (chamado ao fechar a janela)."""
-        with self._executor_lock:
-            executor, self._executor = self._executor, None
-            self._executor_workers = None
+        owner = self._pool_owner
+        with owner._executor_lock:
+            executor, owner._executor = owner._executor, None
+            owner._executor_workers = None
         if executor is not None:
             executor.shutdown(wait=False, cancel_futures=True)
 

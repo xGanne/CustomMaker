@@ -346,6 +346,9 @@ class TestGenerateCustoms(unittest.TestCase):
         main.batch_calls = []
 
         class FakeBatch:
+            def frozen(_self):
+                return _self
+
             def save_all_images(_self, out_dir, paths=None, **_kw):
                 main.batch_calls.append(("folder", out_dir, list(paths)))
                 return {"processed": len(paths), "errors": 0, "cancelled": False,
