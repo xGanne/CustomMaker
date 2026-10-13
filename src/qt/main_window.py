@@ -529,6 +529,12 @@ if QT_AVAILABLE:
         def on_canvas_state_changed(self, pos, size):
             if not self.current_path:
                 return
+            # o canvas reemite o estado ao exibir uma imagem e ao reposicionar a
+            # borda: só um enquadramento realmente diferente conta como ajuste
+            # (senão abrir/navegar já disparava o aviso de "não exportado")
+            current = self.editor_state.image_states.get(self.current_path)
+            if current and tuple(current["pos"]) == tuple(pos) and tuple(current["size"]) == tuple(size):
+                return
             self.editor_state.set_image_state(self.current_path, pos, size)
 
         def on_border_pos_changed(self, pos):

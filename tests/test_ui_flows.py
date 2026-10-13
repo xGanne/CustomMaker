@@ -146,6 +146,20 @@ class TestShortcutsDoNotStealTextKeys(unittest.TestCase):
         self.assertEqual(relative(first), before)
         self.assertEqual(es.borda_pos, self.window.image_canvas.border_pos)
 
+    def test_viewing_images_does_not_mark_them_unexported(self):
+        """Só ajustes de verdade disparam o aviso de "não exportado" ao sair."""
+        es = self.window.editor_state
+        self.window.navigate_images(1)
+        _wait_until(self.app, lambda: self.window._active_image_load_task_id is None)
+        self.window.resize(950, 680)
+        _wait_until(self.app, lambda: es.borda_pos == self.window.image_canvas.border_pos)
+        self.assertEqual(es.image_dirty, set())
+
+        item = self.window.image_canvas.image_item
+        item.setPos(item.pos().x() + 12, item.pos().y())
+        self.app.processEvents()
+        self.assertEqual(es.image_dirty, {self.window.current_path})
+
     def test_arrows_navigate_when_canvas_has_focus(self):
         self.window.image_canvas.setFocus()
         self.QTest.keyClick(self.window.image_canvas, compat.Qt.Key_Right)
