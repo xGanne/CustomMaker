@@ -9,10 +9,40 @@ from src.core.cache_manager import CacheManager
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 
 if QT_AVAILABLE:
-    from src.qt.compat import QAbstractItemView, QIcon, QImage, QListView, QListWidget, QListWidgetItem, QMenu, QPixmap, QSize, Qt, Signal
+    from src.qt.compat import (
+        QAbstractItemView,
+        QColor,
+        QIcon,
+        QListView,
+        QListWidget,
+        QListWidgetItem,
+        QMenu,
+        QPixmap,
+        QSize,
+        QStyledItemDelegate,
+        Qt,
+        Signal,
+    )
 
 
 logger = logging.getLogger(__name__)
+
+
+# M5: cor do filete lateral de cada card por classificação do Danbooru
+RATING_COLORS = {
+    "g": "#1FA971",  # geral
+    "s": "#E5C84A",  # sensível
+    "q": "#E7863D",  # questionável
+    "e": "#D94B5E",  # explícito
+}
+RATING_LABELS = {"g": "Geral", "s": "Sensível", "q": "Questionável", "e": "Explícito"}
+
+
+def rating_color(post):
+    """Cor hex do rating do post, ou None quando desconhecido."""
+    if not isinstance(post, dict):
+        return None
+    return RATING_COLORS.get(str(post.get("rating") or "").lower())
 
 
 class DanbooruSelectionState:
@@ -26,6 +56,33 @@ class DanbooruSelectionState:
 
 
 if QT_AVAILABLE:
+    class _RatingStripeDelegate(QStyledItemDelegate):
+        """M5: desenha um filete colorido na borda esquerda do card — a triagem
+        por rating fica visual em vez de depender da letra no texto."""
+
+        STRIPE_WIDTH = 4
+
+        def paint(self, painter, option, index):
+            super().paint(painter, option, index)
+            color = rating_color(index.data(Qt.UserRole))
+            if not color:
+                return
+            rect = option.rect
+            painter.save()
+            painter.setRenderHint(painter.RenderHint.Antialiasing)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(color))
+            painter.drawRoundedRect(
+                rect.left() + 1,
+                rect.top() + 4,
+                self.STRIPE_WIDTH,
+                max(0, rect.height() - 8),
+                2,
+                2,
+            )
+            painter.restore()
+
+
     class DanbooruResultsGrid(QListWidget):
         selection_count_changed = Signal(int)
         thumbnail_ready = Signal(int, object, object)
@@ -61,6 +118,7 @@ if QT_AVAILABLE:
             self.setGridSize(QSize(150, 182))
             self.setWordWrap(True)
             self.setSelectionMode(QAbstractItemView.MultiSelection)
+            self.setItemDelegate(_RatingStripeDelegate(self))
             self.itemSelectionChanged.connect(self._sync_selection_state)
             self.itemDoubleClicked.connect(self._on_double_click)  # A2
             self.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -231,7 +289,9 @@ if QT_AVAILABLE:
                 )
                 item = QListWidgetItem(QIcon(self._placeholder_pixmap()), self._build_item_text(post))
                 item.setData(Qt.UserRole, post)
-                item.setToolTip((post.get("tag_string", "") or "").replace(" ", ", "))
+                rating_label = RATING_LABELS.get(str(post.get("rating") or "").lower())
+                tags_tip = (post.get("tag_string", "") or "").replace(" ", ", ")
+                item.setToolTip(f"Classificação: {rating_label}\n{tags_tip}" if rating_label else tags_tip)
                 self.addItem(item)
                 if post.get("id") in self.selection_state.selected_post_ids:
                     item.setSelected(True)

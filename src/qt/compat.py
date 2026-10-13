@@ -38,6 +38,7 @@ try:
         QSpinBox,
         QSplitter,
         QStatusBar,
+        QStyledItemDelegate,
         QTabWidget,
         QTextEdit,
         QToolBar,
