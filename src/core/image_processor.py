@@ -199,6 +199,39 @@ class ImageProcessor:
         return new_w, new_h, pos_x, pos_y
 
     @staticmethod
+    def suggest_border_color(image):
+        """Cor de borda que combina com a imagem, em "#rrggbb".
+
+        Pega o matiz dominante entre os pixels vivos (saturados e não escuros),
+        ignorando fundos brancos/cinzas, e devolve uma versão viva e clara dele
+        para destacar na borda. Imagem sem cor (P&B) recebe um cinza claro.
+        """
+        small = image.convert("RGB")
+        small.thumbnail((96, 96))
+        hsv = np.asarray(small.convert("HSV"), dtype=np.float32).reshape(-1, 3) / 255.0
+        small.close()
+        hue, sat, val = hsv[:, 0], hsv[:, 1], hsv[:, 2]
+        vivid = (sat > 0.25) & (val > 0.25)
+        if vivid.sum() < max(20, hsv.shape[0] * 0.02):
+            return "#d9dde4"
+        # 24 faixas de matiz, cada pixel pesando pela saturação (cores mais
+        # vivas decidem mais); a faixa vencedora define o tom da borda
+        bins = 24
+        hist, edges = np.histogram(hue[vivid], bins=bins, range=(0.0, 1.0), weights=sat[vivid])
+        hist = hist + 0.5 * (np.roll(hist, 1) + np.roll(hist, -1))  # matiz é circular
+        best = int(np.argmax(hist))
+        lo, hi = edges[best], edges[best + 1]
+        in_bin = vivid & (hue >= lo) & (hue < hi)
+        if not in_bin.any():
+            in_bin = vivid
+        h = float(np.median(hue[in_bin]))
+        s = float(np.clip(np.median(sat[in_bin]) * 1.15, 0.45, 0.85))
+        v = float(np.clip(np.median(val[in_bin]) * 1.1, 0.75, 0.95))
+        import colorsys
+        r, g, b = colorsys.hsv_to_rgb(h, s, v)
+        return "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
+
+    @staticmethod
     def calculate_default_fit(image, borda_pos, mode="auto_fit", face_cascade=None):
         """M11: enquadramento aplicado a imagens ainda não enquadradas.
 

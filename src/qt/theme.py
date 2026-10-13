@@ -82,6 +82,7 @@ def build_stylesheet(variant=None):
     chevron_up = _chevron_icon_url("up", T["text_secondary"], variant)
     check_mark = _check_icon_url(T["on_accent"], variant)
     chevron_on_accent = _chevron_icon_url("down", T["on_accent"], variant, "-on-accent")
+    chevron_secondary = _chevron_icon_url("down", T["text_secondary"], variant, "-secondary")
     return f"""
 QWidget {{
     background-color: {T["surface_bg"]};
@@ -207,6 +208,17 @@ QPushButton::menu-indicator {{
     right: 10px;
     width: 10px;
     height: 7px;
+}}
+/* botões com menu reservam espaço para a seta, que não cobre o texto */
+QPushButton[hasMenu="true"] {{
+    padding-right: 22px;
+}}
+#OptionsBar QPushButton[hasMenu="true"] {{
+    padding-right: 22px;
+}}
+/* em botões secundários (fundo transparente) a seta usa a cor do texto */
+QPushButton[class="secondary"]::menu-indicator {{
+    image: url({chevron_secondary});
 }}
 QPushButton:disabled {{
     background-color: {T["surface_muted"]};

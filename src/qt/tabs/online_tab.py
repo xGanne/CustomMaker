@@ -253,6 +253,7 @@ if QT_AVAILABLE:
             )
             generate_menu.addAction("Salvar em pasta…", lambda: self.generate_customs("folder"))
             self.generate_button.setMenu(generate_menu)
+            self.generate_button.setProperty("hasMenu", "true")
 
             actions_row = QHBoxLayout()
             actions_row.setSpacing(6)

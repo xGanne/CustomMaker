@@ -318,6 +318,19 @@ if QT_AVAILABLE:
             self.options_color_edit.textChanged.connect(self._on_options_custom_color_changed)
             bar_layout.addWidget(self.options_color_edit)
 
+            # cor automática: borda que combina com cada custom
+            self.auto_border_button = QPushButton("Auto")
+            self.auto_border_button.setProperty("class", "secondary")
+            self.auto_border_button.setToolTip(
+                "Cor automática: escolhe uma borda que combina com o que aparece em cada custom"
+            )
+            auto_menu = QMenu(self.auto_border_button)
+            auto_menu.addAction("Nesta imagem", lambda: self.apply_auto_border(all_images=False))
+            auto_menu.addAction("Em todas as imagens", lambda: self.apply_auto_border(all_images=True))
+            self.auto_border_button.setMenu(auto_menu)
+            self.auto_border_button.setProperty("hasMenu", "true")
+            bar_layout.addWidget(self.auto_border_button)
+
             bar_layout.addSpacing(8)
             anim_label = QLabel("Animação:")
             anim_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)

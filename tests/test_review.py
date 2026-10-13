@@ -93,6 +93,15 @@ class TestReviewDialog(unittest.TestCase):
         self.assertIn("1 com problema", dialog.status.text())
         self.assertIn("⚠", dialog.grid.item(1).text())
 
+    def test_auto_border_sets_individual_custom_colors(self):
+        self.window.apply_auto_border(all_images=True)
+        hexes = self.window.editor_state.custom_borda_hex_individual
+        self.assertTrue(_wait(self.app, lambda: len(hexes) == len(self.paths)))
+        for path in self.paths:
+            self.assertEqual(self.window.editor_state.individual_bordas[path], "Cor Personalizada")
+        # vermelho, azul e verde puros: cada borda segue a sua imagem
+        self.assertEqual(len(set(hexes.values())), 3)
+
     def test_closing_while_rendering_is_safe(self):
         dialog = self.window.open_review()
         dialog.close()  # fecha antes da renderização terminar

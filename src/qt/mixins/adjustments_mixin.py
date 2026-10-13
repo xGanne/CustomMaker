@@ -231,6 +231,69 @@ class AdjustmentsMixin:
                 self.editor_state.set_image_state(path, pos, size)
         self.show_status(f"Enquadramento copiado para {len(image_list) - 1} imagem(ns).")
 
+    def apply_auto_border(self, all_images=False):
+        """Borda automática: cor que combina com o que aparece em cada custom.
+
+        Calculada sobre o recorte enquadrado (o que a borda envolve), não sobre
+        a imagem inteira, e aplicada como borda individual personalizada — o
+        export já sabe lidar, e dá para trocar à mão depois.
+        """
+        import shutil
+        import tempfile
+
+        from src.core.batch_worker import render_custom_crop
+
+        state = self.editor_state
+        paths = list(state.image_list) if all_images else ([self.current_path] if self.current_path else [])
+        if not paths:
+            self.show_warning("Cor automática", "Carregue uma imagem primeiro.")
+            return
+        batch = self.batch_controller.frozen()  # retrato do estado (GUI thread)
+
+        def task_fn(cancel_event, on_progress):
+            colors = {}
+            source_dir = tempfile.mkdtemp(prefix="custommaker_autoborder_")
+            try:
+                for index, path in enumerate(paths, start=1):
+                    if cancel_event and cancel_event.is_set():
+                        break
+                    try:
+                        data = batch._get_task_data(path, None, source_dir=source_dir)
+                        if data:
+                            crop = render_custom_crop(data)
+                            try:
+                                colors[path] = ImageProcessor.suggest_border_color(crop)
+                            finally:
+                                crop.close()
+                    except Exception:
+                        continue  # arquivo ilegível: mantém a borda atual
+                    if on_progress:
+                        on_progress(index, len(paths), f"Escolhendo cores... {index}/{len(paths)}")
+            finally:
+                shutil.rmtree(source_dir, ignore_errors=True)
+            return colors
+
+        def on_done(colors):
+            for path, color in colors.items():
+                if path in state.image_list:
+                    state.individual_bordas[path] = "Cor Personalizada"
+                    state.custom_borda_hex_individual[path] = color
+            self.refresh_current_canvas()
+            if hasattr(self, "refresh_list_indicators"):
+                self.refresh_list_indicators()
+            if len(paths) == 1 and colors:
+                self.show_status(f"Cor automática aplicada: {next(iter(colors.values()))}")
+            else:
+                self.show_status(f"Cor automática aplicada em {len(colors)} imagem(ns).")
+
+        self.run_task(
+            "qt_auto_border",
+            "Escolhendo cores de borda",
+            task_fn,
+            on_done=on_done,
+            maximum=max(1, len(paths)),
+        )
+
     def apply_style_to_all(self):
         image_list = self.editor_state.image_list or []
         if not image_list:

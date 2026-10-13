@@ -103,3 +103,36 @@ class TestDefaultFit(unittest.TestCase):
             ImageProcessor.calculate_default_fit(self.img, self.borda_pos, "intelligent", _FakeCascade(face=None)),
             auto,
         )
+
+
+class TestSuggestBorderColor(unittest.TestCase):
+    """Cor de borda automática: matiz dominante entre os pixels vivos."""
+
+    @staticmethod
+    def _hue(hex_color):
+        import colorsys
+        r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        return colorsys.rgb_to_hsv(r, g, b)[0] * 360
+
+    def _figure(self, background, figure):
+        image = Image.new("RGB", (300, 450), background)
+        ImageDraw.Draw(image).ellipse((50, 80, 250, 370), fill=figure)
+        return image
+
+    def test_ignores_white_background_and_follows_the_figure(self):
+        color = ImageProcessor.suggest_border_color(self._figure("white", (40, 170, 160)))
+        self.assertAlmostEqual(self._hue(color), 175, delta=15)  # teal
+
+    def test_dominant_vivid_hue_wins(self):
+        image = Image.new("RGB", (300, 450), (250, 220, 120))  # amarelo ocupa quase tudo
+        ImageDraw.Draw(image).rectangle((0, 0, 300, 60), fill=(60, 90, 220))
+        self.assertAlmostEqual(self._hue(ImageProcessor.suggest_border_color(image)), 45, delta=15)
+
+    def test_grayscale_image_gets_neutral_light_border(self):
+        self.assertEqual(ImageProcessor.suggest_border_color(Image.new("RGB", (100, 100), (128, 128, 128))), "#d9dde4")
+
+    def test_result_is_a_bright_visible_hex(self):
+        color = ImageProcessor.suggest_border_color(self._figure((20, 20, 25), (120, 20, 30)))  # vermelho escuro
+        self.assertRegex(color, r"^#[0-9a-f]{6}$")
+        brightness = max(int(color[i:i + 2], 16) for i in (1, 3, 5))
+        self.assertGreaterEqual(brightness, 0.74 * 255)  # clara o bastante (piso 0,75, com arredondamento)
