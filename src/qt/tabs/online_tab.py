@@ -855,7 +855,7 @@ if QT_AVAILABLE:
                 # o editor adota o mesmo enquadramento usado no export (sem
                 # marcar como "não exportado"), para a revisão bater com o resultado
                 for path, state in (export.get("generated_states") or {}).items():
-                    mw.editor_state.image_states.setdefault(path, state)
+                    mw.editor_state.set_auto_state(path, state["pos"], state["size"])
                 mw.add_images(paths, replace=False, select_last=True)
 
             errors = list(download.get("errors") or [])

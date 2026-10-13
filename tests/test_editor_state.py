@@ -54,3 +54,32 @@ class TestEditorState(unittest.TestCase):
 
         self.assertEqual(cfg.get("last_global_borda"), "Green")
         self.assertEqual(cfg.get("thumbnail_batch_size"), 8)
+
+
+class TestAutoFraming(unittest.TestCase):
+    """Enquadramento automático x ajuste do usuário."""
+
+    def test_auto_state_never_overrides_user_adjustment(self):
+        state = EditorState(image_list=["a.png"])
+        state.set_image_state("a.png", (5, 5), (100, 150))
+        self.assertFalse(state.set_auto_state("a.png", (0, 0), (1, 1)))
+        self.assertEqual(state.image_states["a.png"], {"pos": (5, 5), "size": (100, 150)})
+        self.assertEqual(state.user_adjusted, {"a.png"})
+
+    def test_auto_state_is_not_dirty_nor_adjusted_until_user_changes_it(self):
+        state = EditorState(image_list=["a.png"])
+        self.assertTrue(state.set_auto_state("a.png", (0, 0), (225, 350)))
+        self.assertEqual(state.image_dirty, set())
+        self.assertEqual(state.user_adjusted, set())
+        state.set_image_state("a.png", (3, 0), (225, 350))
+        self.assertEqual(state.user_adjusted, {"a.png"})
+        self.assertEqual(state.image_dirty, {"a.png"})
+
+    def test_remove_and_reset_forget_auto_framing(self):
+        state = EditorState(image_list=["a.png", "b.png"])
+        state.set_auto_state("a.png", (0, 0), (1, 1))
+        state.set_auto_state("b.png", (0, 0), (1, 1))
+        state.remove_image("a.png")
+        self.assertEqual(state.auto_framed, {"b.png"})
+        state.reset_images()
+        self.assertEqual(state.auto_framed, set())

@@ -8,12 +8,16 @@ Responsabilidades:
   • Adição/substituição de imagens na lista de trabalho
   • Pilha de undo por imagem (até 20 snapshots)
 """
+import logging
 import os
 
 from PIL import Image
 
 from src.config.settings import BORDA_HEX, SUPPORTED_EXTENSIONS
 from src.core.image_processor import ImageProcessor
+
+
+logger = logging.getLogger(__name__)
 
 
 class ImageLoaderMixin:
@@ -174,9 +178,11 @@ class ImageLoaderMixin:
             self._redo_stack_map().clear()
             self._clear_preview_cache()
 
+        new_paths = []
         for path in valid_paths:
             if path not in self.editor_state.image_list:
                 self.editor_state.image_list.append(path)
+                new_paths.append(path)
 
         self.image_list_panel.set_paths(self.editor_state.image_list)
 
@@ -189,6 +195,8 @@ class ImageLoaderMixin:
             self.image_canvas.clear_image()
             return
 
+        self._precompute_default_framing(new_paths)
+
         if select_last and valid_paths:
             target_index = self.editor_state.image_list.index(valid_paths[-1])
         elif self.editor_state.current_image_index is not None:
@@ -196,6 +204,60 @@ class ImageLoaderMixin:
         else:
             target_index = 0
         self.load_image(target_index)
+
+    # ── Enquadramento padrão calculado ao importar ─────────────────────────
+
+    _precompute_seq = 0
+
+    def _precompute_default_framing(self, paths):
+        """Calcula em segundo plano o enquadramento padrão das imagens novas.
+
+        Navegar e exportar passam a usar o mesmo enquadramento, já pronto. O
+        resultado é guardado relativo à borda (a janela pode ser redimensionada
+        durante o cálculo) e nunca sobrescreve um ajuste do usuário.
+        """
+        pending = [p for p in paths if p not in self.editor_state.image_states]
+        if not pending:
+            return
+        mode = self.editor_state.default_framing
+        face_cascade = self.face_cascade if mode == "intelligent" else None
+        reference = tuple(self.editor_state.borda_pos)
+        type(self)._precompute_seq += 1
+        task_id = f"qt_precompute_framing_{self._precompute_seq}"
+
+        def task_fn(cancel_event, _on_progress):
+            fits = {}
+            for path in pending:
+                if cancel_event and cancel_event.is_set():
+                    break
+                try:
+                    with Image.open(path) as source:
+                        # só a proporção e a posição do rosto importam aqui:
+                        # decodificar reduzido basta (JPEG) e é bem mais rápido
+                        source.draft(source.mode, (1000, 1000))
+                        image = source.convert("RGB")
+                    fit = ImageProcessor.calculate_default_fit(image, reference, mode, face_cascade)
+                    image.close()
+                except Exception as exc:  # arquivo ilegível: o editor tenta de novo ao abrir
+                    logger.debug("Enquadramento prévio falhou para %s: %s", path, exc)
+                    continue
+                if fit:
+                    new_w, new_h, pos_x, pos_y = fit
+                    fits[path] = ((pos_x - reference[0], pos_y - reference[1]), (new_w, new_h))
+            return fits
+
+        def on_done(fits):
+            bx, by = self.editor_state.borda_pos
+            changed = False
+            for path, ((rel_x, rel_y), size) in fits.items():
+                if path in self.editor_state.image_list:
+                    changed |= self.editor_state.set_auto_state(path, (bx + rel_x, by + rel_y), size)
+            if changed and hasattr(self, "refresh_list_indicators"):
+                self.refresh_list_indicators()
+
+        handle = self.task_runner.submit(task_id, task_fn)
+        if handle is not None:
+            handle.done.connect(on_done)
 
     def load_folder(self, folder=None):
         if not folder:
@@ -490,8 +552,8 @@ class ImageLoaderMixin:
         fit = default_fit or ImageProcessor.calculate_auto_fit_pos(image, self.editor_state.borda_pos)
         if fit:
             new_w, new_h, pos_x, pos_y = fit
-            state = {"pos": (pos_x, pos_y), "size": (new_w, new_h)}
+            pos, size = (pos_x, pos_y), (new_w, new_h)
         else:
-            state = {"pos": self.editor_state.borda_pos, "size": image.size}
-        self.editor_state.image_states[self.current_path] = state
-        return state
+            pos, size = self.editor_state.borda_pos, image.size
+        self.editor_state.set_auto_state(self.current_path, pos, size)
+        return self.editor_state.image_states[self.current_path]

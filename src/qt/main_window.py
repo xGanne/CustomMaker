@@ -685,9 +685,11 @@ if QT_AVAILABLE:
             menu.exec(self._folder_btn.mapToGlobal(pos))
 
         def refresh_list_indicators(self):
+            # só ajuste do usuário conta como "ajustada"; enquadramento padrão
+            # calculado automaticamente não pinta a lista
             self.image_list_panel.update_indicators(
                 set(self.edited_images.keys()),
-                set(self.editor_state.image_states.keys()),
+                self.editor_state.user_adjusted,
             )
             # M9: badge com a cor das imagens que têm borda individual
             state = self.editor_state

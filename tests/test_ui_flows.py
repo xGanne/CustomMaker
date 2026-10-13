@@ -160,6 +160,22 @@ class TestShortcutsDoNotStealTextKeys(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(es.image_dirty, {self.window.current_path})
 
+    def test_added_images_get_default_framing_in_background(self):
+        """Ao adicionar imagens, o enquadramento padrão é calculado antes de abri-las."""
+        es = self.window.editor_state
+        self.assertTrue(_wait_until(self.app, lambda: all(p in es.image_states for p in self.paths)))
+        self.assertEqual(es.auto_framed, set(self.paths))
+        self.assertEqual(es.user_adjusted, set())
+        self.assertEqual(es.image_dirty, set())
+        # na lista, nada aparece como "ajustado" (laranja) sem ajuste do usuário
+        item = self.window.image_list_panel.list_widget.item(2)
+        self.assertNotIn("Enquadramento ajustado", item.toolTip())
+
+        canvas_item = self.window.image_canvas.image_item
+        canvas_item.setPos(canvas_item.pos().x() + 8, canvas_item.pos().y())
+        self.app.processEvents()
+        self.assertEqual(es.user_adjusted, {self.window.current_path})
+
     def test_arrows_navigate_when_canvas_has_focus(self):
         self.window.image_canvas.setFocus()
         self.QTest.keyClick(self.window.image_canvas, compat.Qt.Key_Right)

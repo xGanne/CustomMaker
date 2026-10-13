@@ -27,6 +27,9 @@ class EditorState:
     borda_pos: Tuple[int, int] = (0, 0)
     image_dirty: Set[str] = field(default_factory=set)
     default_framing: str = "auto_fit"
+    # imagens cujo enquadramento atual foi calculado automaticamente (padrão),
+    # e não ajustado pelo usuário — a lista só destaca as ajustadas
+    auto_framed: Set[str] = field(default_factory=set)
 
     @property
     def current_image_path(self) -> Optional[str]:
@@ -56,6 +59,20 @@ class EditorState:
     def set_image_state(self, path: str, pos: Tuple[int, int], size: Tuple[int, int]) -> None:
         self.image_states[path] = {"pos": pos, "size": size}
         self.image_dirty.add(path)
+        self.auto_framed.discard(path)
+
+    def set_auto_state(self, path: str, pos: Tuple[int, int], size: Tuple[int, int]) -> bool:
+        """Grava um enquadramento automático só se a imagem ainda não tiver um
+        (nunca sobrescreve ajuste do usuário) e sem marcá-la como não exportada."""
+        if path in self.image_states:
+            return False
+        self.image_states[path] = {"pos": tuple(pos), "size": tuple(size)}
+        self.auto_framed.add(path)
+        return True
+
+    @property
+    def user_adjusted(self) -> Set[str]:
+        return set(self.image_states) - self.auto_framed
 
     def mark_pixels_edited(self, path: str) -> None:
         self.image_dirty.add(path)
@@ -63,6 +80,7 @@ class EditorState:
     def remove_image(self, path: str) -> None:
         self.image_states.pop(path, None)
         self.image_dirty.discard(path)
+        self.auto_framed.discard(path)
         self.individual_bordas.pop(path, None)
         self.custom_borda_hex_individual.pop(path, None)
         if path in self.image_list:
@@ -84,6 +102,7 @@ class EditorState:
         self.custom_borda_hex_individual.clear()
         self.uploaded_links.clear()
         self.image_dirty.clear()
+        self.auto_framed.clear()
 
 
 @dataclass

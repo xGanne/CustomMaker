@@ -333,7 +333,8 @@ class TestGenerateCustoms(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         main = FakeMainWindow(self.TaskRunner())
-        main.editor_state = SimpleNamespace(image_list=[], image_states={})
+        from src.core.editor_state import EditorState
+        main.editor_state = EditorState()
         main.ui_preferences = SimpleNamespace(last_folder=self.tmp)
         main.added, main.infos, main.links = [], [], []
         main.add_images = lambda paths, **_kw: main.added.extend(paths)
@@ -378,6 +379,9 @@ class TestGenerateCustoms(unittest.TestCase):
         self.assertEqual(self.main.added, expected)
         # o editor adota o enquadramento usado no export
         self.assertEqual(self.main.editor_state.image_states[expected[0]], {"pos": (1, 2), "size": (3, 4)})
+        # enquadramento automático: não conta como ajuste nem como "não exportado"
+        self.assertEqual(self.main.editor_state.user_adjusted, set())
+        self.assertEqual(self.main.editor_state.image_dirty, set())
         self.assertIn("2 custom(s) salva(s)", self.main.infos[-1])
 
     def test_imgchest_destination_copies_mudae_command(self):
