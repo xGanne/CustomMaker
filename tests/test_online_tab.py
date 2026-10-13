@@ -1,4 +1,5 @@
 import importlib
+import os
 import threading
 import time
 import unittest
@@ -198,6 +199,58 @@ class TestOnlineTabSearch(unittest.TestCase):
         self.assertTrue(self._wait_until(lambda: len(self.requests) == 2 and not self.tab._is_searching()))
         self.assertEqual(self.requests, [2, 1])
         self.assertEqual(self.tab.current_page, 1)
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestImportDownloadsLargeVersion(unittest.TestCase):
+    """Importar baixa a versão large (quando basta); "Baixar" mantém o original."""
+
+    @classmethod
+    def setUpClass(cls):
+        compat = importlib.import_module("src.qt.compat")
+        cls.app = compat.QApplication.instance() or compat.QApplication([])
+        cls.TaskRunner = importlib.import_module("src.qt.task_runner").QtTaskRunner
+
+    def setUp(self):
+        import tempfile
+        from types import SimpleNamespace
+        self.tmp = tempfile.mkdtemp()
+        self.main = FakeMainWindow(self.TaskRunner())
+        self.main.editor_state = SimpleNamespace(image_list=[])
+        self.main.ui_preferences = SimpleNamespace(last_folder=self.tmp)
+        self.main.added = []
+        self.main.add_images = lambda paths, **_kw: self.main.added.extend(paths)
+
+        def run_task(_task_id, _title, task_fn, on_done, **_kw):
+            on_done(task_fn(threading.Event(), None))
+
+        self.main.run_task = run_task
+        self.tab = online_module.OnlineTab(self.main)
+        self.urls = []
+        self.tab.client.download_image = lambda url: self.urls.append(url) or b"data"
+        self.post = {
+            "id": 42, "image_width": 3497, "image_height": 5000, "file_ext": "png",
+            "file_url": "https://cdn/original/42.png", "large_file_url": "https://cdn/sample/42.jpg",
+        }
+
+    def tearDown(self):
+        import shutil
+        self.tab.close()
+        self.tab.deleteLater()
+        self.app.processEvents()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_single_import_uses_large_and_jpg_name(self):
+        self.tab._import_single_post(self.post)
+        self.assertEqual(self.urls, ["https://cdn/sample/42.jpg"])
+        self.assertEqual([os.path.basename(p) for p in self.main.added], ["42.jpg"])
+
+    def test_batch_import_uses_large_but_download_keeps_original(self):
+        self.tab.selection_state.selected_posts_details[42] = self.post
+        self.tab._download_posts(self.tmp, import_after=True)
+        self.tab._download_posts(self.tmp, import_after=False)
+        self.assertEqual(self.urls, ["https://cdn/sample/42.jpg", "https://cdn/original/42.png"])
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "42.png")))
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")

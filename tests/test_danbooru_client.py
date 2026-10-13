@@ -204,3 +204,37 @@ class TestTagLimitAndBlacklist(unittest.TestCase):
                 client.search_posts("x")
         self.assertIn("422", str(ctx.exception))
         client.close()
+
+
+class TestImportSource(unittest.TestCase):
+    """Importar usa a versão large quando ela tem resolução suficiente."""
+
+    MIN = (450, 700)
+
+    def _post(self, w, h, ext="png", large="https://cdn/sample/x.jpg"):
+        return {
+            "image_width": w, "image_height": h, "file_ext": ext,
+            "file_url": f"https://cdn/original/x.{ext}", "large_file_url": large,
+        }
+
+    def test_tall_image_uses_large_with_its_own_extension(self):
+        from src.core.danbooru import import_source
+        url, ext = import_source(self._post(3497, 5000), self.MIN)
+        self.assertEqual((url, ext), ("https://cdn/sample/x.jpg", "jpg"))
+
+    def test_wide_image_falls_back_to_original(self):
+        from src.core.danbooru import import_source
+        # 4490x2480 -> large 850x469: menos de 700 de altura
+        url, ext = import_source(self._post(4490, 2480, ext="jpg"), self.MIN)
+        self.assertEqual((url, ext), ("https://cdn/original/x.jpg", "jpg"))
+
+    def test_small_image_uses_original(self):
+        from src.core.danbooru import import_source
+        post = self._post(683, 685, ext="jpg")
+        post["large_file_url"] = post["file_url"]
+        self.assertEqual(import_source(post, self.MIN)[0], post["file_url"])
+
+    def test_missing_dimensions_or_urls(self):
+        from src.core.danbooru import import_source
+        self.assertEqual(import_source({"file_url": "https://cdn/a.png"}, self.MIN), ("https://cdn/a.png", "png"))
+        self.assertEqual(import_source({}, self.MIN), (None, None))

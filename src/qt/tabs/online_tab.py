@@ -6,7 +6,8 @@ from io import BytesIO
 from PIL import Image
 
 from src.core.custom_scorer import metadata_score, visual_score
-from src.core.danbooru import DanbooruClient, filter_blacklisted, parse_tag_list
+from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
+from src.core.danbooru import DanbooruClient, filter_blacklisted, import_source, parse_tag_list
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
 from src.qt.dialogs.danbooru_gallery_dialog import DanbooruGalleryDialog
@@ -49,6 +50,9 @@ SORT_TAGS = {
 }
 
 _HISTORY_MAX = 15
+# resolução mínima da fonte importada: o dobro da custom, para sobrar margem
+# de zoom/corte no editor (abaixo disso importa o original)
+IMPORT_MIN_SIZE = (BORDA_WIDTH * 2, BORDA_HEIGHT * 2)
 # limite de paginação do Danbooru para contas comuns
 _MAX_PAGE = 1000
 
@@ -423,7 +427,7 @@ if QT_AVAILABLE:
                 self.main_window.show_warning("Importar", "Abra uma pasta na edição antes de importar imagens.")
                 return
 
-            file_url = post.get("file_url") or post.get("large_file_url") or post.get("sample_url")
+            file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
             if not file_url:
                 self.main_window.show_warning("Importar", f"Post #{post.get('id')}: URL não encontrada.")
                 return
@@ -434,7 +438,7 @@ if QT_AVAILABLE:
                 data = self.client.download_image(file_url)
                 if not data:
                     raise RuntimeError(f"Post #{post.get('id')}: download falhou.")
-                filename = f"{post.get('id')}.{post.get('file_ext', 'png')}"
+                filename = f"{post.get('id')}.{file_ext}"
                 path = os.path.join(target_dir, filename)
                 with open(path, "wb") as f:
                     f.write(data)
@@ -632,11 +636,17 @@ if QT_AVAILABLE:
                     if cancel_event.is_set():
                         return {"cancelled": True, "post_id": post.get("id")}
 
-                    file_url = post.get("file_url") or post.get("large_file_url") or post.get("sample_url")
+                    if import_after:
+                        # importar para editar: a versão large basta e é muito menor
+                        file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
+                    else:
+                        # "Baixar" para uma pasta: quem baixa explicitamente quer o original
+                        file_url = post.get("file_url") or post.get("large_file_url")
+                        file_ext = post.get("file_ext", "png")
                     if not file_url:
                         return {"error": f"Post {post.get('id')}: URL não encontrada."}
 
-                    filename = f"{post.get('id')}.{post.get('file_ext', 'png')}"
+                    filename = f"{post.get('id')}.{file_ext}"
                     target_path = os.path.join(target_dir, filename)
                     data = self.client.download_image(file_url)
                     if not data:

@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from urllib.parse import urlparse
 
@@ -8,6 +9,37 @@ from urllib3.util.retry import Retry
 
 
 logger = logging.getLogger(__name__)
+
+# Largura da versão "large" (sample) que o Danbooru gera para imagens maiores
+DANBOORU_SAMPLE_WIDTH = 850
+
+
+def import_source(post, min_size):
+    """URL e extensão a baixar para importar `post` como fonte de custom.
+
+    A versão "large" (850px de largura) costuma ser dezenas de vezes menor que
+    o original — num post de 4490x2480 foram 86 KB contra 5,2 MB. Ela é usada
+    sempre que cobre `min_size` (largura, altura); senão, como em imagens muito
+    largas onde o corte precisa de mais pixels na vertical, baixa o original.
+    """
+    file_url = post.get("file_url")
+    large_url = post.get("large_file_url")
+    width = post.get("image_width") or 0
+    height = post.get("image_height") or 0
+    chosen = None
+    if large_url and large_url != file_url and width and height:
+        if width > DANBOORU_SAMPLE_WIDTH:
+            large_w, large_h = DANBOORU_SAMPLE_WIDTH, height * DANBOORU_SAMPLE_WIDTH / width
+        else:
+            large_w, large_h = width, height
+        if large_w >= min_size[0] and large_h >= min_size[1]:
+            chosen = large_url
+    chosen = chosen or file_url or large_url
+    if not chosen:
+        return None, None
+    # a extensão vem da URL: a versão large de um PNG é JPG
+    ext = os.path.splitext(urlparse(chosen).path)[1].lstrip(".").lower()
+    return chosen, ext or (post.get("file_ext") or "png")
 
 
 def parse_tag_list(text):
