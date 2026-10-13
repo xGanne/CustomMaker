@@ -197,3 +197,5 @@ session_edits/
 test-report.xml
 pytest-output.txt
 selftest-report.txt
+imported_posts.json
+imported_posts.json.tmp

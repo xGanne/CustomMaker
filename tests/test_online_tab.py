@@ -6,6 +6,29 @@ import unittest
 
 
 online_module = importlib.import_module("src.qt.tabs.online_tab")
+
+_HISTORY_DIR = None
+_HISTORY_PATCH = None
+
+
+def setUpModule():
+    """O histórico de importação dos testes vai para uma pasta temporária, nunca
+    para o imported_posts.json real do usuário."""
+    global _HISTORY_DIR, _HISTORY_PATCH
+    import tempfile
+    from unittest.mock import patch
+    _HISTORY_DIR = tempfile.mkdtemp()
+    _HISTORY_PATCH = patch(
+        "src.core.import_history.app_data_path",
+        side_effect=lambda name: os.path.join(_HISTORY_DIR, name),
+    )
+    _HISTORY_PATCH.start()
+
+
+def tearDownModule():
+    import shutil
+    _HISTORY_PATCH.stop()
+    shutil.rmtree(_HISTORY_DIR, ignore_errors=True)
 QT_AVAILABLE = getattr(online_module, "QT_AVAILABLE", False)
 
 
@@ -265,6 +288,28 @@ class TestImportDownloadsLargeVersion(unittest.TestCase):
         self.tab._import_single_post(self.post)
         self.assertEqual(self.urls, ["https://cdn/sample/42.jpg"])
         self.assertEqual([os.path.basename(p) for p in self.main.added], ["42.jpg"])
+
+    def test_already_imported_post_is_reused_without_downloading(self):
+        self.tab._import_single_post(self.post)
+        self.assertEqual(len(self.urls), 1)
+        first_path = self.main.added[-1]
+        # segunda vez: mesmo arquivo, sem download
+        self.tab._import_single_post(self.post)
+        self.assertEqual(len(self.urls), 1)
+        self.assertEqual(self.main.added[-1], first_path)
+        # em lote também reaproveita
+        self.tab.selection_state.selected_posts_details[42] = self.post
+        self.tab._download_posts(self.tmp, import_after=True)
+        self.assertEqual(len(self.urls), 1)
+        self.assertTrue(any("reaproveitado" in s for s in self.main.statuses))
+
+    def test_grid_marks_imported_posts(self):
+        self.tab.results_grid.display_posts([self.post, dict(self.post, id=43)])
+        self.assertNotIn("importado", self.tab.results_grid.item(0).text())
+        self.tab._import_single_post(self.post)
+        self.assertIn("✓ importado", self.tab.results_grid.item(0).text())
+        self.assertIn("Já importado", self.tab.results_grid.item(0).toolTip())
+        self.assertNotIn("importado", self.tab.results_grid.item(1).text())
 
     def test_video_posts_are_skipped_when_importing_but_not_when_downloading(self):
         video = {"id": 9, "file_ext": "mp4", "file_url": "https://cdn/9.mp4", "large_file_url": "https://cdn/9.mp4"}

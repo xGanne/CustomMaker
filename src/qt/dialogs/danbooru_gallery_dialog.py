@@ -20,6 +20,7 @@ if QT_AVAILABLE:
             exclude_tags=None,
             has_next_page=None,
             page_size=20,
+            imported_lookup=None,
             selection_state=None,
             parent=None,
             title="Galeria Expandida",
@@ -53,7 +54,9 @@ if QT_AVAILABLE:
             layout = QVBoxLayout(self)
             layout.setSpacing(6)
 
-            self.grid = DanbooruResultsGrid(app_config, client, self, selection_state=selection_state)
+            self.grid = DanbooruResultsGrid(
+                app_config, client, self, selection_state=selection_state, imported_lookup=imported_lookup
+            )
             # Tamanhos absolutos: a janela expandida é larga, então não deve
             # herdar os cards compactos do painel lateral.
             from src.qt.compat import QSize

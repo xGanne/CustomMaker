@@ -8,6 +8,7 @@ from PIL import Image
 
 from src.core.custom_scorer import metadata_score, visual_score
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
+from src.core.import_history import ImportHistory
 from src.core.danbooru import DanbooruClient, filter_blacklisted, import_source, is_image_post, parse_tag_list
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
@@ -95,6 +96,7 @@ if QT_AVAILABLE:
             self._expanded_dialog = None
             self._image_viewers = []  # F21: todos os viewers abertos
             self.selection_state = DanbooruSelectionState()
+            self.import_history = ImportHistory()
 
             layout = QVBoxLayout(self)
             layout.setContentsMargins(8, 8, 8, 8)
@@ -172,6 +174,7 @@ if QT_AVAILABLE:
                 self.client,
                 result_group,
                 selection_state=self.selection_state,
+                imported_lookup=self.import_history.get,
             )
             self.results_grid.setMinimumHeight(210)
             self.results_grid.selection_count_changed.connect(self._on_selection_count_changed)
@@ -486,6 +489,11 @@ if QT_AVAILABLE:
             if not is_image_post(post):
                 self.main_window.show_warning("Importar", self._not_an_image_message(post))
                 return
+            existing = self.import_history.get(post.get("id"))
+            if existing:
+                self.main_window.add_images([existing], replace=False, select_last=True)
+                self.main_window.show_status(f"Já importado — reaproveitado: {existing}", timeout_ms=8000)
+                return
             file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
             if not file_url:
                 self.main_window.show_warning("Importar", f"Post #{post.get('id')}: URL não encontrada.")
@@ -501,11 +509,14 @@ if QT_AVAILABLE:
                 path = os.path.join(target_dir, filename)
                 with open(path, "wb") as f:
                     f.write(data)
+                self.import_history.record(post.get("id"), path)
+                self.import_history.save()
                 if on_progress:
                     on_progress(1, 1, "Concluído.")
                 return {"path": path}
 
             def on_done(result):
+                self.results_grid.refresh_imported_marks()
                 self.main_window.add_images([result["path"]], replace=False, select_last=True)
                 self.main_window.show_status(f"Importado: {result['path']}", timeout_ms=8000)
 
@@ -717,6 +728,10 @@ if QT_AVAILABLE:
                 if for_editing:
                     if not is_image_post(post):
                         return {"error": self._not_an_image_message(post)}
+                    existing = self.import_history.get(post.get("id"))
+                    if existing:
+                        # já importado e o arquivo ainda existe: não baixa de novo
+                        return {"path": existing, "reused": True}
                     # importar para editar: a versão large basta e é muito menor
                     file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
                 else:
@@ -734,12 +749,15 @@ if QT_AVAILABLE:
 
                 with open(target_path, "wb") as file_obj:
                     file_obj.write(data)
+                if for_editing:
+                    self.import_history.record(post.get("id"), target_path)
                 return {"path": target_path}
 
             def ordered_paths():
                 return [indexed_paths[i] for i in sorted(indexed_paths)]
 
             processed = 0
+            reused = 0
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=max_workers,
                 thread_name_prefix="danbooru_dl",
@@ -758,6 +776,7 @@ if QT_AVAILABLE:
 
                     if result.get("path"):
                         indexed_paths[futures[future]] = result["path"]
+                        reused += bool(result.get("reused"))
                     elif result.get("error"):
                         errors.append(result["error"])
 
@@ -765,9 +784,11 @@ if QT_AVAILABLE:
                         on_progress(processed, total, f"Baixado {processed}/{total}")
 
                     if cancel_event.is_set():
-                        return {"cancelled": True, "paths": ordered_paths(), "errors": errors}
+                        self.import_history.save()
+                        return {"cancelled": True, "paths": ordered_paths(), "errors": errors, "reused": reused}
 
-            return {"cancelled": False, "paths": ordered_paths(), "errors": errors}
+            self.import_history.save()
+            return {"cancelled": False, "paths": ordered_paths(), "errors": errors, "reused": reused}
 
         def _download_posts(self, target_dir, import_after=False):
             selected_posts = self._selected_posts()
@@ -785,9 +806,12 @@ if QT_AVAILABLE:
                 if errors:
                     self.main_window.show_warning("Danbooru", "\n".join(errors[:10]))
                 if import_after and result.get("paths"):
+                    self.results_grid.refresh_imported_marks()
                     self.main_window.add_images(result["paths"], replace=False, select_last=True)
+                reused = result.get("reused") or 0
+                reused_text = f" ({reused} já importado(s), reaproveitado(s) sem baixar)" if reused else ""
                 self.main_window.show_status(
-                    f"Download concluído: {len(result.get('paths') or [])} arquivo(s) em {target_dir}",
+                    f"Download concluído: {len(result.get('paths') or [])} arquivo(s) em {target_dir}{reused_text}",
                     timeout_ms=8000,
                 )
 
@@ -865,6 +889,7 @@ if QT_AVAILABLE:
             paths = download.get("paths") or []
             mw = self.main_window
             if paths:
+                self.results_grid.refresh_imported_marks()
                 # o editor adota o mesmo enquadramento usado no export (sem
                 # marcar como "não exportado"), para a revisão bater com o resultado
                 for path, state in (export.get("generated_states") or {}).items():
@@ -952,7 +977,10 @@ if QT_AVAILABLE:
             # sem worker. Só o refinamento visual (que baixa imagem) vai para
             # a task em background.
             # vídeos/ugoira não viram custom: fora da disputa
-            ranked = sorted((p for p in self.posts if is_image_post(p)), key=metadata_score, reverse=True)
+            candidates = [p for p in self.posts if is_image_post(p)]
+            fresh = [p for p in candidates if not self.import_history.get(p.get("id"))]
+            # prefere o que ainda não foi importado; se tudo já foi, usa todos
+            ranked = sorted(fresh or candidates, key=metadata_score, reverse=True)
             shortlist_size = min(len(ranked), max(count * 2, count + 5))
             shortlist = ranked[:shortlist_size]
             face_cascade = self.main_window.face_cascade
@@ -1018,6 +1046,7 @@ if QT_AVAILABLE:
                 exclude_tags=self._active_blacklist,
                 has_next_page=self._has_next_page,
                 page_size=self._page_size,
+                imported_lookup=self.import_history.get,
                 selection_state=self.selection_state,
                 parent=self,
                 title=f"Galeria Expandida - {self._active_query_label or 'Danbooru'}",

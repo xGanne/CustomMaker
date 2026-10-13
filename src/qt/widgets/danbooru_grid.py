@@ -90,8 +90,10 @@ if QT_AVAILABLE:
         image_open_requested = Signal(object)
         image_import_requested = Signal(object)  # A2: double-click to import
 
-        def __init__(self, app_config, client, parent=None, selection_state=None):
+        def __init__(self, app_config, client, parent=None, selection_state=None, imported_lookup=None):
             super().__init__(parent)
+            # post_id -> arquivo local, se o post já foi importado (marca o card)
+            self.imported_lookup = imported_lookup
             self.app_config = app_config
             self.client = client
             self.selection_state = selection_state or DanbooruSelectionState()
@@ -293,9 +295,7 @@ if QT_AVAILABLE:
                 )
                 item = QListWidgetItem(QIcon(self._placeholder_pixmap()), self._build_item_text(post))
                 item.setData(Qt.UserRole, post)
-                rating_label = RATING_LABELS.get(str(post.get("rating") or "").lower())
-                tags_tip = (post.get("tag_string", "") or "").replace(" ", ", ")
-                item.setToolTip(f"Classificação: {rating_label}\n{tags_tip}" if rating_label else tags_tip)
+                self._decorate_item(item, post)
                 self.addItem(item)
                 if post.get("id") in self.selection_state.selected_post_ids:
                     item.setSelected(True)
@@ -303,6 +303,28 @@ if QT_AVAILABLE:
                     self._queue_thumbnail_load(item, preview_url, generation)
             self._syncing_selection = False
             self._sync_selection_state()
+
+        def _decorate_item(self, item, post):
+            """Texto e tooltip do card, com a marca de "já importado"."""
+            rating_label = RATING_LABELS.get(str(post.get("rating") or "").lower())
+            tags_tip = (post.get("tag_string", "") or "").replace(" ", ", ")
+            tooltip = f"Classificação: {rating_label}\n{tags_tip}" if rating_label else tags_tip
+            text = self._build_item_text(post)
+            imported = self.imported_lookup(post.get("id")) if self.imported_lookup else None
+            if imported:
+                first, _, rest = text.partition("\n")
+                text = f"{first}  ✓ importado" + (f"\n{rest}" if rest else "")
+                tooltip = f"Já importado: {imported}\n\n{tooltip}"
+            item.setText(text)
+            item.setToolTip(tooltip)
+
+        def refresh_imported_marks(self):
+            """Atualiza as marcas de "já importado" sem recarregar a grade."""
+            for index in range(self.count()):
+                item = self.item(index)
+                post = item.data(Qt.UserRole) if item else None
+                if post:
+                    self._decorate_item(item, post)
 
         def _load_thumbnail_image(self, url):
             memory = self._get_memory_copy(url)
