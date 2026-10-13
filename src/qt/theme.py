@@ -28,8 +28,27 @@ def tokens():
     return UI_THEMES[_active_variant]
 
 
+def _svg_icon_url(name, svg):
+    """Grava (uma vez) um ícone SVG do tema em .ui/ e devolve a URL para o QSS."""
+    try:
+        target_dir = app_data_path(".ui")
+        os.makedirs(target_dir, exist_ok=True)
+        path = os.path.join(target_dir, f"{name}.svg")
+        existing = None
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as file_obj:
+                existing = file_obj.read()
+        if existing != svg:
+            with open(path, "w", encoding="utf-8") as file_obj:
+                file_obj.write(svg)
+        return path.replace("\\", "/")
+    except OSError as exc:
+        logger.debug("Não foi possível gerar o ícone '%s': %s", name, exc)
+        return ""
+
+
 def _chevron_icon_url(direction, color, variant):
-    """Gera (uma vez) o chevron de combos/spinboxes como SVG e devolve a URL.
+    """Chevron de combos/spinboxes como SVG.
 
     O truque CSS de "triângulo por bordas" não funciona no Qt — ele desenha um
     retângulo. Um SVG real é o caminho previsível.
@@ -41,21 +60,18 @@ def _chevron_icon_url(direction, color, variant):
         'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
         "</svg>"
     )
-    try:
-        target_dir = app_data_path(".ui")
-        os.makedirs(target_dir, exist_ok=True)
-        path = os.path.join(target_dir, f"chevron-{direction}-{variant}.svg")
-        existing = None
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as file_obj:
-                existing = file_obj.read()
-        if existing != svg:
-            with open(path, "w", encoding="utf-8") as file_obj:
-                file_obj.write(svg)
-        return path.replace("\\", "/")
-    except OSError as exc:
-        logger.debug("Não foi possível gerar o chevron '%s': %s", direction, exc)
-        return ""
+    return _svg_icon_url(f"chevron-{direction}-{variant}", svg)
+
+
+def _check_icon_url(color, variant):
+    """Marca de seleção desenhada dentro do indicador de QCheckBox marcado."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10">'
+        f'<path d="M2 5.2 L4.2 7.4 L8.2 2.8" fill="none" stroke="{color}" '
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+        "</svg>"
+    )
+    return _svg_icon_url(f"check-{variant}", svg)
 
 
 def build_stylesheet(variant=None):
@@ -64,6 +80,7 @@ def build_stylesheet(variant=None):
     T = UI_THEMES[variant]
     chevron_down = _chevron_icon_url("down", T["text_secondary"], variant)
     chevron_up = _chevron_icon_url("up", T["text_secondary"], variant)
+    check_mark = _check_icon_url(T["on_accent"], variant)
     return f"""
 QWidget {{
     background-color: {T["surface_bg"]};
@@ -79,6 +96,31 @@ QMainWindow, QDialog {{
    o fundo global (mais escuro) aparecia como uma faixa retangular. */
 QLabel, QCheckBox, QRadioButton {{
     background: transparent;
+}}
+
+/* ── Checkboxes ───────────────────────────────────────────── */
+/* Sem estilo próprio o indicador desmarcado ficava invisível sobre o fundo */
+QCheckBox {{
+    spacing: 6px;
+    color: {T["text_secondary"]};
+}}
+QCheckBox::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {T["border_strong"]};
+    border-radius: 4px;
+    background-color: {T["surface_muted"]};
+}}
+QCheckBox::indicator:hover {{
+    border-color: {T["accent"]};
+}}
+QCheckBox::indicator:checked {{
+    background-color: {T["accent"]};
+    border-color: {T["accent"]};
+    image: url({check_mark});
+}}
+QCheckBox:checked {{
+    color: {T["text_primary"]};
 }}
 
 /* ── Group boxes ──────────────────────────────────────────── */
