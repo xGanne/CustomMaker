@@ -8,7 +8,14 @@
 
 **Plano concluído: F1–F22 e M1–M22 implementados**, cada item em um commit próprio
 (`fix(Fn)`, `feat(Mn)`, `perf(M15)`, `build(M22)`, `refactor(M14)`, `test(M18)`).
-Suíte atual: **150 testes, todos passando** (com as dependências de `requirements.txt` instaladas).
+Suíte atual: **159 testes, todos passando** (com as dependências de `requirements.txt` instaladas).
+
+Acabamentos feitos na revisão final, para cumprir a proposta de cada item à risca:
+**M1** (ajuste em lote também vai para a status bar), **M2** ("Não perguntar novamente"),
+**M17** (botões de ajuste inteligente desabilitados sem o cascade) e **F6** (botão "Abrir .env"
+e releitura do token sem reiniciar). Ficaram com implementação diferente da sugerida, por
+decisão: **F10** (rotação a partir do original em resolução plena, não como metadado) e
+**M8** ("Ajustar à borda" é o Auto Fit/Alt+B já existente, sem botão duplicado).
 
 Primeira rodada (2026-07-18): F1–F22, M1, M2, M3, M6, M12, M13, M17, M19, M20, M21.
 Extras: redo com Ctrl+Y/Ctrl+Shift+Z (F15) e tecla **B** para o antes/depois (F17).
