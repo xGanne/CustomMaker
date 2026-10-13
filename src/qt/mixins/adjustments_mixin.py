@@ -37,6 +37,11 @@ class AdjustmentsMixin:
         if image is None or not self.current_path:
             self.show_warning("Ajuste", "Carregue uma imagem primeiro.")
             return
+        if self.face_cascade is None:
+            # M17: o atalho Alt+F continua ativo mesmo com o botão desabilitado
+            self.show_status("Detecção de rosto indisponível — aplicando auto fit.")
+            self.apply_auto_fit(push_undo=push_undo)
+            return
         if push_undo:
             self.save_state_for_undo()
         face = ImageProcessor.detect_anime_face(image, self.face_cascade)

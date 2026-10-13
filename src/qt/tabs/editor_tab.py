@@ -65,14 +65,14 @@ if QT_AVAILABLE:
             auto_fit_all_btn.setProperty("class", "secondary")
             auto_fit_all_btn.setToolTip("Auto fit em todas as imagens da lista  (Alt+B na imagem atual)")
             auto_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("auto_fit"))
-            smart_fit_all_btn = QPushButton("Inteligente")
-            smart_fit_all_btn.setProperty("class", "secondary")
-            smart_fit_all_btn.setToolTip(
+            self.smart_fit_all_btn = QPushButton("Inteligente")
+            self.smart_fit_all_btn.setProperty("class", "secondary")
+            self.smart_fit_all_btn.setToolTip(
                 "Ajuste inteligente (centraliza o rosto) em todas as imagens  (Alt+F na imagem atual)"
             )
-            smart_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("intelligent_fit"))
+            self.smart_fit_all_btn.clicked.connect(lambda: self.main_window.apply_adjustment_to_all("intelligent_fit"))
             fit_row1.addWidget(auto_fit_all_btn, 1)
-            fit_row1.addWidget(smart_fit_all_btn, 1)
+            fit_row1.addWidget(self.smart_fit_all_btn, 1)
 
             copy_frame_btn = QPushButton("Copiar Enquadramento para Todas")
             copy_frame_btn.setProperty("class", "secondary")

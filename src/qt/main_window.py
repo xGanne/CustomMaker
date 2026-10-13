@@ -134,6 +134,7 @@ if QT_AVAILABLE:
             if self.face_cascade is None:
                 # M17: sem o cascade, "Ajuste Inteligente" silenciosamente vira
                 # auto fit — avisar uma vez em vez de esconder a degradação
+                self._mark_face_detection_unavailable()
                 self.show_status(
                     "Detecção de rosto indisponível (lbpcascade_animeface.xml não carregado) — "
                     "o Ajuste Inteligente usará auto fit.",
@@ -141,6 +142,17 @@ if QT_AVAILABLE:
                 )
             else:
                 self.show_status("UI Qt pronta.")
+
+        FACE_DETECTION_UNAVAILABLE_TIP = (
+            "Indisponível: lbpcascade_animeface.xml não foi encontrado, "
+            "então não há detecção de rosto. Use o Auto Fit."
+        )
+
+        def _mark_face_detection_unavailable(self):
+            """M17: desabilita e explica os botões que dependem da detecção de rosto."""
+            for button in (self._toolbar_smart_fit_btn, self.editor_tab.smart_fit_all_btn):
+                button.setEnabled(False)
+                button.setToolTip(self.FACE_DETECTION_UNAVAILABLE_TIP)
 
         # ── Ícone da janela ────────────────────────────────────────────────
 
@@ -251,7 +263,8 @@ if QT_AVAILABLE:
             toolbar.addWidget(_tool_btn("arrow-uturn-left", "Desfazer", self.undo_current_image, "Ctrl+Z"))
             toolbar.addSeparator()
             toolbar.addWidget(_tool_btn("arrows-pointing-out", "Auto Fit", self.apply_auto_fit, "Alt+B"))
-            toolbar.addWidget(_tool_btn("face-smile", "Ajuste Inteligente", self.apply_intelligent_fit, "Alt+F"))
+            self._toolbar_smart_fit_btn = _tool_btn("face-smile", "Ajuste Inteligente", self.apply_intelligent_fit, "Alt+F")
+            toolbar.addWidget(self._toolbar_smart_fit_btn)
             toolbar.addWidget(_tool_btn("magnifying-glass", "Zoom 100%", self.zoom_to_actual_size, "Ctrl+0"))
             toolbar.addSeparator()
             self._toolbar_pick_btn = _tool_btn(

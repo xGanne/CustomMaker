@@ -190,6 +190,42 @@ class TestExitConfirmation(unittest.TestCase):
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestFaceDetectionUnavailable(unittest.TestCase):
+    """M17: sem o cascade, os botões de ajuste inteligente ficam desabilitados."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _app()
+
+    def _window(self, cascade):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for patcher in (
+            patch("src.core.app_config.CONFIG_FILE", os.path.join(tmp, "config.json")),
+            patch("src.core.preset_manager.PRESETS_FILE", os.path.join(tmp, "presets.json")),
+            patch("src.qt.main_window.ImageProcessor.load_face_cascade", return_value=cascade),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        from src.core.app_config import AppConfig
+        from src.qt.main_window import QtMainWindow
+        window = QtMainWindow(AppConfig())
+        self.addCleanup(window.deleteLater)
+        return window
+
+    def test_buttons_disabled_and_explained_without_cascade(self):
+        window = self._window(None)
+        for button in (window._toolbar_smart_fit_btn, window.editor_tab.smart_fit_all_btn):
+            self.assertFalse(button.isEnabled())
+            self.assertIn("lbpcascade_animeface.xml", button.toolTip())
+
+    def test_buttons_enabled_with_cascade(self):
+        window = self._window(object())
+        self.assertTrue(window._toolbar_smart_fit_btn.isEnabled())
+        self.assertTrue(window.editor_tab.smart_fit_all_btn.isEnabled())
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
 class TestListThumbnailsOnGuiThread(unittest.TestCase):
     """F1: QPixmap/QIcon da lista só são criados na GUI thread."""
 
