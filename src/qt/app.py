@@ -14,6 +14,20 @@ if QT_AVAILABLE:
 logger = logging.getLogger(__name__)
 
 
+def install_qt_translations(app):
+    """Botões e diálogos padrão do Qt (Sim/Não, Salvar/Cancelar, Fechar,
+    seletor de arquivos) em português — sem isto apareciam em inglês no meio
+    da interface pt-BR. Se o arquivo de tradução faltar, segue em inglês."""
+    from PySide6.QtCore import QLibraryInfo, QTranslator
+
+    translator = QTranslator(app)
+    if translator.load("qtbase_pt_BR", QLibraryInfo.path(QLibraryInfo.TranslationsPath)):
+        app.installTranslator(translator)
+        return True
+    logger.info("Tradução pt_BR do Qt não encontrada; botões padrão ficam em inglês.")
+    return False
+
+
 def main():
     if not QT_AVAILABLE:
         raise qt_unavailable_error()
@@ -33,6 +47,7 @@ def main():
 
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Custom Maker Pro")
+    install_qt_translations(app)
     app.setFont(QFont("Segoe UI", 10))
     # M7: o tema precisa estar ativo antes da janela — widgets leem as cores
     # do tema na construção

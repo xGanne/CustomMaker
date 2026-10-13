@@ -81,5 +81,24 @@ class TestThemeConfig(unittest.TestCase):
         self.assertEqual(self._load({"ui_theme_variant": "rosa"}).get("ui_theme_variant"), DEFAULT_THEME_VARIANT)
 
 
+class TestQtTranslations(unittest.TestCase):
+    def test_standard_buttons_are_translated_to_portuguese(self):
+        import importlib
+        compat = importlib.import_module("src.qt.compat")
+        if not compat.QT_AVAILABLE:
+            self.skipTest("PySide6 not installed")
+        from src.qt.app import install_qt_translations
+        app = compat.QApplication.instance() or compat.QApplication([])
+        self.assertTrue(install_qt_translations(app))
+        from PySide6.QtCore import QTranslator
+        for translator in app.findChildren(QTranslator):  # não vazar para outros testes
+            self.addCleanup(app.removeTranslator, translator)
+        box = compat.QMessageBox()
+        box.setStandardButtons(compat.QMessageBox.Yes | compat.QMessageBox.No)
+        labels = {box.button(compat.QMessageBox.Yes).text().replace("&", ""),
+                  box.button(compat.QMessageBox.No).text().replace("&", "")}
+        self.assertEqual(labels, {"Sim", "Não"})
+
+
 if __name__ == "__main__":
     unittest.main()
