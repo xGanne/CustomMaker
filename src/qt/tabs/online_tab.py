@@ -671,6 +671,74 @@ if QT_AVAILABLE:
             self.results_grid.display_posts(self._posts_with_selected_thumbnails(self.posts))
             self._update_selection_summary(count)
 
+        def _download_post_files(self, posts, target_dir, cancel_event, on_progress, for_editing=True):
+            """Baixa `posts` em paralelo para `target_dir` (roda em worker).
+
+            Devolve {"cancelled", "paths", "errors"} com os paths na ordem de
+            `posts` (F5). `for_editing` baixa a versão large quando ela basta.
+            """
+            indexed_paths = {}
+            errors = []
+            total = len(posts)
+            max_workers = max(1, min(total, self._resolve_download_workers()))
+
+            def download_one(post):
+                if cancel_event.is_set():
+                    return {"cancelled": True, "post_id": post.get("id")}
+
+                if for_editing:
+                    # importar para editar: a versão large basta e é muito menor
+                    file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
+                else:
+                    # "Baixar" para uma pasta: quem baixa explicitamente quer o original
+                    file_url = post.get("file_url") or post.get("large_file_url")
+                    file_ext = post.get("file_ext", "png")
+                if not file_url:
+                    return {"error": f"Post {post.get('id')}: URL não encontrada."}
+
+                filename = f"{post.get('id')}.{file_ext}"
+                target_path = os.path.join(target_dir, filename)
+                data = self.client.download_image(file_url)
+                if not data:
+                    return {"error": f"Post {post.get('id')}: download vazio."}
+
+                with open(target_path, "wb") as file_obj:
+                    file_obj.write(data)
+                return {"path": target_path}
+
+            def ordered_paths():
+                return [indexed_paths[i] for i in sorted(indexed_paths)]
+
+            processed = 0
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers,
+                thread_name_prefix="danbooru_dl",
+            ) as executor:
+                futures = {
+                    executor.submit(download_one, post): index
+                    for index, post in enumerate(posts)
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    processed += 1
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        errors.append(str(exc))
+                        result = {}
+
+                    if result.get("path"):
+                        indexed_paths[futures[future]] = result["path"]
+                    elif result.get("error"):
+                        errors.append(result["error"])
+
+                    if on_progress:
+                        on_progress(processed, total, f"Baixado {processed}/{total}")
+
+                    if cancel_event.is_set():
+                        return {"cancelled": True, "paths": ordered_paths(), "errors": errors}
+
+            return {"cancelled": False, "paths": ordered_paths(), "errors": errors}
+
         def _download_posts(self, target_dir, import_after=False):
             selected_posts = self._selected_posts()
             if not selected_posts:
@@ -678,68 +746,9 @@ if QT_AVAILABLE:
                 return
 
             def task_fn(cancel_event, on_progress):
-                indexed_paths = {}
-                errors = []
-                total = len(selected_posts)
-                max_workers = min(total, self._resolve_download_workers())
-
-                def download_one(post):
-                    if cancel_event.is_set():
-                        return {"cancelled": True, "post_id": post.get("id")}
-
-                    if import_after:
-                        # importar para editar: a versão large basta e é muito menor
-                        file_url, file_ext = import_source(post, IMPORT_MIN_SIZE)
-                    else:
-                        # "Baixar" para uma pasta: quem baixa explicitamente quer o original
-                        file_url = post.get("file_url") or post.get("large_file_url")
-                        file_ext = post.get("file_ext", "png")
-                    if not file_url:
-                        return {"error": f"Post {post.get('id')}: URL não encontrada."}
-
-                    filename = f"{post.get('id')}.{file_ext}"
-                    target_path = os.path.join(target_dir, filename)
-                    data = self.client.download_image(file_url)
-                    if not data:
-                        return {"error": f"Post {post.get('id')}: download vazio."}
-
-                    with open(target_path, "wb") as file_obj:
-                        file_obj.write(data)
-                    return {"path": target_path}
-
-                def ordered_paths():
-                    # ordena pela ordem de seleção, não pela ordem de conclusão (F5)
-                    return [indexed_paths[i] for i in sorted(indexed_paths)]
-
-                processed = 0
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=max_workers,
-                    thread_name_prefix="danbooru_dl",
-                ) as executor:
-                    futures = {
-                        executor.submit(download_one, post): index
-                        for index, post in enumerate(selected_posts)
-                    }
-                    for future in concurrent.futures.as_completed(futures):
-                        processed += 1
-                        try:
-                            result = future.result()
-                        except Exception as exc:
-                            errors.append(str(exc))
-                            result = {}
-
-                        if result.get("path"):
-                            indexed_paths[futures[future]] = result["path"]
-                        elif result.get("error"):
-                            errors.append(result["error"])
-
-                        if on_progress:
-                            on_progress(processed, total, f"Baixado {processed}/{total}")
-
-                        if cancel_event.is_set():
-                            return {"cancelled": True, "paths": ordered_paths(), "errors": errors}
-
-                return {"cancelled": False, "paths": ordered_paths(), "errors": errors}
+                return self._download_post_files(
+                    selected_posts, target_dir, cancel_event, on_progress, for_editing=import_after
+                )
 
             def on_done(result):
                 errors = result.get("errors") or []

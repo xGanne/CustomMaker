@@ -203,3 +203,24 @@ class TestBatchControllerDefaultFraming(unittest.TestCase):
         load.assert_called_once()
         self.assertEqual(default_fit.call_args.args[2:], ("intelligent", fake_cascade))
         self.assertEqual(first, {"pos": (3, 4), "size": (10, 20)})
+
+
+class TestBatchControllerExplicitPaths(unittest.TestCase):
+    """O fluxo "Gerar customs" exporta só os arquivos recém-baixados."""
+
+    def test_paths_restricts_export_to_given_files(self):
+        app = DummyApp()
+        app.image_list = ["editor_a.png", "editor_b.png"]
+        controller = BatchController(app)
+        captured = {}
+
+        def fake_run_batch(tasks, **_kw):
+            captured["paths"] = [t["path"] for t in tasks]
+            return {"results": [], "cancelled": False}
+
+        with patch.object(controller, "_get_task_data", side_effect=lambda p, *a, **k: {"path": p}), \
+                patch.object(controller, "_run_batch", side_effect=fake_run_batch):
+            controller.save_all_images("out", paths=["novo1.png", "novo2.png"])
+            self.assertEqual(captured["paths"], ["novo1.png", "novo2.png"])
+            controller.save_all_images("out")
+            self.assertEqual(captured["paths"], ["editor_a.png", "editor_b.png"])

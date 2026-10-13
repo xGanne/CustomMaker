@@ -287,7 +287,7 @@ class BatchController:
                 return {"status": "error", "path": path, "error": "Sem enquadramento possível para a imagem."}
             return process_image_task(data)
 
-    def save_all_images(self, target_dir, progress_callback=None, cancel_event=None):
+    def save_all_images(self, target_dir, progress_callback=None, cancel_event=None, paths=None):
         source_dir = tempfile.mkdtemp()
         tasks = []
         skipped = []
@@ -295,7 +295,7 @@ class BatchController:
         ext = "_custom.gif" if is_anim else "_custom.png"
 
         try:
-            for path in self._image_list():
+            for path in (self._image_list() if paths is None else paths):
                 out = os.path.join(target_dir, os.path.splitext(os.path.basename(path))[0] + ext)
                 data = self._get_task_data(path, out, source_dir=source_dir)
                 if data:
@@ -316,7 +316,7 @@ class BatchController:
         finally:
             shutil.rmtree(source_dir, ignore_errors=True)
 
-    def save_zip(self, target_file, progress_callback=None, cancel_event=None):
+    def save_zip(self, target_file, progress_callback=None, cancel_event=None, paths=None):
         is_anim = self._animation_type() != "Nenhuma"
         ext = ".gif" if is_anim else ".png"
 
@@ -325,7 +325,7 @@ class BatchController:
             tasks = []
             skipped = []
 
-            for path in self._image_list():
+            for path in (self._image_list() if paths is None else paths):
                 fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
                 out = os.path.join(tmp_dir, fname)
                 data = self._get_task_data(path, out, source_dir=source_dir)
@@ -363,7 +363,7 @@ class BatchController:
                 "skipped": skipped,
             }
 
-    def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None):
+    def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None, paths=None):
         is_anim = self._animation_type() != "Nenhuma"
         ext = ".gif" if is_anim else ".png"
 
@@ -372,7 +372,7 @@ class BatchController:
             tasks = []
             skipped = []
 
-            for path in self._image_list():
+            for path in (self._image_list() if paths is None else paths):
                 fname = os.path.splitext(os.path.basename(path))[0] + f"_custom{ext}"
                 out = os.path.join(tmp_dir, fname)
                 data = self._get_task_data(path, out, source_dir=source_dir)
