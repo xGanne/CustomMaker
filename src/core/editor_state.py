@@ -141,12 +141,8 @@ class UiPreferences:
         )
 
     def save_to_app_config(self, app_config) -> None:
-        app_config.set("appearance_mode", self.appearance_mode)
+        # Só o que a sessão altera. Os campos de performance são uma leitura
+        # feita na abertura: regravá-los ao fechar desfazia o que o usuário
+        # mudou em Configurações durante a sessão.
         app_config.set("last_folder", self.last_folder)
         app_config.set("last_global_borda", self.last_global_borda)
-        app_config.set("max_workers", self.max_workers)
-        app_config.set("image_cache_max_mb", self.image_cache_max_mb)
-        app_config.set("thumbnail_batch_size", self.thumbnail_batch_size)
-        app_config.set("thumbnail_batch_interval_ms", self.thumbnail_batch_interval_ms)
-        app_config.set("thumbnail_memory_cache_mb", self.thumbnail_memory_cache_mb)
-        app_config.set("thumbnail_disk_cache_mb", self.thumbnail_disk_cache_mb)

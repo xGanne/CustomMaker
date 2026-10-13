@@ -56,6 +56,22 @@ class TestEditorState(unittest.TestCase):
         self.assertEqual(cfg.get("thumbnail_batch_size"), 8)
 
 
+class TestUiPreferencesDoNotRevertSettings(unittest.TestCase):
+    def test_settings_changed_during_session_survive_save(self):
+        """Mudanças feitas em Configurações não são desfeitas ao fechar o app."""
+        cfg = DummyConfig()
+        prefs = UiPreferences.from_app_config(cfg)
+        cfg.set("max_workers", 6)  # diálogo de Configurações, durante a sessão
+        cfg.set("image_cache_max_mb", 900)
+        cfg.set("thumbnail_disk_cache_mb", 2048)
+        prefs.last_folder = "C:/outra"
+        prefs.save_to_app_config(cfg)
+        self.assertEqual(cfg.get("max_workers"), 6)
+        self.assertEqual(cfg.get("image_cache_max_mb"), 900)
+        self.assertEqual(cfg.get("thumbnail_disk_cache_mb"), 2048)
+        self.assertEqual(cfg.get("last_folder"), "C:/outra")
+
+
 class TestAutoFraming(unittest.TestCase):
     """Enquadramento automático x ajuste do usuário."""
 
