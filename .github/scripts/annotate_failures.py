@@ -25,7 +25,8 @@ def main(report_path, output_path=None):
                     text = f.read()
             except OSError:
                 pass
-        crash = text.rfind("Fatal Python error")
+        # Linux/macOS: "Fatal Python error"; Windows: "Windows fatal exception"
+        crash = max(text.rfind("Fatal Python error"), text.rfind("Windows fatal exception"))
         if crash >= 0:
             # o começo do dump do faulthandler diz o tipo de falha e qual thread
             # caiu; cada thread vira uma anotação para não estourar o limite
