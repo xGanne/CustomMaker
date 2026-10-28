@@ -582,10 +582,7 @@ if QT_AVAILABLE:
                 # o histórico de desfazer/refazer também guarda posições absolutas
                 for stacks in (self._undo_stacks, self._redo_stacks):
                     for stack in stacks.values():
-                        stack[:] = [
-                            (image, (px + dx, py + dy), size, edited)
-                            for image, (px, py), size, edited in stack
-                        ]
+                        stack[:] = [snapshot.shifted(dx, dy) for snapshot in stack]
             self.editor_state.borda_pos = pos
 
         # ── Color picker ───────────────────────────────────────────────────
@@ -677,9 +674,7 @@ if QT_AVAILABLE:
                     edited.close()
                 except Exception:
                     pass
-            undo_stack = self._undo_stacks.pop(path, [])
-            for undo_image, *_rest in undo_stack:
-                self._dispose_images([undo_image])
+            self._dispose_images([snapshot.image for snapshot in self._undo_stacks.pop(path, [])])
             self._drop_redo_stack(path)
 
         def toggle_individual_border(self, index):
@@ -910,14 +905,10 @@ if QT_AVAILABLE:
                 except Exception:
                     pass
             self.edited_images.clear()
-            for stack in self._undo_stacks.values():
-                for image, *_rest in stack:
-                    self._dispose_images([image])
-            self._undo_stacks.clear()
-            for stack in self._redo_stacks.values():
-                for image, *_rest in stack:
-                    self._dispose_images([image])
-            self._redo_stacks.clear()
+            for stacks in (self._undo_stacks, self._redo_stacks):
+                for stack in stacks.values():
+                    self._dispose_images([snapshot.image for snapshot in stack])
+                stacks.clear()
             super().closeEvent(event)
 
 else:

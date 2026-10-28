@@ -111,17 +111,18 @@ class TestUndoStack(unittest.TestCase):
         self.loader.editor_state.image_states["/img.png"] = {"pos": (1, 2), "size": (10, 10)}
         self.loader.current_original_image = _make_image()
         self.loader.save_state_for_undo()
-        image, pos, size, was_edited = self.loader._undo_stacks["/img.png"][-1]
-        self.assertIsNone(image)
-        self.assertEqual((pos, size, was_edited), ((1, 2), (10, 10), False))
+        snapshot = self.loader._undo_stacks["/img.png"][-1]
+        self.assertIsNone(snapshot.image)
+        self.assertEqual((snapshot.pos, snapshot.size, snapshot.pixel_edited), ((1, 2), (10, 10), False))
 
     def test_pixel_edited_snapshot_keeps_its_own_copy(self):
         self.loader.editor_state.image_states["/img.png"] = {"pos": (0, 0), "size": (10, 10)}
         edited = _make_image()
         self.loader.edited_images["/img.png"] = edited
         self.loader.save_state_for_undo()
-        image, _pos, _size, was_edited = self.loader._undo_stacks["/img.png"][-1]
-        self.assertTrue(was_edited)
+        snapshot = self.loader._undo_stacks["/img.png"][-1]
+        image = snapshot.image
+        self.assertTrue(snapshot.pixel_edited)
         self.assertIsNot(image, edited)
         self.assertEqual(image.size, edited.size)
         image.close()

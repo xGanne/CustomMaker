@@ -14,6 +14,7 @@ import os
 from PIL import Image
 
 from src.config.settings import BORDA_HEX, SUPPORTED_EXTENSIONS
+from src.core.history import Snapshot
 from src.core.image_processor import ImageProcessor
 
 
@@ -272,12 +273,10 @@ class ImageLoaderMixin:
                 pass
         self.edited_images.clear()
         for stack in self._undo_stacks.values():
-            for undo_image, *_rest in stack:
-                self._dispose_images([undo_image])
+            self._dispose_images([snapshot.image for snapshot in stack])
         self._undo_stacks.clear()
         for stack in self._redo_stack_map().values():
-            for redo_image, *_rest in stack:
-                self._dispose_images([redo_image])
+            self._dispose_images([snapshot.image for snapshot in stack])
         self._redo_stack_map().clear()
         self._clear_preview_cache()
 
@@ -486,8 +485,8 @@ class ImageLoaderMixin:
             self._redo_stacks = {}
         return self._redo_stacks
 
-    def _capture_current_snapshot(self):
-        """Snapshot (imagem|None, pos, size, tinha_pixels_editados) do estado atual.
+    def _capture_current_snapshot(self, label=""):
+        """Snapshot do estado atual da imagem.
 
         A imagem só é guardada quando há edição de pixels (rotação, IA): gestos
         de enquadramento não mudam os pixels, e copiar o original a cada arrasto
@@ -502,11 +501,12 @@ class ImageLoaderMixin:
             if reference is None:
                 return None
             state = self._ensure_state_for_current(reference)
-        return (
-            edited.copy() if edited is not None else None,
-            tuple(state["pos"]),
-            tuple(state["size"]),
-            edited is not None,
+        return Snapshot(
+            image=edited.copy() if edited is not None else None,
+            pos=tuple(state["pos"]),
+            size=tuple(state["size"]),
+            pixel_edited=edited is not None,
+            label=label,
         )
 
     def _original_display_image(self, path):
@@ -532,8 +532,7 @@ class ImageLoaderMixin:
         return preview
 
     def _drop_redo_stack(self, path):
-        for image, *_rest in self._redo_stack_map().pop(path, []):
-            self._dispose_images([image])
+        self._dispose_images([snapshot.image for snapshot in self._redo_stack_map().pop(path, [])])
 
     def save_state_for_undo(self):
         if not self.current_path:
@@ -544,13 +543,12 @@ class ImageLoaderMixin:
         stack = self._undo_stacks.setdefault(self.current_path, [])
         stack.append(snapshot)
         while len(stack) > 20:
-            old_image, *_rest = stack.pop(0)
-            self._dispose_images([old_image])
+            self._dispose_images([stack.pop(0).image])
         # F15: uma nova ação do usuário invalida o redo
         self._drop_redo_stack(self.current_path)
 
     def _apply_snapshot(self, snapshot):
-        image, pos, size, was_pixel_edited = snapshot
+        image, pos, size, was_pixel_edited = snapshot.image, snapshot.pos, snapshot.size, snapshot.pixel_edited
         path = self.current_path
         currently_edited = path in self.edited_images
         if not was_pixel_edited and not currently_edited:
