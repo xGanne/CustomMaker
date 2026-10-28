@@ -59,7 +59,7 @@ if QT_AVAILABLE:
 
         def mousePressEvent(self, event):
             if self._on_interaction_start:
-                self._on_interaction_start()
+                self._on_interaction_start("Mover")
             super().mousePressEvent(event)
 
         def itemChange(self, change, value):
@@ -71,7 +71,7 @@ if QT_AVAILABLE:
     class ImageCanvas(QGraphicsView):
         state_changed = Signal(tuple, tuple)
         border_pos_changed = Signal(tuple)
-        interaction_started = Signal()
+        interaction_started = Signal(str)  # nome do passo de undo
         color_picked = Signal(str)
         zoom_changed = Signal(float)  # B4: emits zoom factor (1.0 = original size)
 
@@ -391,7 +391,7 @@ if QT_AVAILABLE:
             # undo se o último tick foi há mais de 0,5s
             now = time.monotonic()
             if now - self._last_wheel_time > 0.5:
-                self.interaction_started.emit()
+                self.interaction_started.emit("Zoom")
             self._last_wheel_time = now
             delta = event.angleDelta().y()
             if delta == 0:
@@ -421,7 +421,7 @@ if QT_AVAILABLE:
                 return
             if self._current_size == self._natural_size:
                 return
-            self.interaction_started.emit()
+            self.interaction_started.emit("Zoom 100%")
             width, height = self._current_size
             center_x = self.image_item.pos().x() + width / 2
             center_y = self.image_item.pos().y() + height / 2

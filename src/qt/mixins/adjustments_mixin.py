@@ -22,7 +22,7 @@ class AdjustmentsMixin:
             self.show_warning("Ajuste", "Carregue uma imagem primeiro.")
             return
         if push_undo:
-            self.save_state_for_undo()
+            self.save_state_for_undo("Auto fit")
         result = ImageProcessor.calculate_auto_fit_pos(image, self.editor_state.borda_pos)
         if not result:
             self.show_warning("Ajuste", "Não foi possível calcular o ajuste.")
@@ -43,7 +43,7 @@ class AdjustmentsMixin:
             self.apply_auto_fit(push_undo=push_undo)
             return
         if push_undo:
-            self.save_state_for_undo()
+            self.save_state_for_undo("Ajuste inteligente")
         faces = ImageProcessor.detect_faces_ranked(image, self.face_cascade)
         if not faces:
             self.show_warning("Ajuste", "Nenhum rosto detectado. Aplicando auto fit.")
@@ -57,6 +57,8 @@ class AdjustmentsMixin:
         if index >= len(faces):
             index = 0
         cycle[self.current_path] = index
+        if push_undo and len(faces) > 1:
+            self._rename_last_undo_step(f"Ajuste inteligente — rosto {index + 1} de {len(faces)}")
         result = ImageProcessor.calculate_intelligent_frame_pos(image, faces[index], self.editor_state.borda_pos)
         if not result:
             self.show_warning("Ajuste", "Não foi possível aplicar o ajuste inteligente.")
@@ -81,7 +83,7 @@ class AdjustmentsMixin:
             image = self.get_active_image_copy()
         if image is None:
             return
-        self.save_state_for_undo()
+        self.save_state_for_undo("Rotacionar à esquerda" if direction == "left" else "Rotacionar à direita")
         angle = 90 if direction == "left" else -90
         rotated = image.rotate(angle, expand=True)
         self.set_edited_image_for_current(rotated)
