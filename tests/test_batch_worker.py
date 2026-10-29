@@ -69,6 +69,57 @@ class TestBatchWorker(unittest.TestCase):
                 self.assertEqual(img.format, "GIF")
 
 
+class TestEncodeCustom(unittest.TestCase):
+    """encode_custom gera exatamente os bytes que a exportação grava."""
+
+    def _task(self, tmp, anim_type):
+        import os
+        source = os.path.join(tmp, "source.png")
+        image = Image.new("RGBA", (400, 600), (30, 140, 200, 255))
+        image.paste((240, 200, 40, 255), (100, 150, 300, 450))
+        image.save(source)
+        return {
+            "path": source,
+            "state": {"pos": (-40, -60), "size": (320, 480)},
+            "borda_pos": (0, 0),
+            "anim_type": anim_type,
+            "border_color": "#FF3366",
+        }
+
+    def test_bytes_match_the_exported_file(self):
+        import os
+        from src.core.batch_worker import encode_custom
+        for anim_type, ext in (("Nenhuma", ".png"), ("Rainbow", ".gif"), ("Neon Pulsante", ".gif")):
+            with self.subTest(anim_type=anim_type), tempfile.TemporaryDirectory() as tmp:
+                task = self._task(tmp, anim_type)
+                output = os.path.join(tmp, "out" + ext)
+                self.assertEqual(process_image_task(dict(task, output_path=output))["status"], "success")
+                data, fmt = encode_custom(task)
+                self.assertEqual(fmt, ext.lstrip("."))
+                with open(output, "rb") as f:
+                    self.assertEqual(data, f.read())
+
+    def test_measure_custom_reports_size_or_error(self):
+        from src.core.batch_worker import encode_custom, measure_custom
+        with tempfile.TemporaryDirectory() as tmp:
+            task = self._task(tmp, "Rainbow")
+            result = measure_custom(task)
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["format"], "gif")
+            self.assertEqual(result["bytes"], len(encode_custom(task)[0]))
+            missing = measure_custom(dict(task, path="/nao/existe.png"))
+            self.assertEqual(missing["status"], "error")
+
+    def test_frames_returned_without_output_path_stay_open(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = process_image_task(self._task(tmp, "Rainbow"))
+            self.assertEqual(result["type"], "anim")
+            frames = result["frames"]
+            self.assertEqual(frames[0].getpixel((0, 0))[3], 255)  # fechado lançaria erro
+            for frame in frames:
+                frame.close()
+
+
 class TestJpegDraftDecoding(unittest.TestCase):
     """JPEG grande é decodificado reduzido (draft) sem mudar o resultado."""
 
