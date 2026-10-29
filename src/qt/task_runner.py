@@ -14,6 +14,12 @@ if QT_AVAILABLE:
     class _TaskRunnable(QRunnable):
         def __init__(self, handle, fn):
             super().__init__()
+            # O handle guarda uma referência Python a este runnable. Com
+            # autoDelete (padrão), o QThreadPool apagava o objeto C++ ao fim do
+            # run() e o coletor do Python o liberava de novo mais tarde, num
+            # momento aleatório: access violation intermitente em qualquer
+            # ponto do app/testes, mais frequente quanto mais tasks rodavam.
+            self.setAutoDelete(False)
             self.handle = handle
             self.fn = fn
 
