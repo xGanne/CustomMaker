@@ -6,6 +6,19 @@
 >
 > Fases: **1 (este arquivo)** → [Fase 2](PLANO_FASE_2.md) → [Fase 3](PLANO_FASE_3.md).
 
+## ✅ Status (atualizado em 2026-10-28)
+
+| Item | Situação |
+|---|---|
+| 1 — Histórico | **Parcial.** 1.a feito (`890ce06`, snapshot como dataclass). 1.b (nomes nos passos) foi feito e **revertido** (`de0a806`): coincidiu com o aumento de crashes na suíte. 1.c (`Ctrl+Alt+Z`) e 1.d (menu) **pendentes** — refazer 1.b agora que a causa provável foi corrigida (`25b8593`). |
+| 2 — Tamanho no export | **Feito**: `0446c89` (encode_custom, bytes idênticos ao export antigo), `b61eab7` (Revisão: Calcular tamanhos, aviso, cache por conteúdo, limite em Configurações › Exportação), `e973e39` (total no resumo, aviso antes do upload com Revisar/Enviar/Cancelar). 2.d (reduzir GIF) não feito, por decisão do próprio plano. |
+| 3 — Paleta de comandos | **Feito**: `51c9dca` (registro único, Ctrl+K / Ctrl+Shift+P, busca sem acento e com erro leve, bordas/animações/presets/enquadramento, recentes, dica de descoberta, atalhos derivados do registro). |
+
+Correção encontrada no caminho: `25b8593` — o `QThreadPool` apagava o `QRunnable` das
+tasks enquanto o Python ainda o referenciava (memória liberada duas vezes). Taxa de crash da
+suíte completa caiu de 4/10 para 1/15; **ainda há um crash residual raro** (também existia
+antes desta fase, ~4%) a investigar à parte.
+
 ## Visão geral
 
 | # | Item | Ganho | Esforço | Commits previstos |
