@@ -1,5 +1,6 @@
 import logging
 import threading
+import weakref
 
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 
@@ -55,8 +56,8 @@ if QT_AVAILABLE:
         error = Signal(object)
         cancelled = Signal()
 
-        def __init__(self, task_id, fn, pool):
-            super().__init__()
+        def __init__(self, task_id, fn, pool, parent=None):
+            super().__init__(parent)
             self.task_id = task_id
             self.fn = fn
             self.pool = pool
@@ -90,19 +91,32 @@ if QT_AVAILABLE:
             if existing and existing.is_running():
                 return None
 
-            handle = QtTaskHandle(task_id, fn, self._pool)
+            # Filho do runner (dono C++): handle e runnable se referenciam, e esse
+            # ciclo só é liberado pelo coletor de ciclos do Python — que roda na
+            # thread que estiver alocando, às vezes um worker. Sem dono C++, o
+            # coletor destruía o QObject fora da GUI thread (corrupção de heap,
+            # crash aleatório). Agora a destruição é sempre o deleteLater abaixo.
+            handle = QtTaskHandle(task_id, fn, self._pool, parent=self)
             self._tasks[task_id] = handle
+            # referência fraca: as funções abaixo ficam presas às conexões do
+            # handle; com referência forte, destruir o handle podia liberar o
+            # último ref do runner — que destruía o handle (seu filho) de novo
+            runner_ref = weakref.ref(self)
 
             def cleanup(*_args):
                 handle.mark_finished()
-                self._tasks.pop(task_id, None)
+                runner = runner_ref()
+                if runner is not None and runner._tasks.get(task_id) is handle:
+                    runner._tasks.pop(task_id, None)
+                handle.deleteLater()  # na GUI thread, depois dos slots deste sinal
 
             handle.done.connect(cleanup)
             handle.error.connect(cleanup)
             handle.cancelled.connect(cleanup)
 
             def start_later():
-                if self._tasks.get(task_id) is not handle:
+                runner = runner_ref()
+                if runner is None or runner._tasks.get(task_id) is not handle:
                     return
                 if handle.cancel_event.is_set():
                     handle.cancelled.emit()
