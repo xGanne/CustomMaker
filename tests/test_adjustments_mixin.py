@@ -31,7 +31,6 @@ class _FakeAdjuster:
             self._warnings = []
             self._infos = []
             self._statuses = []
-            self._undo_labels = []
 
         def show_warning(self, _t, msg):
             self._warnings.append(msg)
@@ -45,11 +44,8 @@ class _FakeAdjuster:
         def get_active_image_copy(self):
             return None
 
-        def save_state_for_undo(self, label=""):
-            self._undo_labels.append(label)
-
-        def _rename_last_undo_step(self, label):
-            self._undo_labels[-1] = label
+        def save_state_for_undo(self):
+            pass
 
         def run_task(self, *_a, **_kw):
             pass
@@ -203,17 +199,3 @@ class TestIntelligentFitCyclesFaces(unittest.TestCase):
             adj.apply_intelligent_fit()
             adj.apply_intelligent_fit()
         self.assertEqual(adj._statuses[-1], "Ajuste inteligente aplicado.")
-
-    def test_undo_steps_are_named_after_the_action(self):
-        from src.core.image_processor import ImageProcessor
-        from src.qt.mixins.adjustments_mixin import AdjustmentsMixin
-        adj = self._adjuster()
-        faces = [(300, 100, 150, 150), (50, 80, 100, 100)]
-        with patch.object(ImageProcessor, "detect_faces_ranked", return_value=faces):
-            adj.apply_intelligent_fit()
-            adj.apply_intelligent_fit()
-        AdjustmentsMixin.apply_auto_fit(adj)  # o fake substitui apply_auto_fit
-        self.assertEqual(
-            adj._undo_labels,
-            ["Ajuste inteligente — rosto 1 de 2", "Ajuste inteligente — rosto 2 de 2", "Auto fit"],
-        )

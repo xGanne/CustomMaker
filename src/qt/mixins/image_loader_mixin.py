@@ -534,10 +534,10 @@ class ImageLoaderMixin:
     def _drop_redo_stack(self, path):
         self._dispose_images([snapshot.image for snapshot in self._redo_stack_map().pop(path, [])])
 
-    def save_state_for_undo(self, label=""):
+    def save_state_for_undo(self):
         if not self.current_path:
             return
-        snapshot = self._capture_current_snapshot(label)
+        snapshot = self._capture_current_snapshot()
         if snapshot is None:
             return
         stack = self._undo_stacks.setdefault(self.current_path, [])
@@ -546,12 +546,6 @@ class ImageLoaderMixin:
             self._dispose_images([stack.pop(0).image])
         # F15: uma nova ação do usuário invalida o redo
         self._drop_redo_stack(self.current_path)
-
-    def _rename_last_undo_step(self, label):
-        """Renomeia o passo recém-empilhado (o nome final só se sabe depois da ação)."""
-        stack = self._undo_stacks.get(self.current_path) if self.current_path else None
-        if stack:
-            stack[-1].label = label
 
     def _apply_snapshot(self, snapshot):
         image, pos, size, was_pixel_edited = snapshot.image, snapshot.pos, snapshot.size, snapshot.pixel_edited
@@ -598,13 +592,11 @@ class ImageLoaderMixin:
         if not stack:
             self.show_status("Nada para desfazer.")
             return
-        target = stack.pop()
-        # o estado atual vai para o redo com o nome da mesma ação, agora refazível
-        current = self._capture_current_snapshot(target.label)
+        current = self._capture_current_snapshot()
         if current is not None:
             self._redo_stack_map().setdefault(self.current_path, []).append(current)
-        self._apply_snapshot(target)
-        self.show_status(f"Desfeito: {target.label}" if target.label else "Última alteração desfeita.")
+        self._apply_snapshot(stack.pop())
+        self.show_status("Última alteração desfeita.")
 
     def redo_current_image(self):
         if not self.current_path:
@@ -613,12 +605,11 @@ class ImageLoaderMixin:
         if not stack:
             self.show_status("Nada para refazer.")
             return
-        target = stack.pop()
-        current = self._capture_current_snapshot(target.label)
+        current = self._capture_current_snapshot()
         if current is not None:
             self._undo_stacks.setdefault(self.current_path, []).append(current)
-        self._apply_snapshot(target)
-        self.show_status(f"Refeito: {target.label}" if target.label else "Alteração refeita.")
+        self._apply_snapshot(stack.pop())
+        self.show_status("Alteração refeita.")
 
     def _ensure_state_for_current(self, image, default_fit=None):
         if not self.current_path:
