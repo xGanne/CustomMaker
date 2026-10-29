@@ -12,7 +12,7 @@ from typing import List
 
 from PIL import Image
 
-from src.core.batch_worker import process_image_task
+from src.core.batch_worker import measure_custom, process_image_task
 from src.core.image_processor import ImageProcessor
 
 
@@ -285,7 +285,19 @@ class BatchController:
         if executor is not None:
             executor.shutdown(wait=False, cancel_futures=True)
 
-    def _run_batch(self, tasks, on_progress=None, cancel_event=None):
+    @staticmethod
+    def _saved_sizes(results):
+        """{path de origem: bytes do arquivo gerado} dos resultados com sucesso."""
+        sizes = {}
+        for result in results:
+            saved_to = result.get("saved_to")
+            if result.get("status") == "success" and saved_to and os.path.isfile(saved_to):
+                sizes[result.get("path")] = os.path.getsize(saved_to)
+        return sizes
+
+    def _run_batch(self, tasks, on_progress=None, cancel_event=None, worker=process_image_task, on_result=None):
+        """Roda `worker` sobre as tasks no pool; `on_result` recebe cada
+        resultado assim que fica pronto (para mostrar progresso por item)."""
         total = len(tasks)
         completed = 0
         results: List[dict] = []
@@ -296,12 +308,12 @@ class BatchController:
         logger.info("Iniciando processamento em lote com %s task(s), workers=%s", total, max_workers)
         executor = self._get_executor(max_workers)
         try:
-            futures = {executor.submit(process_image_task, task): task for task in tasks}
+            futures = {executor.submit(worker, task): task for task in tasks}
         except BrokenProcessPool:
             # um worker morreu desde o último lote: recria o pool e tenta de novo
             self._discard_executor(executor)
             executor = self._get_executor(max_workers)
-            futures = {executor.submit(process_image_task, task): task for task in tasks}
+            futures = {executor.submit(worker, task): task for task in tasks}
         pending = set(futures.keys())
 
         while pending:
@@ -320,19 +332,86 @@ class BatchController:
             for future in done:
                 try:
                     res = future.result()
-                    results.append(res)
                 except Exception as exc:
                     logger.exception("Erro no batch worker: %s", exc)
                     if isinstance(exc, BrokenProcessPool):
                         self._discard_executor(executor)
                     src_task = futures[future]
-                    results.append({"status": "error", "path": src_task.get("path"), "error": str(exc)})
+                    res = {"status": "error", "path": src_task.get("path"), "error": str(exc)}
+                results.append(res)
+                if on_result:
+                    on_result(res)
 
                 completed += 1
                 if on_progress:
                     on_progress(completed, total, f"Processando {completed}/{total}")
 
         return {"results": self._sort_results_by_task_order(results, tasks), "cancelled": False}
+
+    @staticmethod
+    def _size_cache_key(task):
+        """Chave do conteúdo que define o arquivo exportado, ou None se não dá
+        para confiar nela (imagem com edição de pixels, arquivo inacessível).
+
+        A posição entra relativa à borda: redimensionar a janela desloca borda e
+        enquadramentos juntos sem mudar a custom.
+        """
+        if task.get("source_path"):
+            return None
+        try:
+            stat = os.stat(task["path"])
+        except OSError:
+            return None
+        (x, y), (bx, by) = task["state"]["pos"], task["borda_pos"]
+        return (
+            task["path"], stat.st_mtime_ns, stat.st_size,
+            (int(x - bx), int(y - by)), tuple(int(v) for v in task["state"]["size"]),
+            task["border_color"], task["anim_type"],
+        )
+
+    def measure_sizes(self, paths=None, progress_callback=None, cancel_event=None, on_result=None, cache=None):
+        """Tamanho de cada custom como seria exportada, sem gravar arquivos.
+
+        Mesmas tasks e mesmo formato do export (GIF com animação, PNG sem).
+        Devolve {"results": [{"path", "status", "bytes", "format"}...],
+        "cancelled", "skipped"} na ordem da lista. `cache` (dict) guarda as
+        medições por conteúdo: customs que não mudaram não são recodificadas.
+        """
+        source_dir = tempfile.mkdtemp()
+        try:
+            tasks, skipped, cached = [], [], []
+            for path in self._image_list() if paths is None else paths:
+                data = self._get_task_data(path, None, source_dir=source_dir)
+                if not data:
+                    skipped.append(path)
+                    continue
+                key = self._size_cache_key(data) if cache is not None else None
+                hit = cache.get(key) if key is not None else None
+                if hit is not None:
+                    cached.append(dict(hit, path=path))
+                else:
+                    data["size_cache_key"] = key
+                    tasks.append(data)
+            for result in cached:
+                if on_result:
+                    on_result(result)
+
+            def remember(result):
+                if cache is not None and result.get("status") == "success":
+                    task = next((t for t in tasks if t["path"] == result.get("path")), None)
+                    if task is not None and task.get("size_cache_key") is not None:
+                        cache[task["size_cache_key"]] = {k: result[k] for k in ("status", "bytes", "format")}
+                if on_result:
+                    on_result(result)
+
+            batch = self._run_batch(
+                tasks, on_progress=progress_callback, cancel_event=cancel_event, worker=measure_custom, on_result=remember
+            )
+            order = {path: i for i, path in enumerate(self._image_list() if paths is None else paths)}
+            results = sorted(cached + batch["results"], key=lambda r: order.get(r.get("path"), len(order)))
+            return {"results": results, "cancelled": batch["cancelled"], "skipped": skipped}
+        finally:
+            shutil.rmtree(source_dir, ignore_errors=True)
 
     def save_single_image(self, path, output_path):
         """M12: exporta uma única imagem em processo, sem pool."""
@@ -370,6 +449,7 @@ class BatchController:
                 "total": len(tasks),
                 "skipped": skipped,
                 "generated_states": self._generated_states(tasks),
+                "sizes": self._saved_sizes(batch["results"]),
             }
         finally:
             shutil.rmtree(source_dir, ignore_errors=True)
@@ -422,6 +502,7 @@ class BatchController:
                 "total": len(tasks),
                 "skipped": skipped,
                 "generated_states": self._generated_states(tasks),
+                "sizes": self._saved_sizes(batch["results"]),
             }
 
     def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None, paths=None):

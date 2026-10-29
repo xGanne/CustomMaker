@@ -694,13 +694,14 @@ if QT_AVAILABLE:
             self.editor_state.image_list = list(new_paths)
             self._update_image_counter()
 
-        def open_review(self, paths=None, summary=None):
-            """Revisão em grade das customs (todas da lista, ou só `paths`)."""
+        def open_review(self, paths=None, summary=None, measure=False):
+            """Revisão em grade das customs (todas da lista, ou só `paths`);
+            `measure` já calcula o tamanho de cada uma ao abrir."""
             from src.qt.dialogs.review_dialog import ReviewDialog
             if not self.editor_state.image_list:
                 self.show_warning("Revisar", "Nenhuma imagem na lista.")
                 return None
-            dialog = ReviewDialog(self, paths, summary=summary)
+            dialog = ReviewDialog(self, paths, summary=summary, measure=measure)
             dialog.show()
             self._review_dialog = dialog
             return dialog

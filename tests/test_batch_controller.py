@@ -273,6 +273,115 @@ class TestUniqueOutputNames(unittest.TestCase):
         self.assertEqual(sorted(uploaded.values()), sorted([(255, 0, 0), (0, 0, 255)]))
 
 
+class TestExportSizes(unittest.TestCase):
+    """Tamanho de cada custom: medido antes (sem gravar) e informado depois do export."""
+
+    def _paths(self, tmp, count=3):
+        import os
+        paths = []
+        for i in range(count):
+            path = os.path.join(tmp, f"img{i}.png")
+            Image.new("RGBA", (300 + 40 * i, 450), (40 * i, 120, 200, 255)).save(path)
+            paths.append(path)
+        return paths
+
+    def test_measure_sizes_matches_exported_files_in_list_order(self):
+        import os
+        from src.core.editor_state import EditorState
+
+        with TemporaryDirectory() as tmp:
+            paths = self._paths(tmp)
+            state = EditorState(image_list=paths, animation_type="Rainbow")
+            controller = BatchController(editor_state=state, borda_hex={"White": "#FFFFFF"})
+            seen = []
+            try:
+                measured = controller.measure_sizes(on_result=seen.append)
+                out = os.path.join(tmp, "out")
+                os.makedirs(out)
+                exported = controller.save_all_images(out)
+            finally:
+                controller.shutdown()
+            self.assertFalse(measured["cancelled"])
+            self.assertEqual([r["path"] for r in measured["results"]], paths)
+            self.assertEqual({r["format"] for r in measured["results"]}, {"gif"})
+            self.assertEqual(len(seen), 3)
+            self.assertEqual({r["path"]: r["bytes"] for r in measured["results"]}, exported["sizes"])
+            self.assertEqual(os.listdir(tmp), ["img0.png", "img1.png", "img2.png", "out"])  # nada gravado ao medir
+
+    def test_measure_cache_skips_unchanged_customs(self):
+        from src.core.editor_state import EditorState
+
+        with TemporaryDirectory() as tmp:
+            paths = self._paths(tmp)
+            state = EditorState(image_list=paths)
+            controller = BatchController(editor_state=state, borda_hex={"White": "#FFFFFF", "Red": "#FF0000"})
+            cache = {}
+            try:
+                first = controller.measure_sizes(cache=cache)
+                self.assertEqual(len(cache), 3)
+                sent = []
+                original = controller._run_batch
+
+                def spy(tasks, **kwargs):
+                    sent.extend(t["path"] for t in tasks)
+                    return original(tasks, **kwargs)
+
+                with patch.object(controller, "_run_batch", spy):
+                    state.individual_bordas[paths[1]] = "Red"  # só esta custom muda
+                    second = controller.measure_sizes(cache=cache)
+            finally:
+                controller.shutdown()
+            self.assertEqual(sent, [paths[1]])
+            self.assertEqual([r["path"] for r in second["results"]], paths)
+            self.assertEqual(second["results"][0]["bytes"], first["results"][0]["bytes"])
+
+    def test_zip_reports_sizes(self):
+        import os
+        from src.core.editor_state import EditorState
+
+        with TemporaryDirectory() as tmp:
+            paths = self._paths(tmp, 2)
+            controller = BatchController(editor_state=EditorState(image_list=paths), borda_hex={"White": "#FFFFFF"})
+            try:
+                result = controller.save_zip(os.path.join(tmp, "a.zip"))
+            finally:
+                controller.shutdown()
+            self.assertEqual(set(result["sizes"]), set(paths))
+            self.assertTrue(all(size > 0 for size in result["sizes"].values()))
+
+    def test_measure_sizes_respects_cancel(self):
+        import threading
+        from src.core.editor_state import EditorState
+
+        with TemporaryDirectory() as tmp:
+            controller = BatchController(editor_state=EditorState(image_list=self._paths(tmp)), borda_hex={"White": "#FFFFFF"})
+            cancel = threading.Event()
+            cancel.set()
+            try:
+                result = controller.measure_sizes(cancel_event=cancel)
+            finally:
+                controller.shutdown()
+            self.assertTrue(result["cancelled"])
+
+
+class TestFileSizes(unittest.TestCase):
+    def test_format_bytes(self):
+        from src.core.file_sizes import format_bytes
+        self.assertEqual(format_bytes(0), "0 B")
+        self.assertEqual(format_bytes(999), "999 B")
+        self.assertEqual(format_bytes(1024), "1 KB")
+        self.assertEqual(format_bytes(1536), "2 KB")
+        self.assertEqual(format_bytes(5 * 1024 * 1024), "5,0 MB")
+        self.assertEqual(format_bytes(int(2.34 * 1024 * 1024)), "2,3 MB")
+
+    def test_warn_limit_and_summary(self):
+        from src.core.file_sizes import size_summary, warn_limit_bytes
+        self.assertEqual(warn_limit_bytes({"export_size_warn_mb": 8}), 8 * 1024 * 1024)
+        self.assertIsNone(warn_limit_bytes({"export_size_warn_mb": 0}))
+        self.assertEqual(size_summary({}), (0, None))
+        self.assertEqual(size_summary({"a": 10, "b": 30}), (40, ("b", 30)))
+
+
 class TestFrozenBatch(unittest.TestCase):
     """Um lote trabalha sobre o estado do momento em que foi iniciado."""
 

@@ -38,6 +38,7 @@ if QT_AVAILABLE:
             tabs.addTab(self._build_appearance_tab(), "Aparência")
             tabs.addTab(self._build_ai_tab(), "IA")
             tabs.addTab(self._build_danbooru_tab(), "Danbooru")
+            tabs.addTab(self._build_export_tab(), "Exportação")
             tabs.addTab(self._build_performance_tab(), "Performance")
 
             buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -64,6 +65,27 @@ if QT_AVAILABLE:
             theme_note.setWordWrap(True)
             theme_note.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px; margin-top: 8px;")
             layout.addWidget(theme_note)
+            layout.addStretch(1)
+            return widget
+
+        # ── Aba Exportação ────────────────────────────────────────────────
+
+        def _build_export_tab(self):
+            widget = QWidget()
+            layout = QVBoxLayout(widget)
+            form = QFormLayout()
+            self._size_warn_mb = self._spin_field(round(self.app_config.get("export_size_warn_mb", 8.0) or 0), 0, 100)
+            self._size_warn_mb.setSpecialValueText("Desligado")
+            self._size_warn_mb.setSuffix(" MB")
+            form.addRow("Avisar customs acima de:", self._size_warn_mb)
+            layout.addLayout(form)
+            note = QLabel(
+                "Na Revisão (Calcular tamanhos) e antes do envio ao ImgChest, as customs "
+                "maiores que este limite são destacadas. GIFs animados costumam ser os mais pesados."
+            )
+            note.setWordWrap(True)
+            note.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px; margin-top: 8px;")
+            layout.addWidget(note)
             layout.addStretch(1)
             return widget
 
@@ -243,6 +265,7 @@ if QT_AVAILABLE:
             self.app_config.set("danbooru_timeout_search_s", self._timeout_search.value())
             self.app_config.set("danbooru_timeout_download_s", self._timeout_download.value())
             self.app_config.set("danbooru_page_size", self._page_size.value())
+            self.app_config.set("export_size_warn_mb", float(self._size_warn_mb.value()))
             from src.core.danbooru import DANBOORU_API_KEY_KEY, DANBOORU_LOGIN_KEY
             from src.core.env_file import read_env_values, update_env_values
             account = {

@@ -65,6 +65,9 @@ DEFAULT_CONFIG = {
     "strobe_warning_acknowledged": False,
     "default_framing": "auto_fit",
     "confirm_exit_with_unexported": True,
+    # aviso de custom pesada na revisão e antes do upload (0 desliga). O limite
+    # real do ImgChest/Mudae não está confirmado: 8 MB é provisório
+    "export_size_warn_mb": 8.0,
 }
 
 
@@ -211,6 +214,12 @@ class AppConfig:
             DEFAULT_CONFIG["danbooru_page_size"],
             minimum=10,
             maximum=200,
+        )
+        migrated["export_size_warn_mb"] = _coerce_float(
+            migrated.get("export_size_warn_mb"),
+            DEFAULT_CONFIG["export_size_warn_mb"],
+            minimum=0.0,
+            maximum=100.0,
         )
         migrated["thumbnail_batch_size"] = _coerce_int(
             migrated.get("thumbnail_batch_size"),

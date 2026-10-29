@@ -80,6 +80,37 @@ class TestReviewDialog(unittest.TestCase):
                 self.assertTrue(np.array_equal(np.asarray(preview.convert("RGBA")),
                                                np.asarray(exported.convert("RGBA"))))
 
+    def _measured(self, dialog):
+        dialog.measure_sizes()
+        self.assertTrue(_wait(self.app, lambda: dialog.measure_button.isEnabled() and "Medindo" not in dialog.status.text()))
+
+    def test_measure_shows_size_of_each_custom(self):
+        self.window.app_config.set("export_size_warn_mb", 8.0)
+        dialog = self._open()
+        self.addCleanup(dialog.close)
+        self._measured(dialog)
+        texts = [dialog.grid.item(i).text() for i in range(dialog.grid.count())]
+        self.assertTrue(all("PNG · " in t and "⚠" not in t for t in texts), texts)
+        self.assertIn("total", dialog.status.text())
+        self.assertNotIn("acima de", dialog.status.text())
+
+    def test_customs_over_the_limit_are_flagged(self):
+        self.window.app_config.set("export_size_warn_mb", 0.0001)  # ~100 bytes
+        self.window.editor_state.animation_type = "Rainbow"
+        dialog = self._open()
+        self.addCleanup(dialog.close)
+        self._measured(dialog)
+        self.assertTrue(all("⚠ GIF · " in dialog.grid.item(i).text() for i in range(dialog.grid.count())))
+        self.assertIn("3 acima de", dialog.status.text())
+
+    def test_refresh_clears_old_sizes(self):
+        dialog = self._open()
+        self.addCleanup(dialog.close)
+        self._measured(dialog)
+        dialog.render()
+        self.assertTrue(_wait(self.app, lambda: dialog.grid.count() == 3 and "Renderizando" not in dialog.status.text()))
+        self.assertNotIn("PNG · ", dialog.grid.item(0).text())
+
     def test_double_click_opens_image_in_editor(self):
         dialog = self._open()
         self.addCleanup(dialog.close)
