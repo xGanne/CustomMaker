@@ -9,6 +9,8 @@ Responsabilidades:
 """
 import os
 
+from src.core.file_sizes import format_bytes, size_summary, warn_limit_bytes
+
 
 # Limite de caracteres de uma mensagem do Discord (sem Nitro)
 DISCORD_MESSAGE_LIMIT = 2000
@@ -49,6 +51,17 @@ class ExportMixin:
             box.exec()
         else:
             self.show_info(title, message)
+
+    @staticmethod
+    def _format_sizes(result):
+        """'Tamanho: 31,4 MB no total · maior 4,1 MB (nome.gif)'."""
+        total, largest = size_summary(result.get("sizes") or {})
+        if not largest:
+            return None
+        return (
+            f"Tamanho: {format_bytes(total)} no total · maior "
+            f"{format_bytes(largest[1])} ({os.path.basename(largest[0])})"
+        )
 
     def _mark_work_exported(self, result):
         """M2: exportação bem-sucedida zera o aviso de 'trabalho não exportado'."""
@@ -112,6 +125,7 @@ class ExportMixin:
                 self._format_count("Processadas", result.get("processed")),
                 self._format_count("Erros", result.get("errors")),
                 self._format_skipped(result),
+                self._format_sizes(result),
                 self._format_path("Destino", result.get("target_dir") or target_dir),
             ]
             self._show_result_summary(
@@ -153,6 +167,7 @@ class ExportMixin:
                 self._format_count("Processadas", result.get("processed")),
                 self._format_count("Erros", result.get("errors")),
                 self._format_skipped(result),
+                self._format_sizes(result),
                 self._format_path("Arquivo", result.get("zip_path") or file_path),
             ]
             self._show_result_summary(
@@ -183,7 +198,68 @@ class ExportMixin:
         album_title = album_title.strip() or "CustomMaker"
 
         batch = self.batch_controller.frozen()
+        self._check_upload_sizes(batch, lambda: self._start_upload(batch, album_title))
 
+    def _check_upload_sizes(self, batch, proceed):
+        """Mede as customs antes do upload e avisa se alguma passa do limite.
+
+        Usa o cache da Revisão (instantâneo se ela já mediu). A decisão é pedida
+        na GUI thread, depois da medição — nunca de dentro do worker.
+        """
+        limit = warn_limit_bytes(self.app_config)
+        if limit is None:
+            proceed()
+            return
+        cache = self.__dict__.setdefault("_size_cache", {})
+        paths = list(batch._image_list())
+
+        def task_fn(cancel_event, on_progress):
+            return batch.measure_sizes(progress_callback=on_progress, cancel_event=cancel_event, cache=cache)
+
+        def on_done(result):
+            if result.get("cancelled") or not self._window_alive():
+                return
+            over = [
+                r for r in result.get("results") or []
+                if r.get("status") == "success" and r.get("bytes", 0) > limit
+            ]
+            if not over:
+                proceed()
+                return
+            choice = self._ask_oversized_upload(over, limit)
+            if choice == "send":
+                proceed()
+            elif choice == "review":
+                self.open_review(
+                    paths,
+                    summary=f"{len(over)} custom(s) acima de {format_bytes(limit)} — ajuste e envie de novo.",
+                    measure=True,
+                )
+
+        self.run_task(
+            "qt_upload_check_sizes", "Verificando tamanhos", task_fn, on_done=on_done, maximum=max(1, len(paths))
+        )
+
+    def _ask_oversized_upload(self, over, limit):
+        """'send', 'review' ou 'cancel'."""
+        from src.qt.compat import QMessageBox
+        names = "\n".join(
+            f"• {os.path.basename(r['path'])} — {format_bytes(r['bytes'])}" for r in over[:8]
+        )
+        more = f"\n… e mais {len(over) - 8}" if len(over) > 8 else ""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Upload")
+        box.setText(f"{len(over)} custom(s) passam de {format_bytes(limit)}. Enviar mesmo assim?")
+        box.setInformativeText(names + more + "\n\nO limite fica em Configurações › Exportação.")
+        review = box.addButton("Revisar", QMessageBox.ActionRole)
+        send = box.addButton("Enviar", QMessageBox.AcceptRole)
+        box.addButton("Cancelar", QMessageBox.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        return "send" if clicked is send else "review" if clicked is review else "cancel"
+
+    def _start_upload(self, batch, album_title):
         def task_fn(cancel_event, on_progress):
             return batch.upload_to_imgchest(
                 album_title,
