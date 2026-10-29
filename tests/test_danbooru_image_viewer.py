@@ -55,6 +55,10 @@ class TestDanbooruImageViewer(unittest.TestCase):
             viewer = module.DanbooruImageViewer(post, client)
         viewer.setAttribute(compat.Qt.WA_DeleteOnClose, True)
         viewer.show()
+        pool = compat.QThreadPool.globalInstance()
+
+        def viewer_runner_busy():
+            return pool.activeThreadCount() > 0
 
         end = time.monotonic() + 5
         while not client.started.is_set() and time.monotonic() < end:
@@ -69,10 +73,13 @@ class TestDanbooruImageViewer(unittest.TestCase):
             viewer.close()
             QCoreApplication.sendPostedEvents(None, compat.QEvent.DeferredDelete)
             client.release.set()
+            # até o download terminar e os sinais dele serem entregues
             end = time.monotonic() + 3
-            while time.monotonic() < end:
+            while viewer_runner_busy() and time.monotonic() < end:
                 self.app.processEvents()
                 time.sleep(0.01)
+            for _ in range(10):
+                self.app.processEvents()
         finally:
             sys.excepthook = original_hook
         self.assertEqual(errors, [])

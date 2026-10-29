@@ -20,6 +20,12 @@ def _flush_deferred_qt_deletes():
         from PySide6.QtCore import QCoreApplication, QEvent
         if QCoreApplication.instance() is None:
             return
+        # ciclos de referência com objetos Qt deixados pelo teste são liberados
+        # aqui, na GUI thread — e não pelo coletor rodando por acaso numa thread
+        # de trabalho do teste seguinte (destruir QObject fora da thread dele
+        # corrompe o heap)
+        import gc
+        gc.collect()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         QCoreApplication.processEvents()
     except ImportError:

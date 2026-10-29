@@ -134,11 +134,13 @@ class TestUploader(unittest.TestCase):
 
             session = RetryFileAwareSession()
             uploader = ImgChestUploader(api_token="token", session=session)
-            links, errors = uploader.upload_images(
-                [{"path": image_path, "filename": "image.png"}],
-                album_title="album",
-                retries=1,
-            )
+            from unittest.mock import patch as _patch
+            with _patch("src.core.uploader.time.sleep"):  # sem esperar o intervalo real entre tentativas
+                links, errors = uploader.upload_images(
+                    [{"path": image_path, "filename": "image.png"}],
+                    album_title="album",
+                    retries=1,
+                )
 
             self.assertEqual(links, ["https://imgchest.com/p/retry-ok"])
             self.assertEqual(errors, [])
