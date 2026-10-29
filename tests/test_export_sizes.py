@@ -112,6 +112,26 @@ class TestUploadSizeWarning(unittest.TestCase):
         review.assert_called_once()
         self.assertTrue(review.call_args.kwargs["measure"])
 
+    def test_customs_are_rendered_once_and_temp_files_removed(self):
+        import glob
+        from src.controllers.batch_controller import BatchController
+        self.window.app_config.set("export_size_warn_mb", 0.0001)
+        pattern = os.path.join(tempfile.gettempdir(), "custommaker_upload_*")
+        before = set(glob.glob(pattern))
+        original = BatchController._run_batch
+        runs = []
+
+        def counting(controller, tasks, **kwargs):
+            runs.append(len(tasks))
+            return original(controller, tasks, **kwargs)
+
+        with patch.object(BatchController, "_run_batch", counting):
+            for choice in ("send", "cancel"):
+                runs.clear()
+                self._upload(choice)
+                self.assertEqual(runs, [2], choice)  # uma renderização, sem medir à parte
+                self.assertEqual(set(glob.glob(pattern)), before, choice)
+
     def test_no_warning_under_the_limit_or_when_disabled(self):
         for limit in (8.0, 0):
             with self.subTest(limit=limit):

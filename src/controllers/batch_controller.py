@@ -505,48 +505,67 @@ class BatchController:
                 "sizes": self._saved_sizes(batch["results"]),
             }
 
-    def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None, paths=None):
-        is_anim = self._animation_type() != "Nenhuma"
-        ext = ".gif" if is_anim else ".png"
+    def prepare_upload(self, progress_callback=None, cancel_event=None, paths=None):
+        """Renderiza as customs do upload numa pasta temporária, sem enviar.
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        Devolve os arquivos e o tamanho de cada um: quem chama pode conferir
+        os tamanhos (e perguntar ao usuário) antes de `upload_prepared`, sem
+        codificar tudo duas vezes. Chame `upload_prepared` ou
+        `discard_prepared` para apagar a pasta.
+        """
+        ext = ".gif" if self._animation_type() != "Nenhuma" else ".png"
+        tmp_dir = tempfile.mkdtemp(prefix="custommaker_upload_")
+        try:
             source_dir = os.path.join(tmp_dir, "_sources")
-            tasks = []
-            skipped = []
-
+            tasks, skipped = [], []
             batch_paths = self._image_list() if paths is None else paths
             names = unique_output_names(batch_paths, f"_custom{ext}")
             for path in batch_paths:
-                out = os.path.join(tmp_dir, names[path])
-                data = self._get_task_data(path, out, source_dir=source_dir)
+                data = self._get_task_data(path, os.path.join(tmp_dir, names[path]), source_dir=source_dir)
                 if data:
                     tasks.append(data)
                 else:
                     skipped.append(os.path.basename(path))
-
             batch = self._run_batch(tasks, on_progress=progress_callback, cancel_event=cancel_event)
-            process_errors = [r for r in batch["results"] if r.get("status") != "success"]
-            if batch["cancelled"]:
-                return {
-                    "cancelled": True,
-                    "links": [],
-                    "errors": ["Operação cancelada pelo usuário."],
-                    "processed": len(batch["results"]),
-                    "uploaded": 0,
-                    "total": len(tasks),
-                    "skipped": skipped,
-                    "generated_states": self._generated_states(tasks),
-                }
+        except BaseException:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
+        prepared = {
+            "tmp_dir": tmp_dir,
+            "cancelled": batch["cancelled"],
+            "results": batch["results"],
+            "files": [
+                {"path": r["saved_to"], "filename": os.path.basename(r["saved_to"]), "source": r.get("path")}
+                for r in batch["results"] if r.get("status") == "success" and "saved_to" in r
+            ],
+            "sizes": self._saved_sizes(batch["results"]),
+            "total": len(tasks),
+            "skipped": skipped,
+            "generated_states": self._generated_states(tasks),
+        }
+        if prepared["cancelled"]:
+            self.discard_prepared(prepared)
+        return prepared
 
-            files = []
-            for result in batch["results"]:
-                if result.get("status") == "success" and "saved_to" in result:
-                    file_path = result["saved_to"]
-                    files.append({"path": file_path, "filename": os.path.basename(file_path)})
+    @staticmethod
+    def discard_prepared(prepared):
+        shutil.rmtree(prepared.get("tmp_dir") or "", ignore_errors=True)
 
+    def upload_prepared(self, prepared, title, progress_callback=None, cancel_event=None):
+        """Envia os arquivos de `prepare_upload` e apaga a pasta temporária."""
+        try:
+            process_errors = [r for r in prepared["results"] if r.get("status") != "success"]
+            common = {
+                "processed": len(prepared["results"]),
+                "total": prepared["total"],
+                "skipped": prepared["skipped"],
+                "generated_states": prepared["generated_states"],
+            }
+            if prepared["cancelled"]:
+                return dict(common, cancelled=True, links=[], errors=["Operação cancelada pelo usuário."], uploaded=0)
+            files = [{"path": f["path"], "filename": f["filename"]} for f in prepared["files"]]
             if progress_callback:
                 progress_callback(0, len(files), "Enviando...")
-
             if not self.uploader:
                 raise ValueError("Uploader não configurado.")
             links, errors = self.uploader.upload_images(
@@ -557,13 +576,16 @@ class BatchController:
             )
             all_errors = [r.get("error") or r.get("path") or "Erro ao processar imagem." for r in process_errors]
             all_errors.extend(errors)
-            return {
-                "cancelled": bool(cancel_event and cancel_event.is_set()),
-                "links": links,
-                "errors": all_errors,
-                "processed": len(batch["results"]),
-                "uploaded": len(files),
-                "total": len(tasks),
-                "skipped": skipped,
-                "generated_states": self._generated_states(tasks),
-            }
+            return dict(
+                common,
+                cancelled=bool(cancel_event and cancel_event.is_set()),
+                links=links,
+                errors=all_errors,
+                uploaded=len(files),
+            )
+        finally:
+            self.discard_prepared(prepared)
+
+    def upload_to_imgchest(self, title, progress_callback=None, cancel_event=None, paths=None):
+        prepared = self.prepare_upload(progress_callback=progress_callback, cancel_event=cancel_event, paths=paths)
+        return self.upload_prepared(prepared, title, progress_callback=progress_callback, cancel_event=cancel_event)

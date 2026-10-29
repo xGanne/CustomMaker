@@ -198,38 +198,35 @@ class ExportMixin:
         album_title = album_title.strip() or "CustomMaker"
 
         batch = self.batch_controller.frozen()
-        self._check_upload_sizes(batch, lambda: self._start_upload(batch, album_title))
-
-    def _check_upload_sizes(self, batch, proceed):
-        """Mede as customs antes do upload e avisa se alguma passa do limite.
-
-        Usa o cache da Revisão (instantâneo se ela já mediu). A decisão é pedida
-        na GUI thread, depois da medição — nunca de dentro do worker.
-        """
-        limit = warn_limit_bytes(self.app_config)
-        if limit is None:
-            proceed()
-            return
-        cache = self.__dict__.setdefault("_size_cache", {})
         paths = list(batch._image_list())
 
         def task_fn(cancel_event, on_progress):
-            return batch.measure_sizes(progress_callback=on_progress, cancel_event=cancel_event, cache=cache)
+            prepared = batch.prepare_upload(progress_callback=on_progress, cancel_event=cancel_event)
+            if cancel_event.is_set():
+                batch.discard_prepared(prepared)  # on_done não vai rodar: não deixa a pasta para trás
+            return prepared
 
-        def on_done(result):
-            if result.get("cancelled") or not self._window_alive():
+        def on_done(prepared):
+            # as customs já estão renderizadas: o tamanho vem dos próprios
+            # arquivos, sem codificar duas vezes; a pergunta é feita aqui, na
+            # GUI thread, e o upload envia exatamente esses arquivos
+            if prepared.get("cancelled"):
                 return
+            if not self._window_alive():
+                batch.discard_prepared(prepared)
+                return
+            limit = warn_limit_bytes(self.app_config)
             over = [
-                r for r in result.get("results") or []
-                if r.get("status") == "success" and r.get("bytes", 0) > limit
+                {"path": path, "bytes": size}
+                for path, size in (prepared.get("sizes") or {}).items()
+                if limit is not None and size > limit
             ]
-            if not over:
-                proceed()
-                return
-            choice = self._ask_oversized_upload(over, limit)
+            choice = self._ask_oversized_upload(over, limit) if over else "send"
             if choice == "send":
-                proceed()
-            elif choice == "review":
+                self._start_upload(batch, prepared, album_title)
+                return
+            batch.discard_prepared(prepared)
+            if choice == "review":
                 self.open_review(
                     paths,
                     summary=f"{len(over)} custom(s) acima de {format_bytes(limit)} — ajuste e envie de novo.",
@@ -237,7 +234,7 @@ class ExportMixin:
                 )
 
         self.run_task(
-            "qt_upload_check_sizes", "Verificando tamanhos", task_fn, on_done=on_done, maximum=max(1, len(paths))
+            "qt_upload_prepare", "Preparando customs", task_fn, on_done=on_done, maximum=max(1, len(paths))
         )
 
     def _ask_oversized_upload(self, over, limit):
@@ -259,9 +256,10 @@ class ExportMixin:
         clicked = box.clickedButton()
         return "send" if clicked is send else "review" if clicked is review else "cancel"
 
-    def _start_upload(self, batch, album_title):
+    def _start_upload(self, batch, prepared, album_title):
         def task_fn(cancel_event, on_progress):
-            return batch.upload_to_imgchest(
+            return batch.upload_prepared(
+                prepared,
                 album_title,
                 progress_callback=on_progress,
                 cancel_event=cancel_event,
