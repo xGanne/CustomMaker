@@ -281,6 +281,7 @@ if QT_AVAILABLE:
                     item.setForeground(QBrush(QColor(tokens()["warning"])))
                 else:
                     item.setText(f"{name}\n{label}")
+                    item.setData(Qt.ForegroundRole, None)  # limite aumentou: tira o destaque
 
         def _show_size_summary(self):
             sizes = {p: r["bytes"] for p, r in self._sizes.items() if r.get("status") == "success"}

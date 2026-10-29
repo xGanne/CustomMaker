@@ -39,6 +39,7 @@ if QT_AVAILABLE:
             self.input.textChanged.connect(self._refresh)
             self.input.installEventFilter(self)
             self.list = QListWidget(self)
+            self.list.setStyleSheet("QListWidget { border: none; } QListWidget::item { padding: 6px; }")
             self.list.itemActivated.connect(self._run_item)
             self.list.itemClicked.connect(self._run_item)
             layout.addWidget(self.input)
@@ -54,7 +55,6 @@ if QT_AVAILABLE:
 
         def _refresh(self, *_args):
             self.list.clear()
-            muted = tokens()["text_muted"]
             for command in self.registry.search(self.input.text(), self.recent_ids):
                 parts = [command.title]
                 if command.category:
@@ -69,8 +69,6 @@ if QT_AVAILABLE:
                 self.list.addItem(item)
             if self.list.count():
                 self.list.setCurrentRow(0)
-            self.list.setStyleSheet(f"QListWidget {{ border: none; }} QListWidget::item {{ padding: 6px; }}"
-                                    f" QToolTip {{ color: {muted}; }}")
 
         def eventFilter(self, obj, event):
             # ↑/↓ movem a seleção sem tirar o foco do campo de busca

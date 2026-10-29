@@ -103,6 +103,17 @@ class TestReviewDialog(unittest.TestCase):
         self.assertTrue(all("⚠ GIF · " in dialog.grid.item(i).text() for i in range(dialog.grid.count())))
         self.assertIn("3 acima de", dialog.status.text())
 
+    def test_raising_the_limit_clears_the_warning(self):
+        self.window.app_config.set("export_size_warn_mb", 0.0001)
+        dialog = self._open()
+        self.addCleanup(dialog.close)
+        self._measured(dialog)
+        self.assertIsNotNone(dialog.grid.item(0).data(compat.Qt.ForegroundRole))
+        self.window.app_config.set("export_size_warn_mb", 8.0)
+        self._measured(dialog)
+        self.assertNotIn("⚠", dialog.grid.item(0).text())
+        self.assertIsNone(dialog.grid.item(0).data(compat.Qt.ForegroundRole))
+
     def test_refresh_clears_old_sizes(self):
         dialog = self._open()
         self.addCleanup(dialog.close)

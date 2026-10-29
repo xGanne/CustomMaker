@@ -464,7 +464,8 @@ if QT_AVAILABLE:
                 action.triggered.connect(self.open_command_palette)
                 self.addAction(action)
             if not self.app_config.get("command_palette_hint_shown"):
-                QTimer.singleShot(2500, self._show_command_palette_hint)
+                # com a janela como contexto: o timer morre junto se ela fechar antes
+                QTimer.singleShot(2500, self, self._show_command_palette_hint)
 
         def _show_command_palette_hint(self):
             if not self._window_alive():
