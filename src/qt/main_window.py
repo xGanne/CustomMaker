@@ -446,23 +446,129 @@ if QT_AVAILABLE:
         # ── Atalhos de teclado ─────────────────────────────────────────────
 
         def _register_shortcuts(self):
-            # Ctrl+Z / Ctrl+V / Left / Right são tratados em keyPressEvent para
-            # não roubar as teclas de campos de texto focados (F3).
-            shortcuts = [
-                ("Ctrl+O", self.load_folder),
-                ("Ctrl+S", self.save_all_images),
-                ("Ctrl+Shift+S", self.save_current_image),
-                ("Alt+F", self.apply_intelligent_fit),
-                ("Alt+B", self.apply_auto_fit),
-                ("Ctrl+0", self.zoom_to_actual_size),
-                ("Ctrl+Q", lambda: self.rotate_current_image("left")),
-                ("Ctrl+E", lambda: self.rotate_current_image("right")),
-            ]
-            for sequence, handler in shortcuts:
+            # Os atalhos saem do registro de comandos: o atalho exibido na
+            # paleta é sempre o que funciona. Ctrl+Z / Ctrl+V / ←/→ / B ficam em
+            # keyPressEvent para não roubar as teclas de campos de texto (F3).
+            self.commands = self._build_command_registry()
+            for command in self.commands.all():
+                if not command.register_shortcut:
+                    continue
+                action = QAction(self)
+                action.setShortcut(QKeySequence(command.shortcut))
+                # o handler valida sozinho (ex.: "Nenhuma imagem carregada")
+                action.triggered.connect(lambda _checked=False, c=command: c.handler())
+                self.addAction(action)
+            for sequence in ("Ctrl+K", "Ctrl+Shift+P"):
                 action = QAction(self)
                 action.setShortcut(QKeySequence(sequence))
-                action.triggered.connect(handler)
+                action.triggered.connect(self.open_command_palette)
                 self.addAction(action)
+            if not self.app_config.get("command_palette_hint_shown"):
+                QTimer.singleShot(2500, self._show_command_palette_hint)
+
+        def _show_command_palette_hint(self):
+            if not self._window_alive():
+                return
+            self.show_status("Novo: Ctrl+K abre a paleta de comandos — digite o que quer fazer.", timeout_ms=12000)
+            self.app_config.set("command_palette_hint_shown", True)
+            self.app_config.save()
+
+        # ── Paleta de comandos (Ctrl+K) ────────────────────────────────────
+
+        def _build_command_registry(self):
+            from src.qt.commands import Command, CommandRegistry
+            from src.qt.tabs.editor_tab import ANIMATION_OPTIONS
+
+            has_images = lambda: bool(self.editor_state.image_list)
+            has_current = lambda: bool(self.current_path)
+            idle = lambda: has_images() and not self._running_user_operations()
+            reg = CommandRegistry()
+            static = [
+                ("file.open", "Abrir pasta", self.load_folder, "Arquivo", "Ctrl+O", ("carregar", "imagens"), None, True),
+                ("file.paste", "Colar imagem", self.paste_image, "Arquivo", "Ctrl+V", ("clipboard",), None, False),
+                ("edit.undo", "Desfazer", self.undo_current_image, "Editar", "Ctrl+Z", (), has_current, False),
+                ("edit.redo", "Refazer", self.redo_current_image, "Editar", "Ctrl+Y", (), has_current, False),
+                ("frame.auto", "Auto fit", self.apply_auto_fit, "Enquadramento", "Alt+B", ("ajustar", "borda"), has_current, True),
+                ("frame.smart", "Ajuste inteligente (rosto)", self.apply_intelligent_fit, "Enquadramento", "Alt+F", ("face",), has_current, True),
+                ("frame.auto_all", "Auto fit em todas", lambda: self.apply_adjustment_to_all("auto_fit"), "Enquadramento", "", ("lote",), idle, False),
+                ("frame.smart_all", "Ajuste inteligente em todas", lambda: self.apply_adjustment_to_all("intelligent_fit"), "Enquadramento", "", ("lote", "rosto"), idle, False),
+                ("frame.copy_all", "Copiar enquadramento para todas", self.copy_framing_to_all, "Enquadramento", "", ("lote",), has_current, False),
+                ("view.zoom100", "Zoom 100%", self.zoom_to_actual_size, "Visualizar", "Ctrl+0", ("tamanho real",), has_current, True),
+                ("image.rotate_left", "Rotacionar à esquerda", lambda: self.rotate_current_image("left"), "Imagem", "Ctrl+Q", ("girar",), has_current, True),
+                ("image.rotate_right", "Rotacionar à direita", lambda: self.rotate_current_image("right"), "Imagem", "Ctrl+E", ("girar",), has_current, True),
+                ("border.pick", "Pick Color (conta-gotas)", self._toggle_color_picker_btn, "Borda", "", ("cor", "pegar"), has_current, False),
+                ("border.auto", "Cor de borda automática nesta imagem", lambda: self.apply_auto_border(all_images=False), "Borda", "", ("cor",), has_current, False),
+                ("border.auto_all", "Cor de borda automática em todas", lambda: self.apply_auto_border(all_images=True), "Borda", "", ("cor", "lote"), idle, False),
+                ("border.apply_all", "Aplicar borda e animação a todas", self.apply_style_to_all, "Borda", "", ("estilo",), has_images, False),
+                ("export.all", "Salvar todas", self.save_all_images, "Exportar", "Ctrl+S", ("exportar", "pasta"), idle, True),
+                ("export.current", "Salvar imagem atual", self.save_current_image, "Exportar", "Ctrl+Shift+S", ("exportar",), has_current, True),
+                ("export.zip", "Exportar ZIP", self.save_zip, "Exportar", "", ("compactar", "salvar"), idle, False),
+                ("export.imgchest", "Enviar para ImgChest", self.upload_to_imgchest, "Exportar", "", ("upload", "mudae"), idle, False),
+                ("review.open", "Revisar customs", lambda: self.open_review(), "Exportar", "", ("grade", "previa"), has_images, False),
+                ("review.sizes", "Calcular tamanhos das customs", lambda: self.open_review(measure=True), "Exportar", "", ("peso", "mb"), has_images, False),
+                ("app.settings", "Configurações", self._open_settings, "App", "", ("preferencias", "opcoes"), None, False),
+                ("tab.editor", "Ir para a aba Edição", lambda: self.tabs.setCurrentIndex(0), "Navegar", "", (), None, False),
+                ("tab.online", "Ir para a aba Online (Danbooru)", self._focus_online_search, "Navegar", "", ("buscar", "danbooru"), None, False),
+                ("tab.ai", "Ir para a aba IA", lambda: self.tabs.setCurrentIndex(2), "Navegar", "", (), None, False),
+            ]
+            for cid, title, handler, category, shortcut, keywords, enabled, register in static:
+                reg.register(Command(
+                    cid, title, handler, category, shortcut, keywords,
+                    enabled or (lambda: True), register_shortcut=register,
+                ))
+
+            def dynamic():
+                commands = []
+                for name in sorted(BORDA_HEX) + ["Cor Personalizada"]:
+                    commands.append(Command(
+                        f"border.set.{name}", f"Borda: {name}",
+                        lambda n=name: self.options_border_combo.setCurrentText(n), "Borda", keywords=("cor",),
+                    ))
+                for anim in ANIMATION_OPTIONS:
+                    # pelo combo: passa pelo aviso de fotossensibilidade do Strobe
+                    commands.append(Command(
+                        f"anim.set.{anim}", f"Animação: {anim}",
+                        lambda a=anim: self.options_anim_combo.setCurrentText(a), "Animação", keywords=("gif",),
+                    ))
+                for preset in self.preset_manager.list_presets():
+                    commands.append(Command(
+                        f"preset.{preset}", f"Preset: {preset}",
+                        lambda p=preset: self._apply_preset_by_name(p), "Preset",
+                    ))
+                for mode, label in (("auto_fit", "Auto fit"), ("intelligent", "Inteligente (rosto)")):
+                    commands.append(Command(
+                        f"framing.default.{mode}", f"Enquadramento padrão: {label}",
+                        lambda m=mode: self.set_default_framing(m), "Enquadramento",
+                    ))
+                return commands
+
+            reg.add_provider(dynamic)
+            return reg
+
+        def _apply_preset_by_name(self, name):
+            data = self.preset_manager.get_preset(name)
+            if not data:
+                self.show_status(f"O preset '{name}' não existe mais.")
+                return
+            self.apply_preset(data)
+
+        def _focus_online_search(self):
+            self.tabs.setCurrentIndex(1)
+            self.online_tab.search_combo.setFocus()
+
+        def open_command_palette(self):
+            from src.qt.dialogs.command_palette import CommandPalette
+            recent = [cid for cid in (self.app_config.get("command_palette_recent") or []) if isinstance(cid, str)]
+            palette = CommandPalette(self, self.commands, recent_ids=recent, on_run=self._run_command)
+            self._command_palette = palette
+            palette.show_centered()
+            return palette
+
+        def _run_command(self, command):
+            recent = [cid for cid in (self.app_config.get("command_palette_recent") or []) if cid != command.id]
+            self.app_config.set("command_palette_recent", [command.id] + recent[:7])
+            self.app_config.save()
+            command.handler()
 
         # ── Navegação entre imagens ────────────────────────────────────────
 

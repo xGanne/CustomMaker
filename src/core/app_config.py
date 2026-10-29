@@ -68,6 +68,8 @@ DEFAULT_CONFIG = {
     # aviso de custom pesada na revisão e antes do upload (0 desliga). O limite
     # real do ImgChest/Mudae não está confirmado: 8 MB é provisório
     "export_size_warn_mb": 8.0,
+    "command_palette_recent": [],
+    "command_palette_hint_shown": False,
 }
 
 
@@ -137,6 +139,13 @@ class AppConfig:
 
         if not isinstance(migrated.get("danbooru_portrait_only"), bool):
             migrated["danbooru_portrait_only"] = DEFAULT_CONFIG["danbooru_portrait_only"]
+
+        recent = migrated.get("command_palette_recent")
+        migrated["command_palette_recent"] = (
+            [c for c in recent if isinstance(c, str)][:8] if isinstance(recent, list) else []
+        )
+        if not isinstance(migrated.get("command_palette_hint_shown"), bool):
+            migrated["command_palette_hint_shown"] = False
 
         if not isinstance(migrated.get("strobe_warning_acknowledged"), bool):
             migrated["strobe_warning_acknowledged"] = DEFAULT_CONFIG["strobe_warning_acknowledged"]
