@@ -115,6 +115,9 @@ if QT_AVAILABLE:
             # Undo/redo stacks (keyed by file path)
             self._undo_stacks = {}
             self._redo_stacks = {}
+            # prévias da Revisão por conteúdo (src/core/render_cache.py)
+            from src.core.render_cache import RenderCache
+            self.render_cache = RenderCache()
 
             # Animation preview state
             self._active_preview_task_id = None
@@ -1312,6 +1315,7 @@ if QT_AVAILABLE:
                 for stack in stacks.values():
                     self._dispose_images([snapshot.image for snapshot in stack])
                 stacks.clear()
+            self.render_cache.clear()
             super().closeEvent(event)
 
 else:

@@ -280,6 +280,9 @@ class ImageLoaderMixin:
             self._dispose_images([snapshot.image for snapshot in stack])
         self._redo_stack_map().clear()
         self._clear_preview_cache()
+        if getattr(self, "render_cache", None) is not None:
+            self.render_cache.clear()
+        self.__dict__.pop("_edit_versions", None)
 
     def load_folder(self, folder=None):
         if not folder:
@@ -336,11 +339,17 @@ class ImageLoaderMixin:
                 return None
         return cache[path]
 
+    def _bump_edit_version(self, path):
+        """Edição de pixels mudou a fonte da imagem sem mudar o caminho (cache da Revisão)."""
+        versions = self.__dict__.setdefault("_edit_versions", {})
+        versions[path] = versions.get(path, 0) + 1
+
     def set_edited_image_for_current(self, image):
         if not self.current_path:
             return
         previous = self.edited_images.get(self.current_path)
         self.edited_images[self.current_path] = image.copy()
+        self._bump_edit_version(self.current_path)
         if previous is not None and previous is not image:
             self._dispose_images([previous])
         self.editor_state.mark_pixels_edited(self.current_path)
@@ -633,6 +642,7 @@ class ImageLoaderMixin:
             # F15: só volta para edited_images se o estado restaurado tinha
             # edição de pixels — senão o indicador "editada" ficava para sempre
             self.edited_images[path] = image.copy()
+            self._bump_edit_version(path)
             display = self.edited_images[path]
             self._remember_preview_cache(path, display)
         else:

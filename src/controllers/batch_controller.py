@@ -110,7 +110,10 @@ class BatchController:
         }
         return clone
 
-    def _get_task_data(self, path, output_path=None, source_dir=None):
+    def _get_task_data(self, path, output_path=None, source_dir=None, write_source=True):
+        """Dados de uma task de render. `write_source=False` não grava a imagem
+        editada no disco (só marca "edited"): serve para calcular a chave de
+        cache antes de decidir se precisa renderizar."""
         state = self._image_states().get(path)
         generated_state = False
         if not state:
@@ -139,7 +142,9 @@ class BatchController:
         }
         source_image = self._edited_source_images.get(path)
         if source_image is not None:
-            data["source_path"] = self._save_source_override(path, source_image, source_dir)
+            data["edited"] = True
+            if write_source:
+                data["source_path"] = self._save_source_override(path, source_image, source_dir)
         return data
 
     @staticmethod
