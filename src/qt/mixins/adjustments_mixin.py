@@ -92,30 +92,17 @@ class AdjustmentsMixin:
         self.show_status(f"Prévia rotacionada para {direction}.")
 
     def apply_preset(self, data):
-        border_name = data.get("border_name", self.editor_state.selected_borda)
-        if border_name in BORDA_HEX or border_name == "Cor Personalizada":
-            self.editor_state.selected_borda = border_name
-        custom_color = data.get("border_color")
-        if isinstance(custom_color, str) and custom_color.startswith("#") and len(custom_color) == 7:
-            self.editor_state.custom_borda_hex = custom_color
-        animation_type = data.get("animation_type")
-        if isinstance(animation_type, str):
-            self.editor_state.animation_type = animation_type
-        adjustments = data.get("color_adjustments")
-        if isinstance(adjustments, dict) and self.current_path:
-            self.editor_state.set_image_adjustments(self.current_path, adjustments)
-            if hasattr(self, "_on_adjustments_restored"):
-                self._on_adjustments_restored()
-        if "border_style" in data:  # presets antigos não têm: mantém o estilo atual
-            from src.core.border_styles import normalize_style
-            self.editor_state.border_style = normalize_style(data.get("border_style"))
-        # M11: partes opcionais — só existem se o preset foi salvo com elas
-        framing = data.get("default_framing")
-        if framing in ("auto_fit", "intelligent"):
-            self.set_default_framing(framing, announce=False)
-        blacklist = data.get("danbooru_blacklist")
-        if isinstance(blacklist, str):
-            self.app_config.set("danbooru_tag_blacklist", blacklist.strip())
+        from src.core.preset_manager import apply_preset_to_state
+        rest = apply_preset_to_state(
+            data, self.editor_state, BORDA_HEX, adjust_paths=[self.current_path] if self.current_path else []
+        )
+        if "color_adjustments" in rest and self.current_path and hasattr(self, "_on_adjustments_restored"):
+            self._on_adjustments_restored()
+        if "default_framing" in rest:
+            self.set_default_framing(rest["default_framing"], announce=False)
+        blacklist = rest.get("danbooru_blacklist")
+        if blacklist is not None:
+            self.app_config.set("danbooru_tag_blacklist", blacklist)
             self.app_config.save()
             if hasattr(self, "online_tab"):
                 self.online_tab.refresh_from_config()

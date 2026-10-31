@@ -12,8 +12,8 @@ import os
 from src.core.file_sizes import format_bytes, size_summary, warn_limit_bytes
 
 
-# Limite de caracteres de uma mensagem do Discord (sem Nitro)
-DISCORD_MESSAGE_LIMIT = 2000
+from src.core import mudae as _mudae
+from src.core.mudae import DISCORD_MESSAGE_LIMIT  # noqa: F401 (reexportado)
 
 
 class ExportMixin:
@@ -325,28 +325,9 @@ class ExportMixin:
         if not open_with_default_app(ENV_FILE):
             self.show_error("Upload", f"Não foi possível abrir o arquivo:\n{ENV_FILE}")
 
-    @staticmethod
-    def mudae_command(title, links):
-        """Comando do Mudae que adiciona as imagens à custom `title`."""
-        return f"$ai {title} $\n" + " $\n".join(links)
-
-    @classmethod
-    def mudae_commands(cls, title, links, limit=DISCORD_MESSAGE_LIMIT):
-        """Comando dividido em mensagens que cabem no limite do Discord.
-
-        Com ~40 imagens o comando único passava de 2000 caracteres e o Discord
-        recusava a mensagem. Cada parte é um $ai completo para a mesma custom.
-        """
-        parts, current = [], []
-        for link in links:
-            candidate = current + [link]
-            if current and len(cls.mudae_command(title, candidate)) > limit:
-                parts.append(cls.mudae_command(title, current))
-                candidate = [link]
-            current = candidate
-        if current:
-            parts.append(cls.mudae_command(title, current))
-        return parts
+    # comandos do Mudae vivem no core (usados também pelo modo --batch)
+    mudae_command = staticmethod(_mudae.mudae_command)
+    mudae_commands = staticmethod(_mudae.mudae_commands)
 
     def _show_links_dialog(self, title, links):
         from src.qt.compat import (

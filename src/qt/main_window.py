@@ -21,7 +21,7 @@ from collections import OrderedDict
 
 from PIL import Image, ImageGrab
 
-from src.config.settings import BORDA_HEX, SUPPORTED_EXTENSIONS
+from src.config.settings import BORDA_HEX
 from src.controllers.batch_controller import BatchController
 from src.core.editor_state import EditorState, UiPreferences
 from src.core.image_processor import ImageProcessor
@@ -1218,12 +1218,8 @@ if QT_AVAILABLE:
             files = [p for p in paths if os.path.isfile(p)]
             if folders:
                 folder = folders[0]
-                folder_paths = [
-                    os.path.join(folder, name)
-                    for name in sorted(os.listdir(folder))
-                    if os.path.isfile(os.path.join(folder, name)) and name.lower().endswith(SUPPORTED_EXTENSIONS)
-                ]
-                self.add_images(folder_paths, replace=True)
+                from src.core.image_files import list_folder_images
+                self.add_images(list_folder_images(folder), replace=True)
             elif files:
                 self.add_images(files, replace=False, select_last=True)
             event.acceptProposedAction()

@@ -70,3 +70,40 @@ class PresetManager:
                 return color
             return None
         return borda_hex.get(border_name)
+
+
+def apply_preset_to_state(data, editor_state, borda_hex, adjust_paths=()):
+    """Aplica um preset ao estado do editor (sem interface) e devolve o resto.
+
+    Borda, cor, animação, estilo de borda e ajustes de cor (nas imagens de
+    `adjust_paths`) vão direto para `editor_state`. Enquadramento padrão e
+    blacklist do Danbooru dependem de quem chama (a janela reenquadra e grava a
+    config; o modo --batch não grava nada), então voltam no dicionário.
+    """
+    from src.core.border_styles import normalize_style
+
+    if not isinstance(data, dict):
+        return {}
+    border_name = data.get("border_name", editor_state.selected_borda)
+    if border_name in borda_hex or border_name == "Cor Personalizada":
+        editor_state.selected_borda = border_name
+    custom_color = data.get("border_color")
+    if isinstance(custom_color, str) and custom_color.startswith("#") and len(custom_color) == 7:
+        editor_state.custom_borda_hex = custom_color
+    animation_type = data.get("animation_type")
+    if isinstance(animation_type, str):
+        editor_state.animation_type = animation_type
+    if "border_style" in data:  # presets antigos não têm: mantém o estilo atual
+        editor_state.border_style = normalize_style(data.get("border_style"))
+    rest = {}
+    adjustments = data.get("color_adjustments")
+    if isinstance(adjustments, dict):
+        for path in adjust_paths:
+            editor_state.set_image_adjustments(path, adjustments)
+        rest["color_adjustments"] = adjustments
+    # M11: partes opcionais — só existem se o preset foi salvo com elas
+    if data.get("default_framing") in ("auto_fit", "intelligent"):
+        rest["default_framing"] = data["default_framing"]
+    if isinstance(data.get("danbooru_blacklist"), str):
+        rest["danbooru_blacklist"] = data["danbooru_blacklist"].strip()
+    return rest

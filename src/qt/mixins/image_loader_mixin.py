@@ -289,11 +289,8 @@ class ImageLoaderMixin:
             folder = self.choose_directory("Selecione a pasta de imagens")
         if not folder:
             return
-        paths = [
-            os.path.join(folder, name)
-            for name in sorted(os.listdir(folder))
-            if os.path.isfile(os.path.join(folder, name)) and name.lower().endswith(SUPPORTED_EXTENSIONS)
-        ]
+        from src.core.image_files import list_folder_images
+        paths = list_folder_images(folder)
         self.add_images(paths, replace=True)
         self._push_recent_folder(folder)
         self.show_status(f"{len(paths)} imagem(ns) carregada(s).")
