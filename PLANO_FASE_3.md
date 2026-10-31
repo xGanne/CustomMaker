@@ -6,6 +6,19 @@
 >
 > Fases: [Fase 1](PLANO_FASE_1.md) → [Fase 2](PLANO_FASE_2.md) → **3 (este arquivo)**.
 
+## ✅ Status (atualizado em 2026-10-31) — Fase 3 implementada
+
+| Item | Situação |
+|---|---|
+| 9 — Paridade canvas × export | **Feito** `7261cb2`: geometria (±1 px pelos limites de quadrantes de cor), cor com tolerância, borda e transparência em auto fit, zoom 37/100/250%, área vazia, borda individual, janela redimensionada, paisagem/pequena/grande (JPEG com draft), rotação, estilos de borda, ajustes de tom e 1º quadro da animação; 9.d (Revisão == arquivo, pixel a pixel). **A suspeita 9.a se confirmou** e foi corrigida em `70d2d26`: a borda do canvas cobria só ~2,5 px por dentro — o canvas mostrava ~2 px a mais de imagem em cada lado do que o arquivo. |
+| 8 — Cache de renderização | **Feito** `2492f43`, `f66525a`: chave por conteúdo (arquivo, posição relativa à borda, tamanho, cor, estilo, ajustes, versão da edição de pixels); LRU de 48 MB, limpo ao trocar de pasta/fechar; a Revisão mostra os cards conforme ficam prontos. 8.c (render em processos) não feito: com o cache não foi necessário. |
+| 10 — Linha de comando | **Feito** `3c80faf` (extrações para o core), `c13ee65` (`--batch`), `f2bd939` (CI no exe + README). 10.f (`--danbooru`) não feito — opcional, fora da fase. |
+
+Medições (máquina local, 50 imagens 800×1200 JPEG):
+- Revisão: 1ª abertura **1,58 s**; reabertura **0,05 s** (50 do cache).
+- `python main.py --batch ... --zip`: **3,1 s**. No exe, o CI valida o `--batch` a cada push
+  (tempo do exe não medido localmente — gerar o exe aqui pesa na máquina).
+
 ## Visão geral
 
 | # | Item | Ganho | Esforço | Commits previstos |
