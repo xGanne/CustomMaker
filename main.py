@@ -7,6 +7,10 @@ if __name__ == "__main__":
     # exportação reexecuta o app (abrindo outra janela) e o lote quebra com
     # BrokenProcessPool. Fora do exe é um no-op.
     multiprocessing.freeze_support()
+    if "--batch" in sys.argv:
+        # modo linha de comando (sem janela; não importa o Qt): ver src/cli.py
+        from src.cli import run_cli
+        raise SystemExit(run_cli(sys.argv[1:]))
     if "--self-test" in sys.argv:
         # autoteste sem janela (usado pelo CI no exe): --self-test [relatorio.txt]
         from src.self_test import run_self_test

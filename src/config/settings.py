@@ -1,4 +1,4 @@
-﻿import os
+import os
 
 from dotenv import load_dotenv
 
@@ -129,3 +129,14 @@ SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
 
 # Path to local assets
 FACE_CASCADE_FILE = resource_path("lbpcascade_animeface.xml")
+
+# animações de borda, na ordem dos seletores da interface
+ANIMATION_OPTIONS = [
+    "Nenhuma",
+    "Rainbow",
+    "Neon Pulsante",
+    "Strobe (Pisca)",
+    "Glitch",
+    "Spin",
+    "Flow",
+]

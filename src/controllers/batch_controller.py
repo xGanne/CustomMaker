@@ -300,6 +300,14 @@ class BatchController:
             executor.shutdown(wait=False, cancel_futures=True)
 
     @staticmethod
+    def _failed(results):
+        """[(nome do arquivo, erro)] das imagens que falharam no lote."""
+        return [
+            (os.path.basename(r.get("path") or "?"), r.get("error") or "erro desconhecido")
+            for r in results if r.get("status") != "success"
+        ]
+
+    @staticmethod
     def _saved_sizes(results):
         """{path de origem: bytes do arquivo gerado} dos resultados com sucesso."""
         sizes = {}
@@ -465,6 +473,7 @@ class BatchController:
                 "skipped": skipped,
                 "generated_states": self._generated_states(tasks),
                 "sizes": self._saved_sizes(batch["results"]),
+                "failed": self._failed(batch["results"]),
             }
         finally:
             shutil.rmtree(source_dir, ignore_errors=True)
@@ -518,6 +527,7 @@ class BatchController:
                 "skipped": skipped,
                 "generated_states": self._generated_states(tasks),
                 "sizes": self._saved_sizes(batch["results"]),
+                "failed": self._failed(batch["results"]),
             }
 
     def prepare_upload(self, progress_callback=None, cancel_event=None, paths=None):

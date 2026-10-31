@@ -26,15 +26,8 @@ if QT_AVAILABLE:
     )
 
 
-ANIMATION_OPTIONS = [
-    "Nenhuma",
-    "Rainbow",
-    "Neon Pulsante",
-    "Strobe (Pisca)",
-    "Glitch",
-    "Spin",
-    "Flow",
-]
+# a lista vive em settings (o modo --batch usa sem importar o Qt)
+from src.config.settings import ANIMATION_OPTIONS  # noqa: E402
 
 
 if QT_AVAILABLE:
