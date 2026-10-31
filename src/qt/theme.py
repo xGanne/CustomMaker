@@ -310,6 +310,21 @@ QToolButton:pressed {{
     background-color: {T["accent_hover"]};
     color: {T["on_accent"]};
 }}
+/* botão com menu na toolbar (Desfazer → histórico): setinha discreta, sem caixa */
+QToolButton::menu-button {{
+    border: none;
+    background: transparent;
+    width: 10px;
+}}
+QToolButton::menu-button:hover {{
+    background-color: {T["surface_muted"]};
+    border-radius: 3px;
+}}
+QToolButton::menu-arrow {{
+    image: url({chevron_secondary});
+    width: 8px;
+    height: 8px;
+}}
 
 /* ── Options bar (acima do canvas) ───────────────────────── */
 #OptionsBar {{
