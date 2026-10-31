@@ -21,8 +21,11 @@ class Snapshot:
     pixel_edited: bool
     label: str = ""
     timestamp: float = field(default_factory=time.monotonic)
+    adjustments: dict = field(default_factory=dict)  # ajustes de cor da imagem neste estado
 
     def shifted(self, dx, dy):
         """Cópia com a posição deslocada (a borda mudou de lugar no canvas)."""
         x, y = self.pos
-        return Snapshot(self.image, (x + dx, y + dy), self.size, self.pixel_edited, self.label, self.timestamp)
+        return Snapshot(
+            self.image, (x + dx, y + dy), self.size, self.pixel_edited, self.label, self.timestamp, dict(self.adjustments)
+        )

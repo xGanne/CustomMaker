@@ -1,4 +1,5 @@
 from src.config.settings import BORDA_HEX
+from src.core.color_adjustments import KEYS as ADJUSTMENT_KEYS, LABELS as ADJUSTMENT_LABELS
 from src.core.editor_state import FRAMING_MODES
 from src.core.preset_manager import PresetManager
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
@@ -8,6 +9,7 @@ if QT_AVAILABLE:
         QCheckBox,
         QColor,
         QComboBox,
+        QGridLayout,
         QIcon,
         QGroupBox,
         QHBoxLayout,
@@ -16,6 +18,8 @@ if QT_AVAILABLE:
         QPixmap,
         QPushButton,
         QScrollArea,
+        QSlider,
+        QSpinBox,
         Qt,
         QVBoxLayout,
         QWidget,
@@ -34,6 +38,14 @@ ANIMATION_OPTIONS = [
 
 
 if QT_AVAILABLE:
+    class _ResetSlider(QSlider):
+        """Slider de ajuste: duplo clique volta ao neutro (0)."""
+
+        def mouseDoubleClickEvent(self, event):
+            self.setValue(0)
+            event.accept()
+
+
     class EditorTab(QWidget):
         def __init__(self, main_window, parent=None):
             super().__init__(parent)
@@ -162,6 +174,11 @@ if QT_AVAILABLE:
             row_options.addWidget(self.preset_include_framing)
             row_options.addWidget(self.preset_include_blacklist)
             row_options.addStretch(1)
+            row_options2 = QHBoxLayout()
+            self.preset_include_adjustments = QCheckBox("Ajustes de cor")
+            self.preset_include_adjustments.setToolTip("Salvar também os ajustes de cor da imagem atual")
+            row_options2.addWidget(self.preset_include_adjustments)
+            row_options2.addStretch(1)
 
             row_load = QHBoxLayout()
             row_load.setSpacing(6)
@@ -178,9 +195,56 @@ if QT_AVAILABLE:
 
             preset_layout.addLayout(row_save)
             preset_layout.addLayout(row_options)
+            preset_layout.addLayout(row_options2)
             preset_layout.addLayout(row_load)
 
+            # ── Ajustes de cor (por imagem, não destrutivos) ───────────────
+            adjust_group = QGroupBox("Ajustes de cor")
+            adjust_layout = QVBoxLayout(adjust_group)
+            adjust_layout.setSpacing(6)
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(8)
+            grid.setVerticalSpacing(4)
+            self.adjust_sliders = {}
+            self.adjust_spins = {}
+            for row, key in enumerate(ADJUSTMENT_KEYS):
+                label = QLabel(ADJUSTMENT_LABELS[key] + ":")
+                slider = _ResetSlider(Qt.Horizontal)
+                slider.setRange(-100, 100)
+                spin = QSpinBox()
+                spin.setRange(-100, 100)
+                spin.setFixedWidth(64)
+                tip = "Duplo clique no controle volta a 0."
+                if key == "sharpness":
+                    tip = "A nitidez aparece na Revisão e no arquivo exportado (não na prévia ao vivo). " + tip
+                for widget in (label, slider, spin):
+                    widget.setToolTip(tip)
+                slider.valueChanged.connect(lambda value, k=key: self._on_adjust_value(k, value))
+                spin.valueChanged.connect(lambda value, k=key: self._on_adjust_value(k, value))
+                slider.sliderPressed.connect(lambda k=key: self.main_window.begin_adjustment_gesture(k))
+                slider.sliderReleased.connect(self.main_window.end_adjustment_gesture)
+                grid.addWidget(label, row, 0)
+                grid.addWidget(slider, row, 1)
+                grid.addWidget(spin, row, 2)
+                self.adjust_sliders[key] = slider
+                self.adjust_spins[key] = spin
+            grid.setColumnStretch(1, 1)
+            adjust_layout.addLayout(grid)
+            adjust_buttons = QHBoxLayout()
+            reset_adjust_btn = QPushButton("Resetar")
+            reset_adjust_btn.setProperty("class", "secondary")
+            reset_adjust_btn.setToolTip("Volta os ajustes de cor desta imagem ao original")
+            reset_adjust_btn.clicked.connect(self.main_window.reset_current_adjustments)
+            all_adjust_btn = QPushButton("Aplicar a todas")
+            all_adjust_btn.setProperty("class", "secondary")
+            all_adjust_btn.setToolTip("Copia os ajustes de cor desta imagem para todas as imagens da lista")
+            all_adjust_btn.clicked.connect(self.main_window.apply_adjustments_to_all)
+            adjust_buttons.addWidget(reset_adjust_btn, 1)
+            adjust_buttons.addWidget(all_adjust_btn, 1)
+            adjust_layout.addLayout(adjust_buttons)
+
             layout.addWidget(fit_group)
+            layout.addWidget(adjust_group)
             layout.addWidget(save_group)
             layout.addWidget(preset_group)
             layout.addStretch(1)
@@ -225,6 +289,26 @@ if QT_AVAILABLE:
             if mode:
                 self.main_window.set_default_framing(mode)
 
+        # ── Ajustes de cor ────────────────────────────────────────────────
+
+        def refresh_adjustments(self, adjustments):
+            """Mostra os ajustes da imagem atual sem disparar mudanças."""
+            for key in ADJUSTMENT_KEYS:
+                value = int((adjustments or {}).get(key, 0))
+                for widget in (self.adjust_sliders[key], self.adjust_spins[key]):
+                    widget.blockSignals(True)
+                    widget.setValue(value)
+                    widget.blockSignals(False)
+
+        def _on_adjust_value(self, key, value):
+            # slider e número andam juntos
+            for widget in (self.adjust_sliders[key], self.adjust_spins[key]):
+                if widget.value() != value:
+                    widget.blockSignals(True)
+                    widget.setValue(value)
+                    widget.blockSignals(False)
+            self.main_window.set_current_adjustment(key, value)
+
         def sync_from_options_bar(self):
             """No-op — state is driven by main_window options bar and editor_state."""
             pass
@@ -243,6 +327,9 @@ if QT_AVAILABLE:
             }
             if self.preset_include_framing.isChecked():
                 data["default_framing"] = state.default_framing
+            if self.preset_include_adjustments.isChecked():
+                path = self.main_window.current_path
+                data["color_adjustments"] = dict(state.image_adjustments.get(path, {})) if path else {}
             if self.preset_include_blacklist.isChecked():
                 data["danbooru_blacklist"] = self.main_window.app_config.get("danbooru_tag_blacklist", "") or ""
             self.main_window.preset_manager.add_preset(name, data)

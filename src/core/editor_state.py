@@ -25,6 +25,8 @@ class EditorState:
     animation_type: str = "Nenhuma"
     # estilo da borda (src/core/border_styles.py); vale para customs sem animação
     border_style: str = "simples"
+    # ajustes de cor por imagem (src/core/color_adjustments.py); só os não neutros
+    image_adjustments: Dict[str, dict] = field(default_factory=dict)
     uploaded_links: List[str] = field(default_factory=list)
     borda_pos: Tuple[int, int] = (0, 0)
     image_dirty: Set[str] = field(default_factory=set)
@@ -76,6 +78,19 @@ class EditorState:
     def user_adjusted(self) -> Set[str]:
         return set(self.image_states) - self.auto_framed
 
+    def set_image_adjustments(self, path: str, adjustments) -> bool:
+        """Grava os ajustes de cor da imagem; devolve True se mudaram."""
+        from src.core.color_adjustments import normalize
+        value = normalize(adjustments)
+        if value == self.image_adjustments.get(path, {}):
+            return False
+        if value:
+            self.image_adjustments[path] = value
+        else:
+            self.image_adjustments.pop(path, None)
+        self.image_dirty.add(path)
+        return True
+
     def mark_pixels_edited(self, path: str) -> None:
         self.image_dirty.add(path)
 
@@ -85,6 +100,7 @@ class EditorState:
         self.auto_framed.discard(path)
         self.individual_bordas.pop(path, None)
         self.custom_borda_hex_individual.pop(path, None)
+        self.image_adjustments.pop(path, None)
         if path in self.image_list:
             index = self.image_list.index(path)
             self.image_list.pop(index)
@@ -105,6 +121,7 @@ class EditorState:
         self.uploaded_links.clear()
         self.image_dirty.clear()
         self.auto_framed.clear()
+        self.image_adjustments.clear()
 
 
 @dataclass

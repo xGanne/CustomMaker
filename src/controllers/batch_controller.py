@@ -13,6 +13,7 @@ from typing import List
 from PIL import Image
 
 from src.core.batch_worker import measure_custom, process_image_task
+from src.core.color_adjustments import cache_token
 from src.core.image_processor import ImageProcessor
 
 
@@ -132,6 +133,7 @@ class BatchController:
             "anim_type": anim_type,
             "border_color": b_hex,
             "border_style": self._state_attr("border_style", "simples") or "simples",
+            "adjustments": dict((self._state_attr("image_adjustments", {}) or {}).get(path) or {}),
             "output_path": output_path,
             "generated_state": generated_state,
         }
@@ -374,6 +376,7 @@ class BatchController:
             task["path"], stat.st_mtime_ns, stat.st_size,
             (int(x - bx), int(y - by)), tuple(int(v) for v in task["state"]["size"]),
             task["border_color"], task["anim_type"], task.get("border_style") or "simples",
+            cache_token(task.get("adjustments")),
         )
 
     def measure_sizes(self, paths=None, progress_callback=None, cancel_event=None, on_result=None, cache=None):

@@ -132,6 +132,7 @@ if QT_AVAILABLE:
         color_pick_cancelled = Signal()  # Esc no modo Pick Color
         zoom_changed = Signal(float)  # B4: emits zoom factor (1.0 = original size)
         uncovered_changed = Signal(bool)  # parte da custom ficaria transparente
+        image_set = Signal()  # uma imagem nova foi posta no canvas (set_image)
 
         LOADING_SHOW_DELAY_MS = 150
 
@@ -628,6 +629,24 @@ if QT_AVAILABLE:
             self.scene.addItem(self.image_item)
             self._apply_size_transform(size)
             self._emit_state_changed()
+            self.image_set.emit()
+
+        def replace_display_image(self, pil_image):
+            """Troca a imagem exibida mantendo posição e tamanho (prévia dos ajustes
+            de cor). O original guardado para o antes/depois (B) não muda: o B
+            continua comparando com a imagem sem ajustes."""
+            if self.image_item is None or self._base_image is None:
+                return
+            if pil_image.size != self._base_image.size:
+                return  # outra imagem já foi carregada
+            self._base_image = pil_image.convert("RGBA")
+            self._base_pixmap = _pil_to_qpixmap(self._base_image)
+            if self._before_after_active:
+                return  # restore_edit_preview aplica o pixmap novo
+            size = self._current_size
+            self.image_item.setPixmap(self._base_pixmap)
+            if size is not None:
+                self._apply_size_transform(size)
 
         def set_image_state(self, pos, size):
             if self.image_item is None or self._base_image is None:

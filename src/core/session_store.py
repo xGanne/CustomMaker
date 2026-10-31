@@ -42,6 +42,7 @@ def snapshot_session(editor_state, edited_paths):
         "custom_borda_hex": editor_state.custom_borda_hex,
         "animation_type": editor_state.animation_type,
         "border_style": editor_state.border_style,
+        "adjustments": {p: dict(a) for p, a in editor_state.image_adjustments.items() if p in editor_state.image_list},
         "edits": {path: _edit_file_name(path) for path in edited_paths if path in editor_state.image_list},
     }
 
@@ -76,6 +77,11 @@ def apply_session(data, editor_state):
     # sessões salvas antes dos estilos não têm a chave: abrem com o simples
     from src.core.border_styles import normalize_style
     editor_state.border_style = normalize_style(data.get("border_style"))
+    from src.core.color_adjustments import normalize
+    adjustments = data.get("adjustments") if isinstance(data.get("adjustments"), dict) else {}
+    editor_state.image_adjustments = {
+        p: value for p, value in ((p, normalize(a)) for p, a in adjustments.items() if p in present) if value
+    }
     index = data.get("current_index")
     if isinstance(index, int) and 0 <= index < len(present):
         editor_state.current_image_index = index

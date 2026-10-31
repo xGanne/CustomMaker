@@ -155,6 +155,14 @@ class TestNamedHistory(unittest.TestCase):
         self.assertEqual(len(self._stack("undo")), 2)
         self.assertEqual(len(self._stack("redo")), 1)
 
+    def test_menu_with_several_steps_shows_their_time(self):
+        self._three_moves()  # vários passos anteriores: cada um com o tempo relativo
+        menu = compat.QMenu()
+        self.addCleanup(menu.deleteLater)
+        self.window._populate_history_menu(menu)
+        texts = [a.text() for a in menu.actions() if not a.isSeparator()]
+        self.assertEqual(texts[:3], ["● Mover", "Mover · agora", "Mover · agora"])
+
     def test_menu_lists_steps_and_jumps(self):
         self._drag(10)
         self.window.apply_auto_fit()

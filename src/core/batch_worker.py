@@ -6,6 +6,7 @@ from PIL import Image
 from src.config.settings import BORDER_THICKNESS, BORDA_HEIGHT, BORDA_WIDTH
 from src.core.animation_processor import AnimationProcessor
 from src.core.border_styles import apply_border
+from src.core.color_adjustments import apply_all
 from src.core.image_processor import ImageProcessor
 
 
@@ -38,9 +39,14 @@ def render_custom_crop(task_data):
         source.draft(source.mode, (int(target_w) * 2, int(target_h) * 2))
         orig = source.convert("RGBA")
     try:
-        return ImageProcessor.render_image_to_borda(orig, state["pos"], state["size"], task_data["borda_pos"])
+        cropped = ImageProcessor.render_image_to_borda(orig, state["pos"], state["size"], task_data["borda_pos"])
     finally:
         orig.close()
+    # ajustes de cor no recorte e antes da borda: a cor da borda nunca muda
+    adjusted = apply_all(cropped, task_data.get("adjustments"))
+    if adjusted is not cropped:
+        cropped.close()
+    return adjusted
 
 
 def render_custom_preview(task_data):

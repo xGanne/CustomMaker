@@ -16,6 +16,7 @@ A lógica de domínio está nos mixins em src/qt/mixins/:
   • ExportMixin       — salvar/zip/upload em lote
 """
 import os
+import time as _time
 from collections import OrderedDict
 
 from PIL import Image, ImageGrab
@@ -200,6 +201,7 @@ if QT_AVAILABLE:
             self.image_canvas.color_picked.connect(self.on_canvas_color_picked)
             self.image_canvas.color_pick_cancelled.connect(self.cancel_color_picker)
             self.image_canvas.uncovered_changed.connect(self._on_uncovered_changed)
+            self.image_canvas.image_set.connect(self._on_canvas_image_set)
             self.image_canvas.set_guides_pinned(bool(self.app_config.get("canvas_guides_pinned", False)))
             left_layout.addWidget(self.image_canvas)
 
@@ -771,6 +773,113 @@ if QT_AVAILABLE:
             if hasattr(self, "_toolbar_pick_btn"):
                 self._toolbar_pick_btn.setChecked(self._color_picker_enabled)
 
+        # ── Ajustes de cor ─────────────────────────────────────────────────
+
+        ADJUSTMENT_PREVIEW_DELAY_MS = 60
+        ADJUSTMENT_GESTURE_GAP_S = 0.5
+
+        def _current_adjustments(self):
+            return dict(self.editor_state.image_adjustments.get(self.current_path, {})) if self.current_path else {}
+
+        def begin_adjustment_gesture(self, key):
+            """Início do arrasto de um controle: um único passo de desfazer por gesto."""
+            from src.core.color_adjustments import LABELS
+            if self.current_path:
+                self.save_state_for_undo(LABELS[key])
+            self._adjust_dragging = True
+
+        def end_adjustment_gesture(self):
+            self._adjust_dragging = False
+
+        def set_current_adjustment(self, key, value):
+            path = self.current_path
+            if not path:
+                return
+            from src.core.color_adjustments import LABELS
+            adjustments = self._current_adjustments()
+            if adjustments.get(key, 0) == value:
+                return
+            # teclado/número: mudanças seguidas (< 0,5 s) são um gesto só, como a roda (F8)
+            now = _time.monotonic()
+            if not getattr(self, "_adjust_dragging", False) and now - getattr(self, "_last_adjust_time", 0.0) > self.ADJUSTMENT_GESTURE_GAP_S:
+                self.save_state_for_undo(LABELS[key])
+            self._last_adjust_time = now
+            adjustments[key] = value
+            self.editor_state.set_image_adjustments(path, adjustments)
+            self._schedule_adjustment_preview()
+
+        def reset_current_adjustments(self):
+            if not self.current_path or not self._current_adjustments():
+                return
+            self.save_state_for_undo("Resetar ajustes de cor")
+            self.editor_state.set_image_adjustments(self.current_path, {})
+            self.editor_tab.refresh_adjustments({})
+            self._schedule_adjustment_preview()
+            self.show_status("Ajustes de cor desta imagem resetados.")
+
+        def apply_adjustments_to_all(self):
+            adjustments = self._current_adjustments()
+            images = list(self.editor_state.image_list)
+            if not images:
+                return
+            if self.current_path:
+                self.save_state_for_undo("Ajustes de cor em todas")
+            changed = sum(1 for path in images if self.editor_state.set_image_adjustments(path, adjustments))
+            self.show_status(f"Ajustes de cor aplicados em {changed} imagem(ns).")
+
+        def _on_canvas_image_set(self):
+            """Imagem nova na tela: controles e prévia com os ajustes dela."""
+            self._on_adjustments_restored()
+
+        def _on_adjustments_restored(self):
+            if hasattr(self, "editor_tab"):
+                self.editor_tab.refresh_adjustments(self._current_adjustments())
+            self._schedule_adjustment_preview()
+
+        def _schedule_adjustment_preview(self):
+            timer = getattr(self, "_adjust_preview_timer", None)
+            if timer is None:
+                timer = self._adjust_preview_timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.setInterval(self.ADJUSTMENT_PREVIEW_DELAY_MS)
+                timer.timeout.connect(self._render_adjustment_preview)
+            timer.start()
+
+        def _render_adjustment_preview(self):
+            """Brilho/contraste/saturação na prévia, fora da GUI thread (até 2400 px)."""
+            from src.core.color_adjustments import apply_tone, is_neutral
+            canvas = self.image_canvas
+            base = canvas._original_image
+            path = self.current_path
+            if base is None or not path:
+                return
+            adjustments = self._current_adjustments()
+            seq = getattr(self, "_adjust_preview_seq", 0) + 1
+            self._adjust_preview_seq = seq
+            if is_neutral({k: v for k, v in adjustments.items() if k != "sharpness"}):
+                canvas.replace_display_image(base)
+                return
+            source = base.copy()  # GUI thread: a task não toca no canvas
+
+            def task_fn(_cancel_event, _on_progress):
+                return {"seq": seq, "path": path, "image": apply_tone(source, adjustments)}
+
+            def on_done(result):
+                image = result.get("image")
+                try:
+                    if result.get("seq") == self._adjust_preview_seq and result.get("path") == self.current_path:
+                        canvas.replace_display_image(image)
+                finally:
+                    if image is not None:
+                        image.close()
+                    source.close()
+
+            handle = self.task_runner.submit(f"qt_adjust_preview_{seq}", task_fn)
+            if handle is None:
+                source.close()
+                return
+            handle.done.connect(on_done)
+
         # ── Guias e área vazia ─────────────────────────────────────────────
 
         def toggle_guides(self):
@@ -1019,7 +1128,6 @@ if QT_AVAILABLE:
 
         def paste_image(self):
             import tempfile
-            import time as _time
             import uuid
 
             try:

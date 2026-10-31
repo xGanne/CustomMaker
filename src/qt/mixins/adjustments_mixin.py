@@ -101,6 +101,11 @@ class AdjustmentsMixin:
         animation_type = data.get("animation_type")
         if isinstance(animation_type, str):
             self.editor_state.animation_type = animation_type
+        adjustments = data.get("color_adjustments")
+        if isinstance(adjustments, dict) and self.current_path:
+            self.editor_state.set_image_adjustments(self.current_path, adjustments)
+            if hasattr(self, "_on_adjustments_restored"):
+                self._on_adjustments_restored()
         if "border_style" in data:  # presets antigos não têm: mantém o estilo atual
             from src.core.border_styles import normalize_style
             self.editor_state.border_style = normalize_style(data.get("border_style"))

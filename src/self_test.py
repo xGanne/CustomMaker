@@ -45,6 +45,8 @@ def run_self_test(report_path=None):
             for animation, style in (("Nenhuma", "simples"), ("Rainbow", "simples"), ("Nenhuma", "brilho")):
                 state.animation_type = animation
                 state.border_style = style
+                # a rodada com estilo também leva um ajuste de cor (caminho completo do export)
+                state.image_adjustments = {paths[0]: {"brightness": 20}} if style != "simples" else {}
                 out = os.path.join(tmp, f"out_{animation}_{style}")
                 os.makedirs(out)
                 result = controller.save_all_images(out)

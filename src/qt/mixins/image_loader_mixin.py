@@ -508,6 +508,7 @@ class ImageLoaderMixin:
             size=tuple(state["size"]),
             pixel_edited=edited is not None,
             label=label,
+            adjustments=dict(self.editor_state.image_adjustments.get(self.current_path, {})),
         )
 
     def _original_display_image(self, path):
@@ -559,6 +560,7 @@ class ImageLoaderMixin:
         return (
             not a.pixel_edited and not b.pixel_edited
             and tuple(a.pos) == tuple(b.pos) and tuple(a.size) == tuple(b.size)
+            and a.adjustments == b.adjustments
         )
 
     def _drop_noop_undo_steps(self, path):
@@ -569,7 +571,10 @@ class ImageLoaderMixin:
         if not stack or not state:
             return
         # compara sem capturar (capturar copiaria a imagem editada à toa)
-        current = Snapshot(None, tuple(state["pos"]), tuple(state["size"]), path in self.edited_images)
+        current = Snapshot(
+            None, tuple(state["pos"]), tuple(state["size"]), path in self.edited_images,
+            adjustments=dict(self.editor_state.image_adjustments.get(path, {})),
+        )
         while stack and self._same_state(stack[-1], current):
             self._dispose_images([stack.pop().image])
 
@@ -586,6 +591,7 @@ class ImageLoaderMixin:
     def _apply_snapshot(self, snapshot):
         image, pos, size, was_pixel_edited = snapshot.image, snapshot.pos, snapshot.size, snapshot.pixel_edited
         path = self.current_path
+        self.editor_state.set_image_adjustments(path, snapshot.adjustments)
         currently_edited = path in self.edited_images
         if not was_pixel_edited and not currently_edited:
             # só o enquadramento muda: a imagem na tela continua a mesma
@@ -593,6 +599,8 @@ class ImageLoaderMixin:
             self.image_canvas.set_image_state(pos, size)
             if hasattr(self, "refresh_list_indicators"):
                 self.refresh_list_indicators()
+            if hasattr(self, "_on_adjustments_restored"):
+                self._on_adjustments_restored()
             return
 
         previous = self.edited_images.pop(path, None)
@@ -620,6 +628,8 @@ class ImageLoaderMixin:
         self._update_preview_animation()
         if hasattr(self, "refresh_list_indicators"):
             self.refresh_list_indicators()
+        if hasattr(self, "_on_adjustments_restored"):
+            self._on_adjustments_restored()
 
     def undo_current_image(self):
         if not self.current_path:
