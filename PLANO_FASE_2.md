@@ -15,8 +15,9 @@
 | 7 — Ajustes de cor | **Feito** `7adf05c` (core) e `65e2a84`: brilho/contraste/saturação ao vivo, nitidez só na Revisão/export, desfazer por gesto, Resetar, Aplicar a todas, sessão, preset opcional; autoteste do exe cobre um ajuste. |
 
 Diferenças em relação ao plano, por decisão:
-- **Aplicar a todas** cria o passo de desfazer só na imagem atual (o histórico é por imagem e
-  as outras não estão abertas); as demais podem ser resetadas uma a uma.
+- **Aplicar a todas** (ajustes) e **Copiar enquadramento para todas** criam um passo no
+  histórico de cada imagem (`0bc2598`) — sem isso, desfazer um passo antigo de outra imagem
+  desfazia junto, calado, a ação em lote.
 - A lista de imagens **não** ganhou indicador para imagens com ajuste de cor.
 - Largura mínima da janela subiu com o seletor de estilo; os combos da barra de opções
   foram estreitados para compensar.
