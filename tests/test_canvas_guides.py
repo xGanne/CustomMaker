@@ -99,6 +99,18 @@ class TestCanvasGuidesAndSnap(unittest.TestCase):
         self.canvas.set_guides_pinned(True)
         self.assertTrue(all(line.isVisible() for line in lines))
 
+    def test_center_highlight_ends_with_the_drag_even_when_pinned(self):
+        self.canvas.set_guides_pinned(True)
+        bx, by = self.border
+        self.canvas._on_image_drag(True)
+        self.item.dragging = True
+        self.item.setPos(bx + 225 / 2 - 200 + 3, by - 100)  # centro a 3 px: encaixa e destaca
+        self.assertEqual(self.canvas._guide_lines["vc"].pen().width(), 2)
+        self.item.dragging = False
+        self.canvas._on_image_drag(False)
+        self.assertEqual(self.canvas._guide_lines["vc"].pen().width(), 1)
+        self.assertTrue(self.canvas._guide_lines["vc"].isVisible())  # continua fixa
+
     def test_uncovered_area_is_hatched_and_reported(self):
         reports = []
         self.canvas.uncovered_changed.connect(reports.append)

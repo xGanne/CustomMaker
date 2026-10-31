@@ -137,6 +137,10 @@ if QT_AVAILABLE:
             handle = self._tasks.get(task_id)
             return bool(handle and handle.is_running())
 
+        def has_task(self, task_id):
+            """Submetida e ainda não terminada (rodando ou prestes a começar)."""
+            return task_id in self._tasks
+
         def running_task_ids(self):
             return [task_id for task_id, handle in self._tasks.items() if handle.is_running()]
 

@@ -307,6 +307,8 @@ if QT_AVAILABLE:
 
         def _on_image_drag(self, active):
             self._show_guides(active or self._guides_pinned)
+            if not active:
+                self._highlight_center_guide(False)  # guias fixas: o destaque é só durante o arrasto
 
         def _snap_position(self, point):
             """Posição proposta pelo arrasto → posição encaixada (Alt desliga)."""

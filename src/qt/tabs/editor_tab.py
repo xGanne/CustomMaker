@@ -38,12 +38,34 @@ ANIMATION_OPTIONS = [
 
 
 if QT_AVAILABLE:
-    class _ResetSlider(QSlider):
+    def _wheel_only_when_focused(widget_class):
+        """A roda só muda o valor com o controle em foco (clicado): rolando a aba
+        por cima dele, a roda rola a aba — e não altera brilho/contraste calada."""
+
+        class Wrapped(widget_class):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.setFocusPolicy(Qt.StrongFocus)
+
+            def wheelEvent(self, event):
+                if not self.hasFocus():
+                    event.ignore()
+                    return
+                super().wheelEvent(event)
+
+        Wrapped.__name__ = f"WheelSafe{widget_class.__name__}"
+        return Wrapped
+
+
+    class _ResetSlider(_wheel_only_when_focused(QSlider)):
         """Slider de ajuste: duplo clique volta ao neutro (0)."""
 
         def mouseDoubleClickEvent(self, event):
             self.setValue(0)
             event.accept()
+
+
+    _AdjustSpinBox = _wheel_only_when_focused(QSpinBox)
 
 
     class EditorTab(QWidget):
@@ -211,7 +233,7 @@ if QT_AVAILABLE:
                 label = QLabel(ADJUSTMENT_LABELS[key] + ":")
                 slider = _ResetSlider(Qt.Horizontal)
                 slider.setRange(-100, 100)
-                spin = QSpinBox()
+                spin = _AdjustSpinBox()
                 spin.setRange(-100, 100)
                 spin.setFixedWidth(64)
                 tip = "Duplo clique no controle volta a 0."
