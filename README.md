@@ -58,6 +58,30 @@ Fluxo básico:
 3. Exporte como imagens, ZIP ou envie para ImgChest.
 4. Use a busca online para importar imagens quando quiser montar novos lotes.
 
+## Linha de comando (`--batch`)
+
+Gera as customs de uma pasta sem abrir a janela:
+
+```sh
+python main.py --batch "C:\imagens\rem" --zip "C:\saida\rem.zip"
+python main.py --batch pasta --out saida --preset "Anime" --framing intelligent
+python main.py --batch pasta --upload "Rem (Re:Zero)" --anim Rainbow   # imprime os comandos do Mudae
+python main.py --batch pasta --out saida --dry-run                      # só mostra o que faria
+```
+
+Opções: `--preset NOME`, `--framing auto_fit|intelligent`, `--border NOME|#RRGGBB`,
+`--style simples|dupla|brilho|degrade|sombra`, `--anim TIPO` (o Strobe exige
+`--allow-strobe`), `--workers N`, `--report ARQUIVO`. Códigos de saída: `0` ok, `1` parte
+falhou, `2` argumentos inválidos, `3` nada pôde ser feito, `130` cancelado (Ctrl+C). O modo
+linha de comando só lê a configuração e os presets do app; não grava nada neles.
+
+No `CustomMaker.exe` a saída aparece no terminal que o chamou, mas o prompt pode voltar
+antes do fim (o exe é um app gráfico). Em scripts, use `start /wait` e o `--report`:
+
+```bat
+start /wait CustomMaker.exe --batch pasta --zip saida.zip --report relatorio.txt
+```
+
 ## Testes
 
 No dia a dia, rode só os testes ligados ao que você mudou — segundos, não a suíte inteira:

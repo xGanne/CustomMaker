@@ -100,6 +100,24 @@ jobs:
             echo "::error title=Autoteste do exe::o executável não gerou o relatório (travou ou não abriu)"
           fi
 
+      # modo linha de comando no exe: 3 imagens sintéticas → ZIP com 3 customs 225x350
+      - name: Modo --batch no executável
+        shell: bash
+        run: |
+          python -c "from PIL import Image; import os; os.makedirs('batch-in', exist_ok=True); [Image.new('RGB', (400 + 40 * i, 600), (60 * i, 90, 160)).save(f'batch-in/i{i}.png') for i in range(3)]"
+          ./dist/CustomMaker.exe --batch batch-in --zip batch-out.zip --report batch-report.txt
+          python -c "import zipfile, io; from PIL import Image; z = zipfile.ZipFile('batch-out.zip'); names = sorted(z.namelist()); sizes = {Image.open(io.BytesIO(z.read(n))).size for n in names}; assert names == ['i0_custom.png', 'i1_custom.png', 'i2_custom.png'] and sizes == {(225, 350)}, (names, sizes); print('ZIP ok:', names)"
+
+      - name: Anotar resultado do --batch
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f batch-report.txt ]; then
+            echo "::error title=--batch do exe falhou::$(sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' batch-report.txt)"
+          else
+            echo "::error title=--batch do exe::o executável não gerou o relatório"
+          fi
+
       - name: Publicar o executável
         if: success()
         uses: actions/upload-artifact@v4
