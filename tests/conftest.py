@@ -1,7 +1,13 @@
 """Configuração comum dos testes."""
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+
+# Qt sem tela também na máquina local (o CI já usa): as janelas dos testes não
+# aparecem nem roubam o foco de outros programas (jogo em tela cheia, navegador).
+# Precisa vir antes de qualquer QApplication ser criado.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 @pytest.fixture(autouse=True)
