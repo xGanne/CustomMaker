@@ -60,7 +60,9 @@ class TestNamedHistory(unittest.TestCase):
         path = os.path.join(self.tmp, "img.png")
         Image.new("RGBA", (300, 400), (60, 80, 120, 255)).save(path)
         self.window.add_images([path], replace=True)
-        self.assertTrue(_wait_until(self.app, lambda: self.window._active_image_load_task_id is None))
+        # carregamento e enquadramento padrão em segundo plano terminados: nada
+        # muda o enquadramento por fora durante o teste
+        self.assertTrue(_wait_until(self.app, lambda: not self.window.task_runner._tasks))
         self.statuses = []
         self.window.show_status = lambda message, **_kw: self.statuses.append(message)
 
@@ -116,6 +118,24 @@ class TestNamedHistory(unittest.TestCase):
         self.window.toggle_last_state()
         self.assertEqual(self._pos(), positions[2])
 
+    def test_click_without_drag_leaves_no_empty_step(self):
+        positions = self._three_moves()
+        self.window.image_canvas.interaction_started.emit("Mover")  # clique sem arrastar
+        self.app.processEvents()
+        self.window.toggle_last_state()
+        self.assertEqual(self._pos(), positions[2])  # compara com uma mudança de verdade
+        self.window.image_canvas.interaction_started.emit("Mover")
+        self.window.apply_auto_fit()
+        self.assertEqual(self._stack("undo")[-1], "Auto fit")
+        self.assertEqual(self._stack("undo").count("Mover"), 2)  # o clique vazio não virou passo
+
+    def test_time_follows_the_action_through_undo_and_redo(self):
+        self._drag(10)
+        original = self.window._undo_stacks[self.window.current_path][-1].timestamp
+        self.window.undo_current_image()
+        self.window.redo_current_image()
+        self.assertEqual(self.window._undo_stacks[self.window.current_path][-1].timestamp, original)
+
     def test_toggle_without_history_says_so(self):
         self.window.toggle_last_state()
         self.assertEqual(self.statuses[-1], "Nada para comparar.")
@@ -143,10 +163,9 @@ class TestNamedHistory(unittest.TestCase):
         self.addCleanup(menu.deleteLater)
         self.window._populate_history_menu(menu)
         texts = [a.text() for a in menu.actions() if not a.isSeparator()]
-        self.assertEqual(texts[0], "↷ Auto fit")
-        self.assertEqual(texts[1], "● Mover")
-        self.assertEqual(texts[2], "Início (como abriu)")
-        self.assertEqual(texts[-1], "Limpar histórico desta imagem")
+        self.assertEqual(
+            texts, ["↷ Auto fit", "● Mover", "Início (como abriu)", "Limpar histórico desta imagem"]
+        )
         menu.actions()[0].trigger()  # avança até "Auto fit"
         self.assertEqual(self._stack("undo"), ["Mover", "Auto fit"])
 

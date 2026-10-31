@@ -275,6 +275,7 @@ class ImageLoaderMixin:
         for stack in self._undo_stacks.values():
             self._dispose_images([snapshot.image for snapshot in stack])
         self._undo_stacks.clear()
+        self._history_ops().clear()
         for stack in self._redo_stack_map().values():
             self._dispose_images([snapshot.image for snapshot in stack])
         self._redo_stack_map().clear()
@@ -541,12 +542,36 @@ class ImageLoaderMixin:
         if snapshot is None:
             return
         stack = self._undo_stacks.setdefault(self.current_path, [])
+        if stack and self._same_state(stack[-1], snapshot):
+            # a ação anterior não mudou nada (ex.: clique na imagem sem arrastar):
+            # o passo vazio dá lugar a este, em vez de virar um "Mover" fantasma
+            self._dispose_images([stack.pop().image])
         stack.append(snapshot)
         while len(stack) > 20:
             self._dispose_images([stack.pop(0).image])
         # F15: uma nova ação do usuário invalida o redo
         self._drop_redo_stack(self.current_path)
         self._history_ops()[self.current_path] = "edit"
+
+    @staticmethod
+    def _same_state(a, b):
+        """Mesmo enquadramento e sem edição de pixels nos dois (imagem original)."""
+        return (
+            not a.pixel_edited and not b.pixel_edited
+            and tuple(a.pos) == tuple(b.pos) and tuple(a.size) == tuple(b.size)
+        )
+
+    def _drop_noop_undo_steps(self, path):
+        """Descarta do topo do undo os passos iguais ao estado atual (a última
+        "ação" não mudou nada): desfazer/alternar sempre mostram uma diferença."""
+        stack = self._undo_stacks.get(path)
+        state = self.editor_state.image_states.get(path)
+        if not stack or not state:
+            return
+        # compara sem capturar (capturar copiaria a imagem editada à toa)
+        current = Snapshot(None, tuple(state["pos"]), tuple(state["size"]), path in self.edited_images)
+        while stack and self._same_state(stack[-1], current):
+            self._dispose_images([stack.pop().image])
 
     def _history_ops(self):
         """Última operação de histórico por imagem: "edit", "undo" ou "redo"."""
@@ -599,14 +624,16 @@ class ImageLoaderMixin:
     def undo_current_image(self):
         if not self.current_path:
             return
+        self._drop_noop_undo_steps(self.current_path)
         stack = self._undo_stacks.get(self.current_path) or []
         if not stack:
             self.show_status("Nada para desfazer.")
             return False
         target = stack.pop()
-        # o estado atual vai para o redo com o nome da mesma ação, agora refazível
+        # o estado atual vai para o redo com o nome (e o horário) da mesma ação, agora refazível
         current = self._capture_current_snapshot(target.label)
         if current is not None:
+            current.timestamp = target.timestamp
             self._redo_stack_map().setdefault(self.current_path, []).append(current)
         self._apply_snapshot(target)
         self._history_ops()[self.current_path] = "undo"
@@ -623,6 +650,7 @@ class ImageLoaderMixin:
         target = stack.pop()
         current = self._capture_current_snapshot(target.label)
         if current is not None:
+            current.timestamp = target.timestamp
             self._undo_stacks.setdefault(self.current_path, []).append(current)
         self._apply_snapshot(target)
         self._history_ops()[self.current_path] = "redo"
@@ -642,6 +670,7 @@ class ImageLoaderMixin:
         path = self.current_path
         if not path or self._comparing_original():
             return
+        self._drop_noop_undo_steps(path)
         can_redo = bool(self._redo_stack_map().get(path))
         if self._history_ops().get(path) == "undo" and can_redo:
             done = self.redo_current_image()
@@ -663,6 +692,8 @@ class ImageLoaderMixin:
         path = self.current_path
         if not path or not steps or self._comparing_original():
             return
+        if steps < 0:
+            self._drop_noop_undo_steps(path)
         undo = self._undo_stacks.setdefault(path, [])
         redo = self._redo_stack_map().setdefault(path, [])
         source, target_stack = (undo, redo) if steps < 0 else (redo, undo)
@@ -671,12 +702,13 @@ class ImageLoaderMixin:
             return
         current = self._capture_current_snapshot(source[-1].label)
         if current is not None:
+            current.timestamp = source[-1].timestamp
             target_stack.append(current)
         for _ in range(count - 1):
             moved = source.pop()
             # como num desfazer/refazer avulso: o estado que muda de pilha leva o
-            # nome da ação que fica entre ele e o próximo alvo
-            moved.label = source[-1].label
+            # nome (e o horário) da ação que fica entre ele e o próximo alvo
+            moved.label, moved.timestamp = source[-1].label, source[-1].timestamp
             target_stack.append(moved)
         target = source.pop()
         self._apply_snapshot(target)

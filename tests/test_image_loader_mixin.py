@@ -100,8 +100,9 @@ class TestUndoStack(unittest.TestCase):
         self.loader._preview_cache_limit_bytes = 256 * 1024 * 1024
 
     def test_undo_stack_capped_at_20(self):
-        self.loader.editor_state.image_states["/img.png"] = {"pos": (0, 0), "size": (10, 10)}
-        for _ in range(25):
+        for i in range(25):
+            # estados diferentes: passos iguais seguidos são descartados como vazios
+            self.loader.editor_state.image_states["/img.png"] = {"pos": (i, 0), "size": (10, 10)}
             self.loader.save_state_for_undo()
         stack = self.loader._undo_stacks.get("/img.png", [])
         self.assertEqual(len(stack), 20)

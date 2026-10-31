@@ -831,6 +831,8 @@ if QT_AVAILABLE:
             anteriores abaixo (mais recente primeiro); clicar salta direto."""
             menu.clear()
             path = self.current_path
+            if path:
+                self._drop_noop_undo_steps(path)  # o menu não lista passos que não mudaram nada
             undo = list(self._undo_stacks.get(path, [])) if path else []
             redo = list(self._redo_stacks.get(path, [])) if path else []
             if not undo and not redo:
