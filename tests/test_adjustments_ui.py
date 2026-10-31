@@ -83,8 +83,18 @@ class TestAdjustmentsInWindow(unittest.TestCase):
         self.tab = self.window.editor_tab
 
     def _settle(self):
-        time.sleep(0.1)  # debounce da prévia
-        self.assertTrue(_wait_until(self.app, lambda: not self.window.task_runner._tasks))
+        """Prévia em dia: sem tarefa, sem refazer pendente e sem debounce armado."""
+        window = self.window
+
+        def idle():
+            timer = getattr(window, "_adjust_preview_timer", None)
+            return (
+                not window.task_runner._tasks
+                and not getattr(window, "_adjust_preview_pending", False)
+                and not (timer is not None and timer.isActive())
+            )
+
+        self.assertTrue(_wait_until(self.app, idle))
         self.app.processEvents()
 
     def _center_pixel(self):
@@ -141,6 +151,79 @@ class TestAdjustmentsInWindow(unittest.TestCase):
         self.window.reset_current_adjustments()
         self.assertNotIn(self.window.current_path, self.window.editor_state.image_adjustments)
         self.assertEqual(self.tab.adjust_sliders["brightness"].value(), 0)
+
+    def test_wheel_over_unfocused_control_scrolls_instead_of_changing(self):
+        from PySide6.QtCore import QPoint, QPointF
+        from PySide6.QtGui import QWheelEvent
+        slider = self.tab.adjust_sliders["brightness"]
+        spin = self.tab.adjust_spins["brightness"]
+        for widget in (slider, spin):
+            widget.clearFocus()
+            event = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120),
+                                compat.Qt.NoButton, compat.Qt.NoModifier, compat.Qt.NoScrollPhase, False)
+            compat.QApplication.sendEvent(widget, event)
+            self.assertEqual(widget.value(), 0)
+        self.assertEqual(self.window.editor_state.image_adjustments, {})
+
+    def test_undo_on_another_image_does_not_silently_drop_apply_to_all(self):
+        es = self.window.editor_state
+        # a imagem 2 tem um passo próprio antigo ("Mover")
+        self.window.navigate_images(1)
+        self.assertTrue(_wait_until(self.app, lambda: self.window.current_path == self.paths[1]))
+        self._settle()
+        item = self.window.image_canvas.image_item
+        self.window.image_canvas.interaction_started.emit("Mover")
+        item.setPos(item.pos().x() + 15, item.pos().y())
+        self.app.processEvents()
+        moved = tuple(es.image_states[self.paths[1]]["pos"])
+        # volta para a 1, ajusta e aplica a todas
+        self.window.navigate_images(-1)
+        self.assertTrue(_wait_until(self.app, lambda: self.window.current_path == self.paths[0]))
+        self._settle()
+        self.tab.adjust_spins["brightness"].setValue(30)
+        self._settle()
+        self.window.apply_adjustments_to_all()
+        self.assertEqual(es.image_adjustments.get(self.paths[1]), {"brightness": 30})
+        # na 2, desfazer volta o "aplicar a todas" — e só ele
+        self.window.navigate_images(1)
+        self.assertTrue(_wait_until(self.app, lambda: self.window.current_path == self.paths[1]))
+        self._settle()
+        self.window.undo_current_image()
+        self.assertEqual(es.image_adjustments.get(self.paths[1]), None)
+        self.assertEqual(tuple(es.image_states[self.paths[1]]["pos"]), moved)
+
+    def test_copy_framing_to_all_is_undoable_on_each_image(self):
+        es = self.window.editor_state
+        before = tuple(es.image_states[self.paths[1]]["pos"])
+        item = self.window.image_canvas.image_item
+        item.setPos(item.pos().x() + 25, item.pos().y())
+        self.app.processEvents()
+        self.window.copy_framing_to_all()
+        self.assertNotEqual(tuple(es.image_states[self.paths[1]]["pos"]), before)
+        self.window.navigate_images(1)
+        self.assertTrue(_wait_until(self.app, lambda: self.window.current_path == self.paths[1]))
+        self._settle()
+        self.window.undo_current_image()
+        self.assertEqual(tuple(es.image_states[self.paths[1]]["pos"]), before)
+
+    def test_live_preview_runs_one_task_at_a_time_and_ends_on_the_latest_value(self):
+        peak = []
+        original_submit = self.window.task_runner.submit
+
+        def counting_submit(task_id, fn):
+            handle = original_submit(task_id, fn)
+            peak.append(sum(1 for t in self.window.task_runner._tasks if t.startswith("qt_adjust_preview")))
+            return handle
+
+        self.window.task_runner.submit = counting_submit
+        for value in range(5, 80, 5):  # arrasto rápido
+            self.tab.adjust_spins["contrast"].setValue(value)
+            self.window._render_adjustment_preview()
+        self._settle()
+        self.assertTrue(peak and max(peak) == 1, peak)
+        from src.core.color_adjustments import apply_tone
+        expected = apply_tone(self.window.image_canvas._original_image, {"contrast": 75})
+        self.assertEqual(self.window.image_canvas._base_image.tobytes(), expected.convert("RGBA").tobytes())
 
     def test_preset_with_adjustments(self):
         self.tab.adjust_spins["contrast"].setValue(35)

@@ -822,9 +822,14 @@ if QT_AVAILABLE:
             images = list(self.editor_state.image_list)
             if not images:
                 return
-            if self.current_path:
-                self.save_state_for_undo("Ajustes de cor em todas")
-            changed = sum(1 for path in images if self.editor_state.set_image_adjustments(path, adjustments))
+            changed = 0
+            for path in images:
+                if self.editor_state.image_adjustments.get(path, {}) == adjustments:
+                    continue
+                # passo no histórico de cada imagem: desfazer lá volta os ajustes dela,
+                # e desfazer um passo antigo não apaga calado o que foi aplicado agora
+                self.save_state_for_undo_of(path, "Ajustes de cor em todas")
+                changed += self.editor_state.set_image_adjustments(path, adjustments)
             self.show_status(f"Ajustes de cor aplicados em {changed} imagem(ns).")
 
         def _on_canvas_image_set(self):
@@ -854,15 +859,28 @@ if QT_AVAILABLE:
             if base is None or not path:
                 return
             adjustments = self._current_adjustments()
-            seq = getattr(self, "_adjust_preview_seq", 0) + 1
-            self._adjust_preview_seq = seq
             if is_neutral({k: v for k, v in adjustments.items() if k != "sharpness"}):
+                # invalida a prévia em andamento: ela não pode sobrescrever o neutro
+                self._adjust_preview_seq = getattr(self, "_adjust_preview_seq", 0) + 1
+                self._adjust_preview_pending = False
                 canvas.replace_display_image(base)
                 return
+            if self.task_runner.has_task("qt_adjust_preview"):
+                # uma prévia por vez (cada uma copia a imagem, até ~17 MB): a que está
+                # rodando termina e refaz uma vez só, com o valor mais recente
+                self._adjust_preview_pending = True
+                return
+            self._adjust_preview_pending = False
+            seq = self._adjust_preview_seq = getattr(self, "_adjust_preview_seq", 0) + 1
             source = base.copy()  # GUI thread: a task não toca no canvas
 
             def task_fn(_cancel_event, _on_progress):
                 return {"seq": seq, "path": path, "image": apply_tone(source, adjustments)}
+
+            def finish():
+                source.close()
+                if getattr(self, "_adjust_preview_pending", False) and self._window_alive():
+                    self._schedule_adjustment_preview()
 
             def on_done(result):
                 image = result.get("image")
@@ -872,13 +890,14 @@ if QT_AVAILABLE:
                 finally:
                     if image is not None:
                         image.close()
-                    source.close()
+                    finish()
 
-            handle = self.task_runner.submit(f"qt_adjust_preview_{seq}", task_fn)
+            handle = self.task_runner.submit("qt_adjust_preview", task_fn)
             if handle is None:
                 source.close()
                 return
             handle.done.connect(on_done)
+            handle.error.connect(lambda _exc: finish())
 
         # ── Guias e área vazia ─────────────────────────────────────────────
 

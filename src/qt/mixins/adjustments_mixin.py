@@ -247,8 +247,12 @@ class AdjustmentsMixin:
             return
         pos = state["pos"]
         size = state["size"]
+        save_for = getattr(self, "save_state_for_undo_of", None)
         for path in image_list:
             if path != self.current_path:
+                if save_for:
+                    # passo no histórico de cada imagem: desfazer lá volta o enquadramento dela
+                    save_for(path, "Enquadramento copiado")
                 self.editor_state.set_image_state(path, pos, size)
         self.show_status(f"Enquadramento copiado para {len(image_list) - 1} imagem(ns).")
 

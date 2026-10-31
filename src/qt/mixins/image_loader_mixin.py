@@ -539,10 +539,32 @@ class ImageLoaderMixin:
     def save_state_for_undo(self, label=""):
         if not self.current_path:
             return
-        snapshot = self._capture_current_snapshot(label)
+        self._push_undo(self.current_path, self._capture_current_snapshot(label))
+
+    def save_state_for_undo_of(self, path, label=""):
+        """Passo de desfazer para uma imagem que não está na tela (ações em
+        lote, como "Aplicar a todas"). Sem ele, desfazer um passo antigo dessa
+        imagem desfazia junto, e calado, a ação em lote."""
+        if path == self.current_path:
+            self.save_state_for_undo(label)
+            return
+        state = self.editor_state.image_states.get(path)
+        if not state:
+            return  # nunca enquadrada: não há estado anterior a guardar
+        edited = self.edited_images.get(path)
+        self._push_undo(path, Snapshot(
+            image=edited.copy() if edited is not None else None,
+            pos=tuple(state["pos"]),
+            size=tuple(state["size"]),
+            pixel_edited=edited is not None,
+            label=label,
+            adjustments=dict(self.editor_state.image_adjustments.get(path, {})),
+        ))
+
+    def _push_undo(self, path, snapshot):
         if snapshot is None:
             return
-        stack = self._undo_stacks.setdefault(self.current_path, [])
+        stack = self._undo_stacks.setdefault(path, [])
         if stack and self._same_state(stack[-1], snapshot):
             # a ação anterior não mudou nada (ex.: clique na imagem sem arrastar):
             # o passo vazio dá lugar a este, em vez de virar um "Mover" fantasma
@@ -551,8 +573,8 @@ class ImageLoaderMixin:
         while len(stack) > 20:
             self._dispose_images([stack.pop(0).image])
         # F15: uma nova ação do usuário invalida o redo
-        self._drop_redo_stack(self.current_path)
-        self._history_ops()[self.current_path] = "edit"
+        self._drop_redo_stack(path)
+        self._history_ops()[path] = "edit"
 
     @staticmethod
     def _same_state(a, b):
