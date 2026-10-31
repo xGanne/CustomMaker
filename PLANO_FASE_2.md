@@ -5,6 +5,25 @@
 >
 > Fases: [Fase 1](PLANO_FASE_1.md) → **2 (este arquivo)** → [Fase 3](PLANO_FASE_3.md).
 
+## ✅ Status (atualizado em 2026-10-31) — Fase 2 implementada
+
+| Item | Situação |
+|---|---|
+| 6 — Lupa no conta-gotas | **Feito** `4fa0f4f`: lupa 11×11 com pixel central e hex; Shift+clique só nesta imagem; Ctrl média 3×3; Esc sai. |
+| 5 — Guias e encaixe | **Feito** `f5944af`: terços e centro (G fixa, salvo na config), encaixe nas bordas/centro ao arrastar (Alt desliga; posições por código não encaixam), área vazia hachurada com aviso uma vez por imagem. 5.d (encaixe do rosto) não feito — opcional. |
+| 4 — Estilos de borda | **Feito** `fca32a2`: Simples (byte a byte igual ao antigo), Dupla, Brilho, Degradê, Sombra; prévia = export; sessão, presets, paleta (`Ctrl+K`); desabilitado com animação; autoteste do exe cobre o Brilho. |
+| 7 — Ajustes de cor | **Feito** `7adf05c` (core) e `65e2a84`: brilho/contraste/saturação ao vivo, nitidez só na Revisão/export, desfazer por gesto, Resetar, Aplicar a todas, sessão, preset opcional; autoteste do exe cobre um ajuste. |
+
+Diferenças em relação ao plano, por decisão:
+- **Aplicar a todas** cria o passo de desfazer só na imagem atual (o histórico é por imagem e
+  as outras não estão abertas); as demais podem ser resetadas uma a uma.
+- A lista de imagens **não** ganhou indicador para imagens com ajuste de cor.
+- Largura mínima da janela subiu com o seletor de estilo; os combos da barra de opções
+  foram estreitados para compensar.
+
+Correção encontrada no caminho: o menu de histórico da Fase 1 quebrava com 2+ passos
+anteriores (`_time` não importado) — corrigido em `65e2a84`, com teste.
+
 ## Visão geral
 
 | # | Item | Ganho | Esforço | Commits previstos |
