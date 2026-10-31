@@ -60,20 +60,25 @@ Fluxo básico:
 
 ## Testes
 
-Rode a suíte automatizada (inclui testes da interface Qt, sem abrir janelas):
+No dia a dia, rode só os testes ligados ao que você mudou — segundos, não a suíte inteira:
 
 ```sh
-python -m pytest -q
+python scripts/test_changed.py              # mudanças ainda não commitadas
+python scripts/test_changed.py --since main # + o que mudou desde um ref
+python scripts/test_changed.py --list       # só mostra quais testes rodaria
 ```
 
-No PowerShell, para rodar os testes de interface sem tela:
+O script escolhe os testes que citam o módulo alterado (import ou `patch`) ou têm nome
+parecido com ele (`review_dialog.py` → `test_review.py`), e mostra o motivo de cada um.
 
-```powershell
-$env:QT_QPA_PLATFORM = "offscreen"; python -m pytest -q
-```
+A suíte inteira (`python scripts/test_changed.py --all`, ou `python -m pytest`) roda
+sozinha no GitHub Actions a cada push e pull request (`.github/workflows/tests.yml`); o
+selo no topo mostra o resultado do `main`. Localmente só é preciso em mudanças que afetam
+tudo, como `tests/conftest.py`.
 
-A cada push e pull request a suíte roda no GitHub Actions em Windows
-(`.github/workflows/tests.yml`); o selo no topo mostra o resultado do `main`.
+Nos testes, a exportação roda em threads dentro do próprio processo, e não no pool de
+processos do app: cada processo do pool carrega numpy/OpenCV/PIL de novo. Só os testes
+marcados com `@pytest.mark.real_pool` (autoteste do exe e o pool em si) usam processos.
 
 ## Sobre
 
