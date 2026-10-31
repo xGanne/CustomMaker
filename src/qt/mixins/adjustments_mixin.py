@@ -101,6 +101,9 @@ class AdjustmentsMixin:
         animation_type = data.get("animation_type")
         if isinstance(animation_type, str):
             self.editor_state.animation_type = animation_type
+        if "border_style" in data:  # presets antigos não têm: mantém o estilo atual
+            from src.core.border_styles import normalize_style
+            self.editor_state.border_style = normalize_style(data.get("border_style"))
         # M11: partes opcionais — só existem se o preset foi salvo com elas
         framing = data.get("default_framing")
         if framing in ("auto_fit", "intelligent"):

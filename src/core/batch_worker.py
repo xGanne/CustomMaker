@@ -5,6 +5,7 @@ from PIL import Image
 
 from src.config.settings import BORDER_THICKNESS, BORDA_HEIGHT, BORDA_WIDTH
 from src.core.animation_processor import AnimationProcessor
+from src.core.border_styles import apply_border
 from src.core.image_processor import ImageProcessor
 
 
@@ -14,7 +15,10 @@ def process_image_task(task_data):
     try:
         cropped = render_custom_crop(task_data)
         try:
-            return _process_cropped(cropped, task_data["anim_type"], task_data["border_color"], output_path, path)
+            return _process_cropped(
+            cropped, task_data["anim_type"], task_data["border_color"], output_path, path,
+            task_data.get("border_style"),
+        )
         finally:
             cropped.close()
     except Exception as exc:
@@ -48,7 +52,7 @@ def render_custom_preview(task_data):
     """
     cropped = render_custom_crop(task_data)
     try:
-        return ImageProcessor.add_borda_to_image(cropped, task_data["border_color"])
+        return apply_border(cropped, task_data.get("border_style"), task_data["border_color"])
     finally:
         cropped.close()
 
@@ -68,7 +72,7 @@ def encode_custom(task_data):
     buffer = io.BytesIO()
     cropped = render_custom_crop(task_data)
     try:
-        _encode_cropped(cropped, task_data["anim_type"], task_data["border_color"], buffer, fmt)
+        _encode_cropped(cropped, task_data["anim_type"], task_data["border_color"], buffer, fmt, task_data.get("border_style"))
     finally:
         cropped.close()
     return buffer.getvalue(), fmt
@@ -85,12 +89,12 @@ def measure_custom(task_data):
         return {"status": "error", "path": path, "error": str(exc)}
 
 
-def _process_cropped(cropped, anim_type, border_color, output_path, path):
+def _process_cropped(cropped, anim_type, border_color, output_path, path, border_style=None):
     if output_path:
-        _encode_cropped(cropped, anim_type, border_color, output_path, _format_for_path(output_path))
+        _encode_cropped(cropped, anim_type, border_color, output_path, _format_for_path(output_path), border_style)
         return {"status": "success", "path": path, "saved_to": output_path}
     if anim_type == "Nenhuma":
-        return {"status": "success", "image": ImageProcessor.add_borda_to_image(cropped, border_color), "path": path, "type": "static"}
+        return {"status": "success", "image": apply_border(cropped, border_style, border_color), "path": path, "type": "static"}
     frames, duration = _generate_frames(cropped, anim_type, border_color)
     try:
         final_frames = _resize_frames(frames)
@@ -107,10 +111,13 @@ def _format_for_path(output_path):
     return {"jpg": "jpeg"}.get(ext, ext)
 
 
-def _encode_cropped(cropped, anim_type, border_color, target, fmt):
-    """Grava a custom em `target` (caminho ou arquivo em memória) no formato `fmt`."""
+def _encode_cropped(cropped, anim_type, border_color, target, fmt, border_style=None):
+    """Grava a custom em `target` (caminho ou arquivo em memória) no formato `fmt`.
+
+    O estilo de borda vale só sem animação: as animações desenham a própria borda.
+    """
     if anim_type == "Nenhuma":
-        final = ImageProcessor.add_borda_to_image(cropped, border_color)
+        final = apply_border(cropped, border_style, border_color)
         try:
             final.save(target, format=fmt.upper())
         finally:

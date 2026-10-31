@@ -325,7 +325,7 @@ if QT_AVAILABLE:
             bar_layout.addWidget(border_label)
             self.options_border_combo = QComboBox()
             self.options_border_combo.addItems(sorted(BORDA_HEX.keys()) + ["Cor Personalizada"])
-            self.options_border_combo.setFixedWidth(150)
+            self.options_border_combo.setFixedWidth(130)
             self.options_border_combo.setToolTip("Cor da borda do custom")
             self.options_border_combo.currentTextChanged.connect(self._on_options_border_changed)
             bar_layout.addWidget(self.options_border_combo)
@@ -358,6 +358,17 @@ if QT_AVAILABLE:
             self.auto_border_button.setProperty("hasMenu", "true")
             bar_layout.addWidget(self.auto_border_button)
 
+            from src.core.border_styles import BORDER_STYLES
+            style_label = QLabel("Estilo:")
+            style_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            bar_layout.addWidget(style_label)
+            self.options_style_combo = QComboBox()
+            for key, label in BORDER_STYLES.items():
+                self.options_style_combo.addItem(label, key)
+            self.options_style_combo.setFixedWidth(100)
+            self.options_style_combo.currentIndexChanged.connect(self._on_options_style_changed)
+            bar_layout.addWidget(self.options_style_combo)
+
             bar_layout.addSpacing(8)
             anim_label = QLabel("Animação:")
             anim_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -365,7 +376,7 @@ if QT_AVAILABLE:
             self.options_anim_combo = QComboBox()
             from src.qt.tabs.editor_tab import ANIMATION_OPTIONS
             self.options_anim_combo.addItems(ANIMATION_OPTIONS)
-            self.options_anim_combo.setFixedWidth(150)
+            self.options_anim_combo.setFixedWidth(130)
             self.options_anim_combo.setToolTip("Animação aplicada à borda na exportação")
             self.options_anim_combo.currentTextChanged.connect(self._on_options_anim_changed)
             bar_layout.addWidget(self.options_anim_combo)
@@ -391,6 +402,28 @@ if QT_AVAILABLE:
             if hasattr(self, "editor_tab"):
                 self.editor_tab.sync_from_options_bar()
             self.refresh_current_canvas()
+
+        def _on_options_style_changed(self, _index):
+            style = self.options_style_combo.currentData()
+            if not style or style == self.editor_state.border_style:
+                return
+            self.editor_state.border_style = style
+            # muda a aparência de todas as customs: nenhuma exportação está mais em dia
+            self.editor_state.image_dirty.update(self.editor_state.image_list)
+            self.refresh_current_canvas()
+            self.show_status(f"Estilo da borda: {self.options_style_combo.currentText()}")
+
+        def _sync_border_style_controls(self):
+            """Estilo vale só sem animação: combo desabilitado e prévia simples com animação."""
+            if not hasattr(self, "options_style_combo"):
+                return
+            animated = self.editor_state.has_animation
+            self.options_style_combo.setEnabled(not animated)
+            self.options_style_combo.setToolTip(
+                "Os estilos valem para customs sem animação (as animações desenham a própria borda)"
+                if animated else "Estilo da borda: simples, dupla, brilho, degradê ou sombra"
+            )
+            self.image_canvas.set_border_style("simples" if animated else self.editor_state.border_style)
 
         def _on_options_custom_color_changed(self, value):
             if value.startswith("#") and len(value) == 7:
@@ -448,6 +481,11 @@ if QT_AVAILABLE:
             if idx >= 0:
                 self.options_border_combo.setCurrentIndex(idx)
             self.options_anim_combo.setCurrentText(state.animation_type)
+            self.options_style_combo.blockSignals(True)
+            style_index = self.options_style_combo.findData(state.border_style)
+            self.options_style_combo.setCurrentIndex(style_index if style_index >= 0 else 0)
+            self.options_style_combo.blockSignals(False)
+            self._sync_border_style_controls()
             self.options_color_edit.setText(state.custom_borda_hex or "")
             self.options_color_edit.setEnabled(state.selected_borda == "Cor Personalizada")
             self._update_options_color_swatch()
@@ -541,6 +579,14 @@ if QT_AVAILABLE:
                     commands.append(Command(
                         f"border.set.{name}", f"Borda: {name}",
                         lambda n=name: self.options_border_combo.setCurrentText(n), "Borda", keywords=("cor",),
+                    ))
+                from src.core.border_styles import BORDER_STYLES
+                for key, label in BORDER_STYLES.items():
+                    commands.append(Command(
+                        f"border.style.{key}", f"Estilo da borda: {label}",
+                        lambda k=key: self.options_style_combo.setCurrentIndex(self.options_style_combo.findData(k)),
+                        "Borda", keywords=("estilo", "efeito"),
+                        enabled=lambda: not self.editor_state.has_animation,
                     ))
                 for anim in ANIMATION_OPTIONS:
                     # pelo combo: passa pelo aviso de fotossensibilidade do Strobe
@@ -675,6 +721,7 @@ if QT_AVAILABLE:
         # ── Eventos do canvas ──────────────────────────────────────────────
 
         def refresh_current_canvas(self):
+            self._sync_border_style_controls()
             if not self.current_path:
                 return
             border_color = self.editor_state.resolve_border_hex(BORDA_HEX, self.current_path)

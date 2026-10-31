@@ -239,6 +239,7 @@ if QT_AVAILABLE:
                 "border_name": state.selected_borda,
                 "border_color": state.custom_borda_hex,
                 "animation_type": state.animation_type,
+                "border_style": state.border_style,
             }
             if self.preset_include_framing.isChecked():
                 data["default_framing"] = state.default_framing

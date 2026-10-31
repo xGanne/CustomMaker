@@ -41,6 +41,7 @@ def snapshot_session(editor_state, edited_paths):
         "selected_borda": editor_state.selected_borda,
         "custom_borda_hex": editor_state.custom_borda_hex,
         "animation_type": editor_state.animation_type,
+        "border_style": editor_state.border_style,
         "edits": {path: _edit_file_name(path) for path in edited_paths if path in editor_state.image_list},
     }
 
@@ -72,6 +73,9 @@ def apply_session(data, editor_state):
         value = data.get(field)
         if isinstance(value, str) and value:
             setattr(editor_state, field, value)
+    # sessões salvas antes dos estilos não têm a chave: abrem com o simples
+    from src.core.border_styles import normalize_style
+    editor_state.border_style = normalize_style(data.get("border_style"))
     index = data.get("current_index")
     if isinstance(index, int) and 0 <= index < len(present):
         editor_state.current_image_index = index

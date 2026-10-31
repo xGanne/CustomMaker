@@ -23,6 +23,8 @@ class EditorState:
     custom_borda_hex_individual: Dict[str, str] = field(default_factory=dict)
     selected_borda: str = "White"
     animation_type: str = "Nenhuma"
+    # estilo da borda (src/core/border_styles.py); vale para customs sem animação
+    border_style: str = "simples"
     uploaded_links: List[str] = field(default_factory=list)
     borda_pos: Tuple[int, int] = (0, 0)
     image_dirty: Set[str] = field(default_factory=set)

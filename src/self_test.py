@@ -42,9 +42,10 @@ def run_self_test(report_path=None):
         controller = BatchController(editor_state=state, borda_hex=BORDA_HEX, app_config={"max_workers": 2})
         try:
             results = []
-            for animation in ("Nenhuma", "Rainbow"):
+            for animation, style in (("Nenhuma", "simples"), ("Rainbow", "simples"), ("Nenhuma", "brilho")):
                 state.animation_type = animation
-                out = os.path.join(tmp, f"out_{animation}")
+                state.border_style = style
+                out = os.path.join(tmp, f"out_{animation}_{style}")
                 os.makedirs(out)
                 result = controller.save_all_images(out)
                 files = sorted(os.listdir(out))
@@ -54,7 +55,7 @@ def run_self_test(report_path=None):
                     with Image.open(os.path.join(out, name)) as img:
                         if img.size != (BORDA_WIDTH, BORDA_HEIGHT):
                             raise RuntimeError(f"{name} saiu {img.size}")
-                results.append(f"{animation}: {len(files)}")
+                results.append(f"{animation}/{style}: {len(files)}")
             return "lote com pool de processos: " + ", ".join(results)
         finally:
             controller.shutdown()

@@ -3,6 +3,7 @@ import time
 from PIL import Image
 
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH, BORDER_THICKNESS
+from src.core.border_styles import DEFAULT_STYLE, border_overlay, normalize_style
 from src.core.image_processor import uncovered_regions
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 
@@ -160,6 +161,14 @@ if QT_AVAILABLE:
             self.preview_item.setZValue(12)
             self.preview_item.setVisible(False)
             self.scene.addItem(self.preview_item)
+            # estilos de borda além do simples: a mesma imagem que o export desenha
+            # (border_styles.border_overlay), por cima, sem bloquear o arrasto
+            self._border_style = DEFAULT_STYLE
+            self.style_overlay_item = QGraphicsPixmapItem()
+            self.style_overlay_item.setZValue(11)
+            self.style_overlay_item.setAcceptedMouseButtons(Qt.NoButton)
+            self.style_overlay_item.setVisible(False)
+            self.scene.addItem(self.style_overlay_item)
             # guias (terços e centro) dentro da borda: visíveis ao arrastar ou fixas (G)
             self._guides_pinned = False
             self._guide_lines = {}
@@ -239,6 +248,7 @@ if QT_AVAILABLE:
             self.border_item.setRect(bx, by, BORDA_WIDTH, BORDA_HEIGHT)
             self.border_item.setPen(QPen(QColor(self._border_color), BORDER_THICKNESS))
             self.preview_item.setPos(bx, by)
+            self.style_overlay_item.setPos(bx, by)
             self._layout_guides()
             if self.empty_hint_item is not None:
                 hint_rect = self.empty_hint_item.boundingRect()
@@ -432,6 +442,34 @@ if QT_AVAILABLE:
         def set_border_color(self, color_hex):
             self._border_color = color_hex
             self.border_item.setPen(QPen(QColor(color_hex), BORDER_THICKNESS))
+            self._refresh_style_overlay()
+
+        @property
+        def border_style(self):
+            return self._border_style
+
+        def set_border_style(self, style):
+            self._border_style = normalize_style(style)
+            self._refresh_style_overlay()
+
+        def _refresh_style_overlay(self):
+            if self._border_style == DEFAULT_STYLE:
+                self.style_overlay_item.setPixmap(QPixmap())
+            else:
+                overlay = border_overlay(self._border_style, self._border_color)
+                try:
+                    self.style_overlay_item.setPixmap(_pil_to_qpixmap(overlay))
+                finally:
+                    overlay.close()
+            self._sync_border_visibility()
+
+        def _sync_border_visibility(self):
+            """Borda simples (retângulo) ou camada do estilo — nenhuma das duas com a
+            prévia de animação ou o antes/depois na frente."""
+            covered = self._before_after_active or self.preview_item.isVisible()
+            styled = self._border_style != DEFAULT_STYLE
+            self.border_item.setVisible(not covered and not styled)
+            self.style_overlay_item.setVisible(not covered and styled)
 
         def set_color_pick_enabled(self, enabled):
             self._color_pick_enabled = bool(enabled)
@@ -542,12 +580,12 @@ if QT_AVAILABLE:
             self.preview_item.setPixmap(pixmap)
             self.preview_item.setPos(*self._border_pos)
             self.preview_item.setVisible(True)
-            self.border_item.setVisible(False)
+            self._sync_border_visibility()
 
         def clear_preview_overlay(self):
             self.preview_item.setPixmap(QPixmap())
             self.preview_item.setVisible(False)
-            self.border_item.setVisible(True)
+            self._sync_border_visibility()
 
         def _apply_size_transform(self, size):
             if self.image_item is None or self._base_pixmap is None:
@@ -622,8 +660,8 @@ if QT_AVAILABLE:
             transform = QTransform.fromScale(scale, scale)
             self.image_item.setTransform(transform)
             self.image_item.setPos(bx, by)
-            self.border_item.setVisible(False)
             self.preview_item.setVisible(False)
+            self._sync_border_visibility()
             self._show_guides(False)
             self._update_uncovered()  # o "antes" não é o enquadramento: sem hachura
 
@@ -641,7 +679,7 @@ if QT_AVAILABLE:
             self._before_after_active = False
             self._saved_edit_pos = None
             self._saved_edit_size = None
-            self.border_item.setVisible(True)
+            self._sync_border_visibility()
             self._show_guides(self._guides_pinned)
             self._update_uncovered()
 
