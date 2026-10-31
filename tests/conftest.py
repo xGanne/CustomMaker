@@ -1,5 +1,28 @@
 """Configuração comum dos testes."""
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _export_pool_in_threads(request):
+    """Exportação em threads, no próprio processo do pytest.
+
+    O app usa um pool de processos (até 4); cada processo carrega numpy,
+    OpenCV e PIL de novo, e a suíte passava de 680 MB de RAM com 7 processos
+    Python. Para testar o que o lote produz, threads bastam. Testes do próprio
+    pool (spawn, freeze_support do exe) usam `@pytest.mark.real_pool`.
+    """
+    if request.node.get_closest_marker("real_pool"):
+        yield
+        return
+    from src.controllers.batch_controller import BatchController
+    original = BatchController.executor_factory
+    BatchController.executor_factory = ThreadPoolExecutor
+    try:
+        yield
+    finally:
+        BatchController.executor_factory = original
 
 
 @pytest.fixture(autouse=True)

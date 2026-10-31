@@ -54,6 +54,11 @@ def _resolve_value(value, default=None):
 
 
 class BatchController:
+    # Pool da exportação. None = processos (ProcessPoolExecutor), o que o app
+    # usa. Os testes trocam por threads (tests/conftest.py): cada processo do
+    # pool carrega numpy/OpenCV/PIL de novo e somava centenas de MB de RAM.
+    executor_factory = None
+
     def __init__(
         self,
         app_context=None,
@@ -264,7 +269,8 @@ class BatchController:
                 owner._executor.shutdown(wait=False, cancel_futures=True)
                 owner._executor = None
             if owner._executor is None:
-                owner._executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+                factory = type(self).executor_factory or concurrent.futures.ProcessPoolExecutor
+                owner._executor = factory(max_workers=max_workers)
                 owner._executor_workers = max_workers
             return owner._executor
 

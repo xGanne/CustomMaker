@@ -5,10 +5,13 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 
 compat = importlib.import_module("src.qt.compat")
 
 
+@pytest.mark.real_pool  # valida o pool de processos de verdade, como no exe
 @unittest.skipUnless(compat.QT_AVAILABLE, "PySide6 not installed")
 class TestSelfTest(unittest.TestCase):
     """O autoteste do exe (--self-test) roda e reporta falhas."""

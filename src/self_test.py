@@ -37,7 +37,9 @@ def run_self_test(report_path=None):
             Image.new("RGBA", (400 + 50 * i, 600), (50 * i, 90, 160, 255)).save(path)
             paths.append(path)
         state = EditorState(image_list=paths)
-        controller = BatchController(editor_state=state, borda_hex=BORDA_HEX)
+        # 2 processos bastam para provar que o pool funciona (spawn,
+        # freeze_support) e gastam metade da RAM dos 4 padrão
+        controller = BatchController(editor_state=state, borda_hex=BORDA_HEX, app_config={"max_workers": 2})
         try:
             results = []
             for animation in ("Nenhuma", "Rainbow"):

@@ -2,6 +2,7 @@ import unittest
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+import pytest
 from PIL import Image
 
 from src.controllers.batch_controller import BatchController
@@ -135,6 +136,7 @@ class FakeExecutor:
         self.shutdown_called = True
 
 
+@pytest.mark.real_pool  # testa a criação do pool (executor falso, sem processos)
 class TestBatchControllerExecutorReuse(unittest.TestCase):
     """M15: o pool de processos é preguiçoso e reaproveitado entre lotes."""
 
@@ -413,6 +415,7 @@ class TestFrozenBatch(unittest.TestCase):
         relative = {(t["state"]["pos"][0] - t["borda_pos"][0], t["state"]["pos"][1] - t["borda_pos"][1]) for t in tasks}
         self.assertEqual(relative, {(-10, -20)})
 
+    @pytest.mark.real_pool
     def test_frozen_copy_is_isolated_and_shares_the_pool(self):
         controller = self._controller()
         batch = controller.frozen()

@@ -26,5 +26,8 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "real_pool: usa o pool de processos de verdade (o padrão nos testes é threads, para economizar RAM)",
+]
 # teste travado por mais de 2 min: despeja as pilhas de todas as threads
 faulthandler_timeout = 120
