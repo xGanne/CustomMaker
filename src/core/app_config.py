@@ -70,6 +70,7 @@ DEFAULT_CONFIG = {
     "export_size_warn_mb": 8.0,
     "command_palette_recent": [],
     "command_palette_hint_shown": False,
+    "canvas_guides_pinned": False,
 }
 
 
@@ -146,6 +147,8 @@ class AppConfig:
         )
         if not isinstance(migrated.get("command_palette_hint_shown"), bool):
             migrated["command_palette_hint_shown"] = False
+        if not isinstance(migrated.get("canvas_guides_pinned"), bool):
+            migrated["canvas_guides_pinned"] = False
 
         if not isinstance(migrated.get("strobe_warning_acknowledged"), bool):
             migrated["strobe_warning_acknowledged"] = DEFAULT_CONFIG["strobe_warning_acknowledged"]

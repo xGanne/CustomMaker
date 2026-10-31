@@ -199,6 +199,8 @@ if QT_AVAILABLE:
             self.image_canvas.interaction_started.connect(self.save_state_for_undo)  # label = gesto
             self.image_canvas.color_picked.connect(self.on_canvas_color_picked)
             self.image_canvas.color_pick_cancelled.connect(self.cancel_color_picker)
+            self.image_canvas.uncovered_changed.connect(self._on_uncovered_changed)
+            self.image_canvas.set_guides_pinned(bool(self.app_config.get("canvas_guides_pinned", False)))
             left_layout.addWidget(self.image_canvas)
 
             self._image_counter_label = QLabel("")
@@ -509,6 +511,7 @@ if QT_AVAILABLE:
                 ("frame.smart_all", "Ajuste inteligente em todas", lambda: self.apply_adjustment_to_all("intelligent_fit"), "Enquadramento", "", ("lote", "rosto"), idle, False),
                 ("frame.copy_all", "Copiar enquadramento para todas", self.copy_framing_to_all, "Enquadramento", "", ("lote",), has_current, False),
                 ("view.zoom100", "Zoom 100%", self.zoom_to_actual_size, "Visualizar", "Ctrl+0", ("tamanho real",), has_current, True),
+                ("view.guides", "Guias fixas (terços e centro)", self.toggle_guides, "Visualizar", "G", ("grade", "tercos", "encaixe"), None, False),
                 ("image.rotate_left", "Rotacionar à esquerda", lambda: self.rotate_current_image("left"), "Imagem", "Ctrl+Q", ("girar",), has_current, True),
                 ("image.rotate_right", "Rotacionar à direita", lambda: self.rotate_current_image("right"), "Imagem", "Ctrl+E", ("girar",), has_current, True),
                 ("border.pick", "Pick Color (conta-gotas)", self._toggle_color_picker_btn, "Borda", "", ("cor", "pegar"), has_current, False),
@@ -720,6 +723,27 @@ if QT_AVAILABLE:
             self.toggle_color_picker()
             if hasattr(self, "_toolbar_pick_btn"):
                 self._toolbar_pick_btn.setChecked(self._color_picker_enabled)
+
+        # ── Guias e área vazia ─────────────────────────────────────────────
+
+        def toggle_guides(self):
+            """G: guias de terços/centro sempre visíveis (senão só ao arrastar)."""
+            pinned = not self.image_canvas.guides_pinned
+            self.image_canvas.set_guides_pinned(pinned)
+            self.app_config.set("canvas_guides_pinned", pinned)
+            self.app_config.save()
+            self.show_status(f"Guias fixas: {'ligadas' if pinned else 'desligadas'} (G).")
+
+        def _on_uncovered_changed(self, uncovered):
+            """Avisa uma vez por imagem que parte da custom ficaria transparente."""
+            hinted = self.__dict__.setdefault("_uncovered_hinted", set())
+            path = self.current_path
+            if uncovered and path and path not in hinted:
+                hinted.add(path)
+                self.show_status(
+                    "Parte da custom está vazia (hachurada) e ficará transparente — Alt+B ajusta à borda.",
+                    timeout_ms=8000,
+                )
 
         def _stop_color_picker(self):
             self._color_picker_enabled = False
@@ -982,6 +1006,8 @@ if QT_AVAILABLE:
             # F17: a crase é dead key no teclado ABNT — B (de "before") também funciona
             if event.key() == Qt.Key_Escape and self._color_picker_enabled:
                 self.cancel_color_picker()
+            elif event.key() == Qt.Key_G and event.modifiers() == Qt.NoModifier and not event.isAutoRepeat():
+                self.toggle_guides()
             elif event.key() in (Qt.Key_QuoteLeft, Qt.Key_B) and event.modifiers() == Qt.NoModifier and not event.isAutoRepeat():
                 self.image_canvas.show_original_preview()
                 self.show_status("Antes (original) — solte a tecla para voltar.", timeout_ms=10000)

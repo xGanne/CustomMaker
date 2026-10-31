@@ -3,20 +3,27 @@ import time
 from PIL import Image
 
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH, BORDER_THICKNESS
+from src.core.image_processor import uncovered_regions
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 
 if QT_AVAILABLE:
     from src.qt.compat import (
+        QApplication,
+        QBrush,
         QColor,
         QGraphicsItem,
+        QGraphicsLineItem,
+        QGraphicsPathItem,
         QGraphicsPixmapItem,
         QGraphicsRectItem,
         QGraphicsScene,
         QGraphicsView,
         QLabel,
         QPainter,
+        QPainterPath,
         QPen,
         QPixmap,
+        QPointF,
         QTimer,
         QTransform,
         Qt,
@@ -31,6 +38,39 @@ from src.qt.theme import tokens as _theme_tokens
 # M8: passo da roda — fino por padrão, rápido com Ctrl pressionado
 ZOOM_STEP_FINE = 1.05
 ZOOM_STEP_FAST = 1.2
+# distância (px de tela = px de cena: o zoom muda o item, não a vista) em que
+# a imagem arrastada gruda nas bordas/centro da custom
+SNAP_THRESHOLD_PX = 8
+
+
+def snap_offsets(image_rect, border_rect, threshold=SNAP_THRESHOLD_PX):
+    """Deslocamento (dx, dy) que encaixa a imagem na borda, e se encaixou no centro.
+
+    X: borda esquerda ↔ esquerda, direita ↔ direita, centro ↔ centro; Y: topo ↔
+    topo, base ↔ base. Por eixo vale o candidato mais próximo dentro do limiar;
+    com a imagem mais estreita que a borda, o centro tem preferência (as
+    bordas não fazem sentido quando a imagem nem alcança as duas).
+    """
+    ix, iy, iw, ih = image_rect
+    bx, by, bw, bh = border_rect
+
+    def pick(candidates, prefer_center):
+        inside = [(abs(d), d, kind) for d, kind in candidates if abs(d) <= threshold]
+        if not inside:
+            return 0, None
+        if prefer_center:
+            centered = [c for c in inside if c[2] == "center"]
+            if centered:
+                return centered[0][1], "center"
+        best = min(inside)
+        return best[1], best[2]
+
+    dx, kind_x = pick(
+        [(bx - ix, "left"), ((bx + bw) - (ix + iw), "right"), ((bx + bw / 2) - (ix + iw / 2), "center")],
+        prefer_center=iw < bw,
+    )
+    dy, _kind_y = pick([(by - iy, "top"), ((by + bh) - (iy + ih), "bottom")], prefer_center=False)
+    return dx, dy, kind_x == "center"
 
 
 def scaled_placement(pos, size, factor, anchor):
@@ -49,10 +89,13 @@ def scaled_placement(pos, size, factor, anchor):
 
 if QT_AVAILABLE:
     class _DraggablePixmapItem(QGraphicsPixmapItem):
-        def __init__(self, on_change=None, on_interaction_start=None):
+        def __init__(self, on_change=None, on_interaction_start=None, snap_fn=None, on_drag=None):
             super().__init__()
             self._on_change = on_change
             self._on_interaction_start = on_interaction_start
+            self._snap_fn = snap_fn  # QPointF -> QPointF, só durante o arrasto
+            self._on_drag = on_drag  # on_drag(True/False) no início/fim do arrasto
+            self.dragging = False
             self.setFlag(QGraphicsItem.ItemIsMovable, True)
             self.setFlag(QGraphicsItem.ItemIsSelectable, True)
             self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
@@ -60,9 +103,21 @@ if QT_AVAILABLE:
         def mousePressEvent(self, event):
             if self._on_interaction_start:
                 self._on_interaction_start("Mover")
+            self.dragging = True
+            if self._on_drag:
+                self._on_drag(True)
             super().mousePressEvent(event)
 
+        def mouseReleaseEvent(self, event):
+            self.dragging = False
+            if self._on_drag:
+                self._on_drag(False)
+            super().mouseReleaseEvent(event)
+
         def itemChange(self, change, value):
+            # posições definidas por código (auto fit, undo, sessão) não encaixam
+            if change == QGraphicsItem.ItemPositionChange and self.dragging and self._snap_fn:
+                return self._snap_fn(value)
             if change == QGraphicsItem.ItemPositionHasChanged and self._on_change:
                 self._on_change()
             return super().itemChange(change, value)
@@ -75,6 +130,7 @@ if QT_AVAILABLE:
         color_picked = Signal(str, bool)  # cor, só na imagem atual (Shift)
         color_pick_cancelled = Signal()  # Esc no modo Pick Color
         zoom_changed = Signal(float)  # B4: emits zoom factor (1.0 = original size)
+        uncovered_changed = Signal(bool)  # parte da custom ficaria transparente
 
         LOADING_SHOW_DELAY_MS = 150
 
@@ -104,6 +160,27 @@ if QT_AVAILABLE:
             self.preview_item.setZValue(12)
             self.preview_item.setVisible(False)
             self.scene.addItem(self.preview_item)
+            # guias (terços e centro) dentro da borda: visíveis ao arrastar ou fixas (G)
+            self._guides_pinned = False
+            self._guide_lines = {}
+            guide_pen = QPen(self._guide_color(), 1, Qt.DashLine)
+            for name in ("v1", "v2", "vc", "h1", "h2"):
+                line = QGraphicsLineItem()
+                line.setPen(guide_pen)
+                line.setZValue(10.5)
+                line.setAcceptedMouseButtons(Qt.NoButton)
+                line.setVisible(False)
+                self.scene.addItem(line)
+                self._guide_lines[name] = line
+            # área da borda que a imagem não cobre (sai transparente no export)
+            self._uncovered = False
+            self.uncovered_item = QGraphicsPathItem()
+            hatch = QColor(_theme_tokens()["error"])  # linhas finas: opacas para lerem como vermelho
+            self.uncovered_item.setBrush(QBrush(hatch, Qt.BDiagPattern))
+            self.uncovered_item.setPen(QPen(Qt.NoPen))
+            self.uncovered_item.setZValue(10.6)
+            self.uncovered_item.setAcceptedMouseButtons(Qt.NoButton)
+            self.scene.addItem(self.uncovered_item)
             self.image_item = None
             self._base_image = None
             self._base_pixmap = None
@@ -162,6 +239,7 @@ if QT_AVAILABLE:
             self.border_item.setRect(bx, by, BORDA_WIDTH, BORDA_HEIGHT)
             self.border_item.setPen(QPen(QColor(self._border_color), BORDER_THICKNESS))
             self.preview_item.setPos(bx, by)
+            self._layout_guides()
             if self.empty_hint_item is not None:
                 hint_rect = self.empty_hint_item.boundingRect()
                 self.empty_hint_item.setPos(
@@ -175,6 +253,86 @@ if QT_AVAILABLE:
                 delta_y = by - old_pos[1]
                 self.image_item.setPos(self.image_item.pos().x() + delta_x, self.image_item.pos().y() + delta_y)
                 self._emit_state_changed()
+
+        # ── Guias, encaixe e área vazia ─────────────────────────────────────
+
+        @staticmethod
+        def _guide_color():
+            color = QColor(_theme_tokens()["text_secondary"])
+            color.setAlpha(120)
+            return color
+
+        def _layout_guides(self):
+            bx, by = self._border_pos
+            for name, line in self._guide_lines.items():
+                if name.startswith("v"):
+                    fraction = {"v1": 1 / 3, "v2": 2 / 3, "vc": 1 / 2}[name]
+                    x = bx + BORDA_WIDTH * fraction
+                    line.setLine(x, by, x, by + BORDA_HEIGHT)
+                else:
+                    y = by + BORDA_HEIGHT * (1 / 3 if name == "h1" else 2 / 3)
+                    line.setLine(bx, y, bx + BORDA_WIDTH, y)
+
+        def _show_guides(self, visible):
+            visible = visible and not self._before_after_active
+            for line in self._guide_lines.values():
+                line.setVisible(visible)
+            if not visible:
+                self._highlight_center_guide(False)
+
+        def _highlight_center_guide(self, active):
+            color = QColor(_theme_tokens()["accent"]) if active else self._guide_color()
+            self._guide_lines["vc"].setPen(QPen(color, 2 if active else 1, Qt.SolidLine if active else Qt.DashLine))
+
+        @property
+        def guides_pinned(self):
+            return self._guides_pinned
+
+        def set_guides_pinned(self, pinned):
+            """Guias sempre visíveis (G) — senão só durante o arrasto."""
+            self._guides_pinned = bool(pinned)
+            dragging = self.image_item is not None and self.image_item.dragging
+            self._show_guides(self._guides_pinned or dragging)
+
+        def _on_image_drag(self, active):
+            self._show_guides(active or self._guides_pinned)
+
+        def _snap_position(self, point):
+            """Posição proposta pelo arrasto → posição encaixada (Alt desliga)."""
+            if self._current_size is None:
+                return point
+            if QApplication.keyboardModifiers() & Qt.AltModifier:
+                self._highlight_center_guide(False)
+                return point
+            bx, by = self._border_pos
+            dx, dy, centered = snap_offsets(
+                (point.x(), point.y(), self._current_size[0], self._current_size[1]),
+                (bx, by, BORDA_WIDTH, BORDA_HEIGHT),
+            )
+            self._highlight_center_guide(centered)
+            return QPointF(point.x() + dx, point.y() + dy)
+
+        def _update_uncovered(self):
+            """Hachura a parte da borda que a imagem não cobre e avisa se mudou."""
+            regions = []
+            if self.image_item is not None and self._current_size is not None and not self._before_after_active:
+                pos = self.image_item.pos()
+                regions = uncovered_regions(
+                    (pos.x(), pos.y(), self._current_size[0], self._current_size[1]),
+                    (self._border_pos[0], self._border_pos[1], BORDA_WIDTH, BORDA_HEIGHT),
+                )
+            path = QPainterPath()
+            for x, y, w, h in regions:
+                path.addRect(x, y, w, h)
+            self.uncovered_item.setPath(path)
+            uncovered = bool(regions)
+            if uncovered != self._uncovered:
+                self._uncovered = uncovered
+                self.uncovered_changed.emit(uncovered)
+
+        @property
+        def has_uncovered_area(self):
+            return self._uncovered
 
         def resizeEvent(self, event):
             super().resizeEvent(event)
@@ -269,6 +427,7 @@ if QT_AVAILABLE:
             if self.empty_hint_item is not None:
                 self.empty_hint_item.setVisible(not self._loading)
             self._update_zoom_label()
+            self._update_uncovered()
 
         def set_border_color(self, color_hex):
             self._border_color = color_hex
@@ -421,6 +580,8 @@ if QT_AVAILABLE:
             self.image_item = _DraggablePixmapItem(
                 on_change=self._emit_state_changed,
                 on_interaction_start=self.interaction_started.emit,
+                snap_fn=self._snap_position,
+                on_drag=self._on_image_drag,
             )
             self.image_item.setZValue(1)
             self.image_item.setTransformationMode(Qt.SmoothTransformation)
@@ -463,6 +624,8 @@ if QT_AVAILABLE:
             self.image_item.setPos(bx, by)
             self.border_item.setVisible(False)
             self.preview_item.setVisible(False)
+            self._show_guides(False)
+            self._update_uncovered()  # o "antes" não é o enquadramento: sem hachura
 
         def restore_edit_preview(self):
             """C2: restore the edited state after before/after toggle."""
@@ -479,6 +642,8 @@ if QT_AVAILABLE:
             self._saved_edit_pos = None
             self._saved_edit_size = None
             self.border_item.setVisible(True)
+            self._show_guides(self._guides_pinned)
+            self._update_uncovered()
 
         # ── B4: zoom via wheel ─────────────────────────────────────────────
 
@@ -564,6 +729,7 @@ if QT_AVAILABLE:
                 return
             if self._before_after_active:
                 return
+            self._update_uncovered()
             pos = (int(self.image_item.pos().x()), int(self.image_item.pos().y()))
             self.state_changed.emit(pos, self._current_size)
             self.zoom_changed.emit(self._zoom_factor)  # B4: emit on any state change too

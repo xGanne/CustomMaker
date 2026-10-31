@@ -17,6 +17,29 @@ logger = logging.getLogger(__name__)
 _FACE_DETECTION_LOCK = threading.Lock()
 
 
+def uncovered_regions(image_rect, border_rect):
+    """Faixas da borda que a imagem não cobre (sairiam transparentes no export).
+
+    Retângulos (x, y, w, h); lista vazia quando a imagem cobre a borda inteira.
+    """
+    bx, by, bw, bh = border_rect
+    ix, iy, iw, ih = image_rect
+    left, top = max(bx, ix), max(by, iy)
+    right, bottom = min(bx + bw, ix + iw), min(by + bh, iy + ih)
+    if right <= left or bottom <= top:
+        return [(bx, by, bw, bh)]  # nada da borda coberto
+    regions = []
+    if top > by:
+        regions.append((bx, by, bw, top - by))
+    if bottom < by + bh:
+        regions.append((bx, bottom, bw, by + bh - bottom))
+    if left > bx:
+        regions.append((bx, top, left - bx, bottom - top))
+    if right < bx + bw:
+        regions.append((right, top, bx + bw - right, bottom - top))
+    return regions
+
+
 class ImageProcessor:
     @staticmethod
     def load_face_cascade():
