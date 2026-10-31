@@ -69,7 +69,8 @@ class _Output:
     def save(self, path):
         if not path:
             return
-        with open(path, "w", encoding="utf-8") as f:
+        # com BOM: o Bloco de Notas e o PowerShell do Windows reconhecem o UTF-8 (acentos, "·")
+        with open(path, "w", encoding="utf-8-sig") as f:
             f.write("\n".join(self.lines) + "\n")
 
 
