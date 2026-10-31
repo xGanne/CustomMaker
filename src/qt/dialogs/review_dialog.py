@@ -13,6 +13,7 @@ import threading
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
 from src.core.batch_worker import render_custom_preview
 from src.core.file_sizes import format_bytes, size_summary, warn_limit_bytes
+from src.core.render_cache import custom_cache_key
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
 
@@ -110,75 +111,127 @@ if QT_AVAILABLE:
             return [p for p in self._paths if p in image_list]
 
         def render(self):
-            """Renderiza as prévias em segundo plano, sobre um retrato do estado."""
+            """Renderiza as prévias em segundo plano, sobre um retrato do estado.
+
+            Usa o cache por conteúdo da janela: customs que não mudaram aparecem na
+            hora; os cards entram na grade conforme ficam prontos.
+            """
             paths = self._current_paths()
             self._cancel_measure()
             self._sizes.clear()  # a borda/animação pode ter mudado: tamanhos velhos
             self._items.clear()
             self.grid.clear()
+            self._render_errors = 0
             if not paths:
                 self.status.setText("Nenhuma imagem para revisar.")
                 return
             self.status.setText(f"Renderizando {len(paths)} custom(s)...")
             batch = self.main_window.batch_controller.frozen()  # GUI thread
+            cache = self.main_window.render_cache
+            versions = dict(getattr(self.main_window, "_edit_versions", {}))
             self._render_seq += 1
             seq = self._render_seq
             task_id = f"qt_review_render_{id(self)}_{seq}"
             self._active_task_id = task_id
+            ready = []
+            lock = threading.Lock()
 
-            def task_fn(cancel_event, _on_progress):
+            def task_fn(cancel_event, on_progress):
                 source_dir = tempfile.mkdtemp(prefix="custommaker_review_")
-                previews = []
+                hits = 0
                 try:
-                    for path in paths:
+                    for index, path in enumerate(paths, start=1):
                         if cancel_event.is_set():
                             break
                         try:
-                            data = batch._get_task_data(path, None, source_dir=source_dir)
-                            image = render_custom_preview(data) if data else None
-                            error = None if data else "sem enquadramento possível"
+                            light = batch._get_task_data(path, None, write_source=False)
+                            if not light:
+                                image, error = None, "sem enquadramento possível"
+                            else:
+                                key = custom_cache_key(light, versions.get(path, 0))
+                                image, error = cache.get(key), None
+                                if image is not None:
+                                    hits += 1
+                                else:
+                                    # imagem editada: só agora grava a fonte temporária
+                                    data = batch._get_task_data(path, None, source_dir=source_dir) if light.get("edited") else light
+                                    image = render_custom_preview(data)
+                                    image.thumbnail((CARD_W, CARD_H))
+                                    cache.put(key, image)
                         except Exception as exc:  # arquivo sumiu/ilegível: card de erro
                             image, error = None, str(exc)
-                        if image is not None:
-                            image.thumbnail((CARD_W, CARD_H))
-                        previews.append((path, image, error))
+                        with lock:
+                            ready.append((path, image, error))
+                        if on_progress:
+                            on_progress(index, len(paths), "")
                 finally:
                     shutil.rmtree(source_dir, ignore_errors=True)
-                return {"seq": seq, "previews": previews}
+                return {"seq": seq, "hits": hits}
+
+            def take_ready():
+                with lock:
+                    items, ready[:] = list(ready), []
+                return items
+
+            def on_progress(done_count, total, _message):
+                try:
+                    if seq != self._render_seq:
+                        return
+                    for card in take_ready():
+                        self._add_card(*card)
+                    self.status.setText(f"Renderizando {done_count}/{total}...")
+                except RuntimeError:
+                    pass  # diálogo fechado enquanto renderizava
 
             def on_done(result):
                 try:
                     if result.get("seq") != self._render_seq:
+                        for _path, image, _error in take_ready():
+                            if image is not None:
+                                image.close()
                         return
-                    self._show_previews(result.get("previews") or [])
+                    for card in take_ready():
+                        self._add_card(*card)
+                    self._finish_render(result.get("hits", 0))
                 except RuntimeError:
-                    pass  # diálogo fechado enquanto renderizava
+                    pass
 
             handle = self.main_window.task_runner.submit(task_id, task_fn)
             if handle is not None:
+                handle.progress.connect(on_progress)
                 handle.done.connect(on_done)
 
-        def _show_previews(self, previews):
+        def _add_card(self, path, image, error):
             from src.qt.pixmap_utils import pil_to_qpixmap
+            item = QListWidgetItem(os.path.basename(path))
+            item.setData(Qt.UserRole, path)
+            self._items[path] = item
+            if image is not None:
+                item.setIcon(QIcon(pil_to_qpixmap(image)))
+                image.close()
+                item.setToolTip(f"{path}\nDuplo clique: abrir no editor")
+            else:
+                self._render_errors += 1
+                item.setText(f"{os.path.basename(path)}\n⚠ {error}")
+                item.setToolTip(f"{path}\nNão foi possível gerar a prévia: {error}")
+            self.grid.addItem(item)
+
+        def _show_previews(self, previews):
+            """Mostra uma lista pronta de (path, imagem, erro) de uma vez."""
             self.grid.clear()
             self._items.clear()
-            errors = 0
-            for path, image, error in previews:
-                item = QListWidgetItem(os.path.basename(path))
-                item.setData(Qt.UserRole, path)
-                self._items[path] = item
-                if image is not None:
-                    item.setIcon(QIcon(pil_to_qpixmap(image)))
-                    image.close()
-                    item.setToolTip(f"{path}\nDuplo clique: abrir no editor")
-                else:
-                    errors += 1
-                    item.setText(f"{os.path.basename(path)}\n⚠ {error}")
-                    item.setToolTip(f"{path}\nNão foi possível gerar a prévia: {error}")
-                self.grid.addItem(item)
-            summary = f"{len(previews)} custom(s)"
-            if errors:
-                summary += f" · {errors} com problema"
+            self._render_errors = 0
+            for card in previews:
+                self._add_card(*card)
+            self._finish_render(0)
+
+        def _finish_render(self, hits):
+            count = self.grid.count()
+            summary = f"{count} custom(s)"
+            if hits:
+                summary += f" · {hits} do cache, {count - hits} renderizada(s)"
+            if self._render_errors:
+                summary += f" · {self._render_errors} com problema"
             self.status.setText(summary)
             if self._measure_after_render:
                 self._measure_after_render = False

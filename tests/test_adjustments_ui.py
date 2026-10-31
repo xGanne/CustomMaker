@@ -106,9 +106,12 @@ class TestAdjustmentsInWindow(unittest.TestCase):
         self.tab.adjust_sliders["brightness"].setValue(60)
         self._settle()
         path = self.window.current_path
-        self.assertEqual(self.window.editor_state.image_adjustments[path], {"brightness": 60})
-        self.assertEqual(self.tab.adjust_spins["brightness"].value(), 60)
-        self.assertGreater(self._center_pixel()[0], before[0])
+        canvas = self.window.image_canvas
+        context = (f"base={canvas._base_image.size} original={canvas._original_image.size} "
+                   f"pending={getattr(self.window, '_adjust_preview_pending', None)} tasks={list(self.window.task_runner._tasks)}")
+        self.assertEqual(self.window.editor_state.image_adjustments.get(path), {"brightness": 60}, context)
+        self.assertEqual(self.tab.adjust_spins["brightness"].value(), 60, context)
+        self.assertGreater(self._center_pixel()[0], before[0], context)
         self.assertIn(path, self.window.editor_state.image_dirty)
         # o original guardado para o antes/depois (B) continua sem ajuste
         original = self.window.image_canvas._original_image
