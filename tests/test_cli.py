@@ -52,6 +52,20 @@ class TestCli(unittest.TestCase):
                 self.assertEqual(code, EXIT_USAGE, output)
                 self.assertIn("ERRO", output)
 
+    def test_messages_in_portuguese_and_animation_aliases(self):
+        code, output = self.run_cli()
+        self.assertEqual(code, EXIT_USAGE)
+        self.assertIn("informe o destino", output)
+        code, output = self.run_cli("--out", "a", "--anim", "rainbow", "--dry-run")
+        self.assertEqual(code, EXIT_OK, output)
+        self.assertIn("animação Rainbow", output)
+        code, output = self.run_cli("--out", "a", "--anim", "strobe")
+        self.assertEqual(code, EXIT_USAGE)  # o atalho também exige --allow-strobe
+        self.assertIn("--allow-strobe", output)
+        code, output = self.run_cli("--out", "a", "--anim", "fogos")
+        self.assertEqual(code, EXIT_USAGE)
+        self.assertIn("desconhecida", output)
+
     def test_out_writes_one_custom_per_image(self):
         out = os.path.join(self.tmp, "saida")
         code, output = self.run_cli("--out", out)

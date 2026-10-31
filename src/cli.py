@@ -26,7 +26,36 @@ class _Usage(Exception):
 
 class _Parser(argparse.ArgumentParser):
     def error(self, message):  # código 2 com mensagem clara, sem SystemExit no meio
-        raise _Usage(message)
+        raise _Usage(_translate_error(message))
+
+
+def _translate_error(message):
+    """Mensagens do argparse em português (o resto do app é pt-BR)."""
+    if "one of the arguments" in message:
+        return "informe o destino: --out PASTA, --zip ARQUIVO ou --upload TITULO"
+    if "not allowed with argument" in message:
+        return "use só um destino: --out, --zip ou --upload"
+    if "the following arguments are required" in message:
+        return "informe a pasta das imagens: --batch PASTA"
+    if "invalid choice" in message:
+        return message.replace("invalid choice", "opção inválida").replace("choose from", "use")
+    if "expected one argument" in message:
+        return message.replace("expected one argument", "precisa de um valor")
+    if "invalid int value" in message:
+        return message.replace("invalid int value", "número inválido")
+    if "unrecognized arguments" in message:
+        return message.replace("unrecognized arguments", "argumentos desconhecidos")
+    return message
+
+
+def _animation(value):
+    """Nome da animação sem exigir o texto exato: "rainbow", "strobe", "neon"..."""
+    from src.config.settings import ANIMATION_OPTIONS
+    wanted = value.strip().lower()
+    for option in ANIMATION_OPTIONS:
+        if wanted in (option.lower(), option.split(" ")[0].lower()):
+            return option
+    raise argparse.ArgumentTypeError(f"animação '{value}' desconhecida; use: {', '.join(ANIMATION_OPTIONS)}")
 
 
 def _build_parser():
@@ -43,8 +72,8 @@ def _build_parser():
     parser.add_argument("--framing", choices=("auto_fit", "intelligent"), help="enquadramento das imagens")
     parser.add_argument("--border", metavar="NOME|#RRGGBB", help="cor da borda: nome da lista do app ou hex")
     parser.add_argument("--style", choices=list(BORDER_STYLES), help="estilo da borda (sem animação)")
-    parser.add_argument("--anim", choices=ANIMATION_OPTIONS, metavar="TIPO",
-                        help="animação: " + ", ".join(ANIMATION_OPTIONS))
+    parser.add_argument("--anim", type=_animation, metavar="TIPO",
+                        help="animação: " + ", ".join(ANIMATION_OPTIONS) + " (basta a 1ª palavra, ex.: strobe)")
     parser.add_argument("--allow-strobe", action="store_true",
                         help="confirma o Strobe (pisca; pode afetar pessoas com fotossensibilidade)")
     parser.add_argument("--workers", type=int, metavar="N", help="processos em paralelo (1-8)")
@@ -138,6 +167,9 @@ def run_cli(argv):
         return EXIT_USAGE
     except SystemExit as exc:  # --help
         return int(exc.code or 0)
+    except Exception as exc:  # ex.: --help no exe aberto sem terminal (sem stdout)
+        out(f"ERRO: {exc}")
+        return EXIT_USAGE
 
     try:
         return _run(args, out)
