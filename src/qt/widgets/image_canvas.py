@@ -246,8 +246,12 @@ if QT_AVAILABLE:
             bx = int((width - BORDA_WIDTH) / 2)
             by = int((height - BORDA_HEIGHT) / 2)
             self._border_pos = (bx, by)
-            self.border_item.setRect(bx, by, BORDA_WIDTH, BORDA_HEIGHT)
-            self.border_item.setPen(QPen(QColor(self._border_color), BORDER_THICKNESS))
+            # a caneta do Qt é centrada na linha: recuar meia espessura deixa os 5 px
+            # inteiros para dentro, como o export desenha (antes o canvas mostrava
+            # ~2 px a mais de imagem em cada lado do que a custom final)
+            half = BORDER_THICKNESS / 2
+            self.border_item.setRect(bx + half, by + half, BORDA_WIDTH - BORDER_THICKNESS, BORDA_HEIGHT - BORDER_THICKNESS)
+            self.border_item.setPen(self._border_pen(self._border_color))
             self.preview_item.setPos(bx, by)
             self.style_overlay_item.setPos(bx, by)
             self._layout_guides()
@@ -444,8 +448,14 @@ if QT_AVAILABLE:
 
         def set_border_color(self, color_hex):
             self._border_color = color_hex
-            self.border_item.setPen(QPen(QColor(color_hex), BORDER_THICKNESS))
+            self.border_item.setPen(self._border_pen(color_hex))
             self._refresh_style_overlay()
+
+        @staticmethod
+        def _border_pen(color_hex):
+            pen = QPen(QColor(color_hex), BORDER_THICKNESS)
+            pen.setJoinStyle(Qt.MiterJoin)  # cantos retos, como o retângulo do export
+            return pen
 
         @property
         def border_style(self):
