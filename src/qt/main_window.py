@@ -280,7 +280,16 @@ if QT_AVAILABLE:
             self._folder_btn.customContextMenuRequested.connect(self._show_recent_folders_menu)
             toolbar.addWidget(self._folder_btn)
             toolbar.addWidget(_tool_btn("clipboard", "Colar Imagem", self.paste_image, "Ctrl+V"))
-            toolbar.addWidget(_tool_btn("arrow-uturn-left", "Desfazer", self.undo_current_image, "Ctrl+Z"))
+            # clique desfaz; a setinha abre o histórico da imagem (salto direto)
+            self._undo_btn = _tool_btn(
+                "arrow-uturn-left", "Desfazer  (setinha: histórico · Ctrl+Alt+Z: alternar com o anterior)",
+                self.undo_current_image, "Ctrl+Z",
+            )
+            history_menu = QMenu(self._undo_btn)
+            history_menu.aboutToShow.connect(lambda: self._populate_history_menu(history_menu))
+            self._undo_btn.setMenu(history_menu)
+            self._undo_btn.setPopupMode(QToolButton.MenuButtonPopup)
+            toolbar.addWidget(self._undo_btn)
             toolbar.addSeparator()
             toolbar.addWidget(_tool_btn("arrows-pointing-out", "Auto Fit", self.apply_auto_fit, "Alt+B"))
             self._toolbar_smart_fit_btn = _tool_btn(
@@ -489,6 +498,9 @@ if QT_AVAILABLE:
                 ("file.paste", "Colar imagem", self.paste_image, "Arquivo", "Ctrl+V", ("clipboard",), None, False),
                 ("edit.undo", "Desfazer", self.undo_current_image, "Editar", "Ctrl+Z", (), has_current, False),
                 ("edit.redo", "Refazer", self.redo_current_image, "Editar", "Ctrl+Y", (), has_current, False),
+                ("edit.toggle_last", "Alternar com o passo anterior", self.toggle_last_state, "Editar", "Ctrl+Alt+Z", ("comparar", "antes", "historico"), has_current, True),
+                ("edit.history", "Histórico desta imagem", self._show_history_menu, "Editar", "", ("desfazer", "passos"), has_current, False),
+                ("edit.clear_history", "Limpar histórico desta imagem", self.clear_history, "Editar", "", ("desfazer", "memoria"), has_current, False),
                 ("frame.auto", "Auto fit", self.apply_auto_fit, "Enquadramento", "Alt+B", ("ajustar", "borda"), has_current, True),
                 ("frame.smart", "Ajuste inteligente (rosto)", self.apply_intelligent_fit, "Enquadramento", "Alt+F", ("face",), has_current, True),
                 ("frame.auto_all", "Auto fit em todas", lambda: self.apply_adjustment_to_all("auto_fit"), "Enquadramento", "", ("lote",), idle, False),
@@ -783,6 +795,8 @@ if QT_AVAILABLE:
                     pass
             self._dispose_images([snapshot.image for snapshot in self._undo_stacks.pop(path, [])])
             self._drop_redo_stack(path)
+            self.__dict__.get("_last_history_op", {}).pop(path, None)
+            self.__dict__.get("_face_cycle", {}).pop(path, None)
 
         def toggle_individual_border(self, index):
             if index < 0 or index >= len(self.editor_state.image_list):
@@ -800,6 +814,61 @@ if QT_AVAILABLE:
         def _on_image_list_reordered(self, new_paths):
             self.editor_state.image_list = list(new_paths)
             self._update_image_counter()
+
+        # ── Histórico (setinha do Desfazer) ────────────────────────────────
+
+        @staticmethod
+        def _relative_time(timestamp):
+            seconds = max(0, _time.monotonic() - timestamp)
+            if seconds < 60:
+                return "agora"
+            if seconds < 3600:
+                return f"há {int(seconds // 60)} min"
+            return f"há {int(seconds // 3600)} h"
+
+        def _populate_history_menu(self, menu):
+            """Passos da imagem atual: refazíveis no topo, o atual em negrito e os
+            anteriores abaixo (mais recente primeiro); clicar salta direto."""
+            menu.clear()
+            path = self.current_path
+            undo = list(self._undo_stacks.get(path, [])) if path else []
+            redo = list(self._redo_stacks.get(path, [])) if path else []
+            if not undo and not redo:
+                menu.addAction("Sem histórico").setEnabled(False)
+                return
+
+            def add(text, steps, font_style=None):
+                action = menu.addAction(text)
+                if font_style:
+                    font = action.font()
+                    font.setBold(font_style == "bold")
+                    font.setItalic(font_style == "italic")
+                    action.setFont(font)
+                if steps:
+                    action.triggered.connect(lambda _checked=False, s=steps: self.jump_history(s))
+                else:
+                    action.setEnabled(False)
+                return action
+
+            # refazíveis: o mais distante no topo, o próximo logo acima do atual
+            for index, snapshot in enumerate(redo):
+                add(f"↷ {snapshot.label or 'Passo'}", len(redo) - index, "italic")
+            # atual: o estado depois da última ação desfazível
+            current_label = undo[-1].label if undo else "Início (como abriu)"
+            add(f"● {current_label or 'Passo'}", 0, "bold")
+            # anteriores: voltar j passos leva ao estado depois da ação undo[k-j]
+            for back in range(1, len(undo)):
+                snapshot = undo[len(undo) - 1 - back]
+                add(f"{snapshot.label or 'Passo'} · {self._relative_time(snapshot.timestamp)}", -back)
+            if undo:
+                add("Início (como abriu)", -len(undo))
+            menu.addSeparator()
+            menu.addAction("Limpar histórico desta imagem", self.clear_history)
+
+        def _show_history_menu(self):
+            """Abre o histórico pela paleta: o mesmo menu da setinha do Desfazer."""
+            if hasattr(self, "_undo_btn"):
+                self._undo_btn.showMenu()
 
         def open_review(self, paths=None, summary=None, measure=False):
             """Revisão em grade das customs (todas da lista, ou só `paths`);

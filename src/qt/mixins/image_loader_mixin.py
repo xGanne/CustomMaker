@@ -546,6 +546,11 @@ class ImageLoaderMixin:
             self._dispose_images([stack.pop(0).image])
         # F15: uma nova ação do usuário invalida o redo
         self._drop_redo_stack(self.current_path)
+        self._history_ops()[self.current_path] = "edit"
+
+    def _history_ops(self):
+        """Última operação de histórico por imagem: "edit", "undo" ou "redo"."""
+        return self.__dict__.setdefault("_last_history_op", {})
 
     def _rename_last_undo_step(self, label):
         """Renomeia o passo recém-empilhado (o nome final só se sabe depois da ação)."""
@@ -597,14 +602,16 @@ class ImageLoaderMixin:
         stack = self._undo_stacks.get(self.current_path) or []
         if not stack:
             self.show_status("Nada para desfazer.")
-            return
+            return False
         target = stack.pop()
         # o estado atual vai para o redo com o nome da mesma ação, agora refazível
         current = self._capture_current_snapshot(target.label)
         if current is not None:
             self._redo_stack_map().setdefault(self.current_path, []).append(current)
         self._apply_snapshot(target)
+        self._history_ops()[self.current_path] = "undo"
         self.show_status(f"Desfeito: {target.label}" if target.label else "Última alteração desfeita.")
+        return True
 
     def redo_current_image(self):
         if not self.current_path:
@@ -612,13 +619,80 @@ class ImageLoaderMixin:
         stack = self._redo_stack_map().get(self.current_path) or []
         if not stack:
             self.show_status("Nada para refazer.")
-            return
+            return False
         target = stack.pop()
         current = self._capture_current_snapshot(target.label)
         if current is not None:
             self._undo_stacks.setdefault(self.current_path, []).append(current)
         self._apply_snapshot(target)
+        self._history_ops()[self.current_path] = "redo"
         self.show_status(f"Refeito: {target.label}" if target.label else "Alteração refeita.")
+        return True
+
+    def _comparing_original(self):
+        """Antes/depois (B) ativo: o canvas mostra o original por cima do estado."""
+        return bool(getattr(self.image_canvas, "_before_after_active", False))
+
+    def toggle_last_state(self):
+        """Ctrl+Alt+Z: alterna entre o estado atual e o anterior (Toggle Last State).
+
+        Depois de uma edição, desfaz; depois de um desfazer, refaz — apertar de
+        novo volta, para comparar "como estava" e "como ficou".
+        """
+        path = self.current_path
+        if not path or self._comparing_original():
+            return
+        can_redo = bool(self._redo_stack_map().get(path))
+        if self._history_ops().get(path) == "undo" and can_redo:
+            done = self.redo_current_image()
+        elif self._undo_stacks.get(path):
+            done = self.undo_current_image()
+        else:
+            self.show_status("Nada para comparar.")
+            return
+        if done:
+            self.show_status("Comparando com o passo anterior — Ctrl+Alt+Z de novo para voltar.", timeout_ms=6000)
+
+    def jump_history(self, steps):
+        """Volta (steps < 0) ou avança (steps > 0) vários passos de uma vez.
+
+        Equivale a |steps| desfazer/refazer seguidos, mas só o estado final é
+        aplicado no canvas: pular 15 passos custa o mesmo que 1, e nenhuma
+        imagem intermediária é copiada.
+        """
+        path = self.current_path
+        if not path or not steps or self._comparing_original():
+            return
+        undo = self._undo_stacks.setdefault(path, [])
+        redo = self._redo_stack_map().setdefault(path, [])
+        source, target_stack = (undo, redo) if steps < 0 else (redo, undo)
+        count = min(abs(steps), len(source))
+        if not count:
+            return
+        current = self._capture_current_snapshot(source[-1].label)
+        if current is not None:
+            target_stack.append(current)
+        for _ in range(count - 1):
+            moved = source.pop()
+            # como num desfazer/refazer avulso: o estado que muda de pilha leva o
+            # nome da ação que fica entre ele e o próximo alvo
+            moved.label = source[-1].label
+            target_stack.append(moved)
+        target = source.pop()
+        self._apply_snapshot(target)
+        self._history_ops()[path] = "undo" if steps < 0 else "redo"
+        verb = "Voltou" if steps < 0 else "Avançou"
+        self.show_status(f"{verb} {count} passo(s) no histórico.")
+
+    def clear_history(self):
+        """Descarta desfazer/refazer da imagem atual (libera as cópias guardadas)."""
+        path = self.current_path
+        if not path:
+            return
+        self._dispose_images([s.image for s in self._undo_stacks.pop(path, [])])
+        self._drop_redo_stack(path)
+        self._history_ops().pop(path, None)
+        self.show_status("Histórico desta imagem limpo.")
 
     def _ensure_state_for_current(self, image, default_fit=None):
         if not self.current_path:

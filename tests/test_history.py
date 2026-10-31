@@ -91,6 +91,75 @@ class TestNamedHistory(unittest.TestCase):
         self.window.rotate_current_image("left")
         self.assertEqual(self._stack("undo"), ["Rotacionar à esquerda"])
 
+    # ── Ctrl+Alt+Z, salto e menu ───────────────────────────────────────
+
+    def _pos(self):
+        return tuple(self.window.editor_state.image_states[self.window.current_path]["pos"])
+
+    def _three_moves(self):
+        positions = [self._pos()]
+        for dx in (10, 20, 30):
+            self._drag(dx)
+            positions.append(self._pos())
+        return positions
+
+    def test_toggle_alternates_between_current_and_previous(self):
+        positions = self._three_moves()
+        self.window.toggle_last_state()
+        self.assertEqual(self._pos(), positions[2])
+        self.window.toggle_last_state()
+        self.assertEqual(self._pos(), positions[3])
+        self.window.toggle_last_state()
+        self.assertEqual(self._pos(), positions[2])
+        # depois de um desfazer manual, o toggle refaz
+        self.window.undo_current_image()
+        self.window.toggle_last_state()
+        self.assertEqual(self._pos(), positions[2])
+
+    def test_toggle_without_history_says_so(self):
+        self.window.toggle_last_state()
+        self.assertEqual(self.statuses[-1], "Nada para comparar.")
+
+    def test_jump_equals_repeated_undos_but_applies_once(self):
+        positions = self._three_moves()
+        applied = []
+        original = self.window._apply_snapshot
+        self.window._apply_snapshot = lambda s: (applied.append(s.pos), original(s))
+        self.window.jump_history(-3)
+        self.assertEqual(self._pos(), positions[0])
+        self.assertEqual(len(applied), 1)
+        self.assertEqual(self._stack("undo"), [])
+        self.assertEqual(self._stack("redo"), ["Mover", "Mover", "Mover"])
+        self.window.jump_history(2)
+        self.assertEqual(self._pos(), positions[2])
+        self.assertEqual(len(self._stack("undo")), 2)
+        self.assertEqual(len(self._stack("redo")), 1)
+
+    def test_menu_lists_steps_and_jumps(self):
+        self._drag(10)
+        self.window.apply_auto_fit()
+        self.window.undo_current_image()  # "Auto fit" fica refazível
+        menu = compat.QMenu()
+        self.addCleanup(menu.deleteLater)
+        self.window._populate_history_menu(menu)
+        texts = [a.text() for a in menu.actions() if not a.isSeparator()]
+        self.assertEqual(texts[0], "↷ Auto fit")
+        self.assertEqual(texts[1], "● Mover")
+        self.assertEqual(texts[2], "Início (como abriu)")
+        self.assertEqual(texts[-1], "Limpar histórico desta imagem")
+        menu.actions()[0].trigger()  # avança até "Auto fit"
+        self.assertEqual(self._stack("undo"), ["Mover", "Auto fit"])
+
+    def test_clear_history_releases_snapshots(self):
+        self.window.rotate_current_image("left")
+        self.window.rotate_current_image("left")  # este passo guarda a cópia da 1ª rotação
+        snapshot = self.window._undo_stacks[self.window.current_path][-1]
+        closed = []
+        snapshot.image.close = lambda: closed.append(True)
+        self.window.clear_history()
+        self.assertEqual(self._stack("undo"), [])
+        self.assertEqual(closed, [True])
+
 
 if __name__ == "__main__":
     unittest.main()
