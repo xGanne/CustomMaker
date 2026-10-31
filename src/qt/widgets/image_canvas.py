@@ -72,7 +72,8 @@ if QT_AVAILABLE:
         state_changed = Signal(tuple, tuple)
         border_pos_changed = Signal(tuple)
         interaction_started = Signal(str)  # nome do passo de undo
-        color_picked = Signal(str)
+        color_picked = Signal(str, bool)  # cor, só na imagem atual (Shift)
+        color_pick_cancelled = Signal()  # Esc no modo Pick Color
         zoom_changed = Signal(float)  # B4: emits zoom factor (1.0 = original size)
 
         LOADING_SHOW_DELAY_MS = 150
@@ -110,6 +111,7 @@ if QT_AVAILABLE:
             self._border_pos = (0, 0)
             self._border_color = "#FFFFFF"
             self._color_pick_enabled = False
+            self._loupe = None  # lupa do Pick Color, criada no primeiro uso
             self._zoom_factor = 1.0  # B4
             self._natural_size = None  # M8: tamanho do original (referência do 100%)
             self._last_wheel_time = 0.0  # F8: debounce do snapshot de undo
@@ -275,6 +277,104 @@ if QT_AVAILABLE:
         def set_color_pick_enabled(self, enabled):
             self._color_pick_enabled = bool(enabled)
             self.setCursor(Qt.CrossCursor if enabled else Qt.ArrowCursor)
+            # a lupa acompanha o cursor só no modo Pick Color
+            self.viewport().setMouseTracking(self._color_pick_enabled)
+            if not self._color_pick_enabled and self._loupe is not None:
+                self._loupe.hide()
+
+        # ── Pick Color: lupa e leitura de pixel ───────────────────────────
+
+        LOUPE_RADIUS = 5  # 11x11 pixels
+        LOUPE_ZOOM = 11
+
+        def _image_pixel_at(self, view_pos):
+            """(x, y) do pixel de _base_image sob o ponto do viewport, ou None."""
+            if self.image_item is None or self._base_image is None:
+                return None
+            local = self.image_item.mapFromScene(self.mapToScene(view_pos))
+            x, y = int(local.x()), int(local.y())
+            if 0 <= x < self._base_image.width and 0 <= y < self._base_image.height:
+                return x, y
+            return None
+
+        def _picked_color(self, x, y, average=False):
+            """Hex do pixel (x, y); com `average`, média 3x3 dos pixels opacos."""
+            if average:
+                box = (max(0, x - 1), max(0, y - 1), min(self._base_image.width, x + 2), min(self._base_image.height, y + 2))
+                pixels = [p for p in self._base_image.crop(box).convert("RGBA").getdata() if p[3] > 0]
+                if pixels:
+                    r, g, b = (round(sum(p[i] for p in pixels) / len(pixels)) for i in range(3))
+                    return f"#{r:02x}{g:02x}{b:02x}"
+            pixel = self._base_image.getpixel((x, y))
+            if isinstance(pixel, int):
+                return "#{0:02x}{0:02x}{0:02x}".format(pixel)
+            r, g, b = pixel[:3]
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        def _loupe_pixmap(self, x, y):
+            """Pixels em volta de (x, y) ampliados, com o central destacado e o hex."""
+            from PIL import Image as _Image
+
+            radius, zoom = self.LOUPE_RADIUS, self.LOUPE_ZOOM
+            side = radius * 2 + 1
+            window = _Image.new("RGBA", (side, side), (0, 0, 0, 0))
+            region = self._base_image.crop((x - radius, y - radius, x + radius + 1, y + radius + 1))
+            window.paste(region, (0, 0))  # fora da imagem fica transparente
+            region.close()
+            big = window.resize((side * zoom, side * zoom), _Image.NEAREST)
+            window.close()
+            color = self._picked_color(x, y)
+            text_h = 24
+            pixmap = QPixmap(big.width, big.height + text_h)
+            pixmap.fill(QColor(_theme_tokens()["surface_elevated"]))
+            painter = QPainter(pixmap)
+            painter.drawPixmap(0, 0, _pil_to_qpixmap(big))
+            big.close()
+            grid = QColor(0, 0, 0, 40)
+            painter.setPen(QPen(grid, 1))
+            for i in range(1, side):
+                painter.drawLine(i * zoom, 0, i * zoom, side * zoom)
+                painter.drawLine(0, i * zoom, side * zoom, i * zoom)
+            painter.setPen(QPen(QColor("#ffffff"), 2))
+            painter.drawRect(radius * zoom, radius * zoom, zoom, zoom)
+            painter.setPen(QPen(QColor("#000000"), 1))
+            painter.drawRect(radius * zoom - 1, radius * zoom - 1, zoom + 2, zoom + 2)
+            painter.fillRect(4, side * zoom + 4, 16, 16, QColor(color))
+            painter.setPen(QColor(_theme_tokens()["text_primary"]))
+            painter.drawText(26, side * zoom + 17, color.upper())
+            painter.end()
+            return pixmap
+
+        def _update_loupe(self, view_pos):
+            spot = self._image_pixel_at(view_pos)
+            if spot is None:
+                if self._loupe is not None:
+                    self._loupe.hide()
+                return
+            if self._loupe is None:
+                self._loupe = QLabel(self.viewport())
+                self._loupe.setObjectName("CanvasLoupe")
+                self._loupe.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            self._loupe.setPixmap(self._loupe_pixmap(*spot))
+            self._loupe.adjustSize()
+            # 24 px abaixo/à direita do cursor; perto da borda do viewport, do outro lado
+            vw, vh = self.viewport().width(), self.viewport().height()
+            lw, lh = self._loupe.width(), self._loupe.height()
+            px = view_pos.x() + 24 if view_pos.x() + 24 + lw <= vw else view_pos.x() - 24 - lw
+            py = view_pos.y() + 24 if view_pos.y() + 24 + lh <= vh else view_pos.y() - 24 - lh
+            self._loupe.move(max(0, px), max(0, py))
+            self._loupe.show()
+            self._loupe.raise_()
+
+        def mouseMoveEvent(self, event):
+            if self._color_pick_enabled:
+                self._update_loupe(event.position().toPoint())
+            super().mouseMoveEvent(event)
+
+        def leaveEvent(self, event):
+            if self._loupe is not None:
+                self._loupe.hide()
+            super().leaveEvent(event)
 
         def set_preview_overlay(self, pixmap):
             if pixmap is None or pixmap.isNull():
@@ -432,6 +532,10 @@ if QT_AVAILABLE:
             )
 
         def keyPressEvent(self, event):
+            if event.key() == Qt.Key_Escape and self._color_pick_enabled:
+                self.color_pick_cancelled.emit()
+                event.accept()
+                return
             # deixa ←/→ subirem até a janela para navegar entre imagens (F3)
             if event.key() in (Qt.Key_Left, Qt.Key_Right) and event.modifiers() == Qt.NoModifier:
                 event.ignore()
@@ -439,22 +543,18 @@ if QT_AVAILABLE:
             super().keyPressEvent(event)
 
         def mousePressEvent(self, event):
-            if self._color_pick_enabled and self.image_item is not None and self._base_image is not None:
-                scene_pos = self.mapToScene(event.position().toPoint())
-                local_pos = self.image_item.mapFromScene(scene_pos)
-                x = int(local_pos.x())
-                y = int(local_pos.y())
-                if 0 <= x < self._base_image.width and 0 <= y < self._base_image.height:
+            if self._color_pick_enabled:
+                spot = self._image_pixel_at(event.position().toPoint())
+                if spot is not None:
+                    modifiers = event.modifiers()
                     try:
-                        pixel = self._base_image.getpixel((x, y))
-                        if isinstance(pixel, int):
-                            color = "#{0:02x}{0:02x}{0:02x}".format(pixel)
-                        else:
-                            r, g, b = pixel[:3]
-                            color = f"#{r:02x}{g:02x}{b:02x}"
-                        self.color_picked.emit(color)
+                        # Ctrl: média 3x3 (evita pegar um pixel de ruído de JPEG)
+                        color = self._picked_color(*spot, average=bool(modifiers & Qt.ControlModifier))
                     except Exception:
-                        pass
+                        color = None
+                    if color:
+                        # Shift: só nesta imagem (borda individual)
+                        self.color_picked.emit(color, bool(modifiers & Qt.ShiftModifier))
                     event.accept()
                     return
             super().mousePressEvent(event)

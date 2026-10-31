@@ -384,6 +384,11 @@ QToolButton::menu-arrow {{
     font-size: 11px;
     padding: 2px 8px;
 }}
+#CanvasLoupe {{
+    background-color: {T["surface_elevated"]};
+    border: 1px solid {T["border_strong"]};
+    padding: 0;
+}}
 
 /* ── Indicador de carregamento do canvas (M4) ────────────── */
 #CanvasLoadingLabel {{

@@ -198,6 +198,7 @@ if QT_AVAILABLE:
             self.editor_state.borda_pos = self.image_canvas.border_pos
             self.image_canvas.interaction_started.connect(self.save_state_for_undo)  # label = gesto
             self.image_canvas.color_picked.connect(self.on_canvas_color_picked)
+            self.image_canvas.color_pick_cancelled.connect(self.cancel_color_picker)
             left_layout.addWidget(self.image_canvas)
 
             self._image_counter_label = QLabel("")
@@ -299,7 +300,8 @@ if QT_AVAILABLE:
             toolbar.addWidget(_tool_btn("magnifying-glass", "Zoom 100%", self.zoom_to_actual_size, "Ctrl+0"))
             toolbar.addSeparator()
             self._toolbar_pick_btn = _tool_btn(
-                "eye-dropper", "Pick Color", self._toggle_color_picker_btn, checkable=True
+                "eye-dropper", "Pick Color — clique: todas · Shift+clique: só esta · Ctrl: média 3×3 · Esc: sair",
+                self._toggle_color_picker_btn, checkable=True
             )
             toolbar.addWidget(self._toolbar_pick_btn)
             toolbar.addSeparator()
@@ -719,15 +721,35 @@ if QT_AVAILABLE:
             if hasattr(self, "_toolbar_pick_btn"):
                 self._toolbar_pick_btn.setChecked(self._color_picker_enabled)
 
-        def on_canvas_color_picked(self, color):
+        def _stop_color_picker(self):
             self._color_picker_enabled = False
             self.image_canvas.set_color_pick_enabled(False)
             if hasattr(self, "_toolbar_pick_btn"):
                 self._toolbar_pick_btn.setChecked(False)
+
+        def cancel_color_picker(self):
+            """Esc no modo Pick Color."""
+            if self._color_picker_enabled:
+                self._stop_color_picker()
+                self.show_status("Modo Pick Color desativado.")
+
+        def on_canvas_color_picked(self, color, only_current=False):
+            self._stop_color_picker()
+            QApplication.clipboard().setText(color)
+            if only_current and self.current_path:
+                # Shift+clique: borda individual só desta imagem (como a cor automática)
+                path = self.current_path
+                self.editor_state.individual_bordas[path] = "Cor Personalizada"
+                self.editor_state.custom_borda_hex_individual[path] = color
+                self.editor_state.image_dirty.add(path)
+                self.refresh_current_canvas()
+                if hasattr(self, "refresh_list_indicators"):
+                    self.refresh_list_indicators()
+                self.show_status(f"Pick Color: {color} aplicada só nesta imagem e copiada.", timeout_ms=6000)
+                return
             self.editor_state.selected_borda = "Cor Personalizada"
             self.editor_state.custom_borda_hex = color
             self.ui_preferences.last_global_borda = "Cor Personalizada"
-            QApplication.clipboard().setText(color)
             self.editor_tab.refresh_from_state()
             self.refresh_options_bar()
             self.refresh_current_canvas()
@@ -958,7 +980,9 @@ if QT_AVAILABLE:
             # consumiu (ex.: QLineEdit trata Ctrl+V/Ctrl+Z/setas sozinho), então
             # não roubam a edição de texto (F3).
             # F17: a crase é dead key no teclado ABNT — B (de "before") também funciona
-            if event.key() in (Qt.Key_QuoteLeft, Qt.Key_B) and event.modifiers() == Qt.NoModifier and not event.isAutoRepeat():
+            if event.key() == Qt.Key_Escape and self._color_picker_enabled:
+                self.cancel_color_picker()
+            elif event.key() in (Qt.Key_QuoteLeft, Qt.Key_B) and event.modifiers() == Qt.NoModifier and not event.isAutoRepeat():
                 self.image_canvas.show_original_preview()
                 self.show_status("Antes (original) — solte a tecla para voltar.", timeout_ms=10000)
             elif event.matches(QKeySequence.Paste):
