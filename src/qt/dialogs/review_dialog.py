@@ -131,6 +131,9 @@ if QT_AVAILABLE:
             versions = dict(getattr(self.main_window, "_edit_versions", {}))
             self._render_seq += 1
             seq = self._render_seq
+            if self._active_task_id:
+                # Atualizar no meio de uma renderização: a anterior para no próximo card
+                self.main_window.task_runner.cancel(self._active_task_id)
             task_id = f"qt_review_render_{id(self)}_{seq}"
             self._active_task_id = task_id
             ready = []

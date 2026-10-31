@@ -151,6 +151,16 @@ class TestReviewUsesTheCache(unittest.TestCase):
                 time.sleep(0.01)
             self.assertEqual(rendered, [self.paths[1]])
 
+    def test_refresh_cancels_the_render_in_progress(self):
+        dialog = self.window.open_review()
+        from shiboken6 import isValid
+        self.addCleanup(lambda: isValid(dialog) and dialog.close())
+        first = dialog._active_task_id
+        with patch.object(self.window.task_runner, "cancel", wraps=self.window.task_runner.cancel) as cancel:
+            dialog.render()  # antes de a primeira terminar
+        cancel.assert_any_call(first)
+        self.assertNotEqual(dialog._active_task_id, first)
+
     def test_switching_folder_clears_the_cache(self):
         self._open()
         self.assertEqual(len(self.window.render_cache), 3)
