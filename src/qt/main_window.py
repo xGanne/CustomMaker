@@ -196,7 +196,7 @@ if QT_AVAILABLE:
             # enquadramentos calculados antes de abrir uma imagem (ex.: "Gerar
             # customs") usem a mesma referência que o editor
             self.editor_state.borda_pos = self.image_canvas.border_pos
-            self.image_canvas.interaction_started.connect(self.save_state_for_undo)
+            self.image_canvas.interaction_started.connect(self.save_state_for_undo)  # label = gesto
             self.image_canvas.color_picked.connect(self.on_canvas_color_picked)
             left_layout.addWidget(self.image_canvas)
 
