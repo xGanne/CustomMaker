@@ -105,7 +105,7 @@ def main(argv=None):
     if args.list:
         return 0
     command = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *targets, *args.pytest_args]
-    print("\n" + " ".join(command[2:]))
+    print("\n" + " ".join(command[2:]), flush=True)  # antes da saída do pytest, mesmo redirecionada
     return subprocess.call(command, cwd=ROOT)
 
 
