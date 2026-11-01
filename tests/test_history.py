@@ -64,7 +64,7 @@ class TestNamedHistory(unittest.TestCase):
         # muda o enquadramento por fora durante o teste
         self.assertTrue(_wait_until(
             self.app,
-            lambda: not self.window.task_runner._tasks and self.window.current_original_image is not None,
+            lambda: not self.window.task_runner._tasks and self.window.image_canvas.image_item is not None,
         ))
         self.statuses = []
         self.window.show_status = lambda message, **_kw: self.statuses.append(message)

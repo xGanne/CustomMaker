@@ -17,7 +17,7 @@ from src.core.image_processor import ImageProcessor
 class AdjustmentsMixin:
 
     def apply_auto_fit(self, push_undo=True):
-        image = self.get_active_image_copy()
+        image = self.get_framing_image()
         if image is None or not self.current_path:
             self.show_warning("Ajuste", "Carregue uma imagem primeiro.")
             return
@@ -33,7 +33,7 @@ class AdjustmentsMixin:
         self.show_status("Auto fit aplicado.")
 
     def apply_intelligent_fit(self, push_undo=True):
-        image = self.get_active_image_copy()
+        image = self.get_framing_image()
         if image is None or not self.current_path:
             self.show_warning("Ajuste", "Carregue uma imagem primeiro.")
             return
@@ -78,9 +78,7 @@ class AdjustmentsMixin:
         # para não fixar a preview reduzida como fonte da exportação
         image = self.edited_images.get(self.current_path)
         if image is None:
-            image = self.current_original_image
-        if image is None:
-            image = self.get_active_image_copy()
+            image = self._full_original()  # resolução cheia, decodificada só agora
         if image is None:
             return
         self.save_state_for_undo("Rotacionar à esquerda" if direction == "left" else "Rotacionar à direita")

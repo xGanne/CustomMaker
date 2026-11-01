@@ -45,6 +45,9 @@ class _FakeAdjuster:
         def get_active_image_copy(self):
             return None
 
+        def get_framing_image(self):
+            return self.get_active_image_copy()
+
         def save_state_for_undo(self, label=""):
             self._undo_labels.append(label)
 

@@ -133,31 +133,50 @@ class ImageLoaderMixin:
         base = max(viewport.width(), viewport.height(), 900)
         return max(1000, min(2400, base * 2))
 
+    @staticmethod
+    def _decode_preview(path, max_dim):
+        """Prévia para a tela, sem decodificar o original inteiro.
+
+        O JPEG é decodificado já reduzido (draft: 1/2, 1/4, 1/8, sempre >= o
+        tamanho pedido) e então redimensionado: numa foto de 24 MP isso evita
+        decodificar 96 MB a cada troca de imagem. O original em resolução cheia
+        só é carregado quando preciso (rotação, IA) — ver _full_original.
+        """
+        with Image.open(path) as source:
+            source.draft(source.mode, (max_dim, max_dim))
+            decoded = source.convert("RGBA")
+        preview = ImageProcessor.resize_image(decoded, max_dim, max_dim)
+        if preview is not decoded:
+            decoded.close()
+        return preview
+
     def _build_image_load_result(self, index, path, preview_max_dim, include_preview, cancel_event):
         if cancel_event and cancel_event.is_set():
             return {"cancelled": True, "index": index, "path": path}
 
-        with Image.open(path) as source:
-            original = source.convert("RGBA")
-
-        preview = None
-        if include_preview:
-            preview = ImageProcessor.resize_image(original, preview_max_dim, preview_max_dim)
-            if preview is original:
-                preview = original.copy()
+        preview = self._decode_preview(path, preview_max_dim) if include_preview else None
 
         if cancel_event and cancel_event.is_set():
-            result = {"original": original, "preview": preview}
-            self._dispose_image_load_result(result)
+            self._dispose_image_load_result({"preview": preview})
             return {"cancelled": True, "index": index, "path": path}
 
         return {
             "cancelled": False,
             "index": index,
             "path": path,
-            "original": original,
             "preview": preview,
         }
+
+    def _full_original(self):
+        """Original da imagem atual em resolução cheia, decodificado só agora."""
+        if self.current_original_image is None and self.current_path:
+            try:
+                with Image.open(self.current_path) as source:
+                    self.current_original_image = source.convert("RGBA")
+            except Exception as exc:
+                logger.warning("Não foi possível abrir %s: %s", self.current_path, exc)
+                return None
+        return self.current_original_image
 
     def add_images(self, paths, replace=False, select_last=False):
         valid_paths = []
@@ -304,20 +323,22 @@ class ImageLoaderMixin:
         self.app_config.save()
 
     def get_active_image_copy(self):
+        """Cópia em resolução cheia da imagem atual (edição de IA): carrega o
+        original sob demanda."""
         if not self.current_path:
             return None
-        image = self.edited_images.get(self.current_path) or self.current_original_image
+        image = self.edited_images.get(self.current_path) or self._full_original()
         if image is None:
-            image = self._get_preview_cache_copy(self.current_path)
-            if image is None:
-                return None
-            try:
-                return image.copy()
-            finally:
-                image.close()
-        if image is None:
-            return None
+            return self._get_preview_cache_copy(self.current_path)
         return image.copy()
+
+    def get_framing_image(self):
+        """Imagem para calcular enquadramento (auto fit, rosto): a prévia basta —
+        o cálculo depende só das proporções e da posição do rosto, não da
+        resolução — e a detecção de rosto fica bem mais rápida que no original."""
+        if not self.current_path:
+            return None
+        return self._get_preview_cache_copy(self.current_path) or self.get_active_image_copy()
 
     def _natural_size_for(self, path):
         """M8: tamanho em pixels da fonte da exportação (referência do zoom 100%).
@@ -400,6 +421,8 @@ class ImageLoaderMixin:
         self._active_image_load_task_id = task_id
         preview_max_dim = self._preview_max_dimension()
         include_preview = path not in self.edited_images and path not in self._preview_cache
+        # prévia em cache: o enquadramento padrão (se faltar) usa uma cópia dela
+        fit_copy = None if include_preview or path in self.editor_state.image_states else self._get_preview_cache_copy(path)
         # M11: o enquadramento padrão de uma imagem nova é calculado no worker —
         # o modo inteligente roda detecção de rosto, cara demais para a GUI thread
         needs_default_fit = path not in self.editor_state.image_states
@@ -410,12 +433,16 @@ class ImageLoaderMixin:
         def task_fn(cancel_event, _on_progress):
             result = self._build_image_load_result(index, path, preview_max_dim, include_preview, cancel_event)
             result["task_id"] = task_id
-            if needs_default_fit and not result.get("cancelled"):
-                fit_source = result.get("preview") or result.get("original")
-                if fit_source is not None:
-                    result["default_fit"] = ImageProcessor.calculate_default_fit(
-                        fit_source, borda_pos, framing_mode, face_cascade
-                    )
+            try:
+                if needs_default_fit and not result.get("cancelled"):
+                    fit_source = result.get("preview") or fit_copy
+                    if fit_source is not None:
+                        result["default_fit"] = ImageProcessor.calculate_default_fit(
+                            fit_source, borda_pos, framing_mode, face_cascade
+                        )
+            finally:
+                if fit_copy is not None:
+                    fit_copy.close()
             return result
 
         def on_done(result):
@@ -430,9 +457,7 @@ class ImageLoaderMixin:
                 self._dispose_image_load_result(result)
                 return
 
-            self._close_current_original()
-            self.current_original_image = result.get("original")
-
+            # o original em resolução cheia não é carregado aqui (só sob demanda)
             preview = result.get("preview")
             if preview is not None:
                 self._remember_preview_cache(path, preview)
@@ -442,11 +467,6 @@ class ImageLoaderMixin:
                     pass
 
             refreshed_image = self.edited_images.get(path) or self._get_preview_cache_copy(path)
-            if refreshed_image is None and self.current_original_image is not None:
-                refreshed_image = ImageProcessor.resize_image(self.current_original_image, preview_max_dim, preview_max_dim)
-                if refreshed_image is self.current_original_image:
-                    refreshed_image = self.current_original_image.copy()
-                self._remember_preview_cache(path, refreshed_image)
 
             if refreshed_image is not None and path == self.current_path:
                 state = self._ensure_state_for_current(refreshed_image, default_fit=result.get("default_fit"))
@@ -520,19 +540,8 @@ class ImageLoaderMixin:
     def _original_display_image(self, path):
         """Preview do arquivo original (para desfazer até antes de uma edição de pixels)."""
         preview_max_dim = self._preview_max_dimension()
-        source = self.current_original_image if path == self.current_path else None
         try:
-            if source is None:
-                with Image.open(path) as opened:
-                    source = opened.convert("RGBA")
-                owned = True
-            else:
-                owned = False
-            preview = ImageProcessor.resize_image(source, preview_max_dim, preview_max_dim)
-            if preview is source:
-                preview = source.copy()
-            if owned:
-                source.close()
+            preview = self._decode_preview(path, preview_max_dim)
         except Exception as exc:
             logger.warning("Não foi possível recarregar o original de %s: %s", path, exc)
             return None
