@@ -325,6 +325,10 @@ class BatchController:
         results: List[dict] = []
         if total == 0:
             return {"results": results, "cancelled": False}
+        if cancel_event and cancel_event.is_set():
+            # cancelado antes de começar: nada vai para o pool (senão as tasks já
+            # iniciadas seguiam lendo os arquivos depois do retorno)
+            return {"results": results, "cancelled": True}
 
         max_workers = self._resolve_max_workers()
         logger.info("Iniciando processamento em lote com %s task(s), workers=%s", total, max_workers)
