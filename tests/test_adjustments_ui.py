@@ -223,7 +223,13 @@ class TestAdjustmentsInWindow(unittest.TestCase):
             self.tab.adjust_spins["contrast"].setValue(value)
             self.window._render_adjustment_preview()
         self._settle()
-        self.assertTrue(peak and max(peak) == 1, peak)
+        wanted = self.window._wanted_adjustment_preview()
+        context = (f"peak={peak} desejada={wanted[0] if wanted else None} "
+                   f"mostrada={getattr(self.window, '_adjust_preview_shown', None)} "
+                   f"original_canvas={self.window.image_canvas._original_image is not None} "
+                   f"atual={self.window.current_path} "
+                   f"ajustes={self.window.editor_state.image_adjustments}")
+        self.assertTrue(peak and max(peak) == 1, context)
         from src.core.color_adjustments import apply_tone
         expected = apply_tone(self.window.image_canvas._original_image, {"contrast": 75})
         self.assertEqual(self.window.image_canvas._base_image.tobytes(), expected.convert("RGBA").tobytes())
