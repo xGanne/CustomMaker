@@ -8,6 +8,7 @@ from src.core.animation_processor import AnimationProcessor
 from src.core.border_styles import apply_border
 from src.core.color_adjustments import apply_all
 from src.core.image_processor import ImageProcessor
+from src.core.rotated_source import open_rotated
 
 
 def process_image_task(task_data):
@@ -30,14 +31,14 @@ def render_custom_crop(task_data):
     """Recorte 225x350 que vira a custom (sem borda), pelo caminho da exportação."""
     source_path = task_data.get("source_path") or task_data["path"]
     state = task_data["state"]
-    with Image.open(source_path) as source:
-        # JPEG pode ser decodificado já reduzido (1/2, 1/4, 1/8). Como o
-        # render redimensiona para state["size"], basta decodificar com o
-        # dobro disso: 2-4x mais rápido em originais grandes, com diferença
-        # média de ~0,15/255 numa ilustração real. Outros formatos ignoram.
-        target_w, target_h = state["size"]
-        source.draft(source.mode, (int(target_w) * 2, int(target_h) * 2))
-        orig = source.convert("RGBA")
+    # JPEG pode ser decodificado já reduzido (1/2, 1/4, 1/8). Como o render
+    # redimensiona para state["size"], basta decodificar com o dobro disso:
+    # 2-4x mais rápido em originais grandes, com diferença média de ~0,15/255
+    # numa ilustração real. Outros formatos ignoram.
+    target_w, target_h = state["size"]
+    # edição só de rotação: gira o original aqui, sem cópia nem temporário
+    orig = open_rotated(source_path, task_data.get("source_rotation") or 0,
+                        (int(target_w) * 2, int(target_h) * 2))
     try:
         cropped = ImageProcessor.render_image_to_borda(orig, state["pos"], state["size"], task_data["borda_pos"])
     finally:

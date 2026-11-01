@@ -12,6 +12,7 @@ from PIL import Image
 
 from src.config.settings import BORDA_HEX
 from src.core.image_processor import ImageProcessor
+from src.core.rotated_source import RotatedOriginal
 
 
 class AdjustmentsMixin:
@@ -74,26 +75,25 @@ class AdjustmentsMixin:
     def rotate_current_image(self, direction):
         if not self.current_path:
             return
-        # F10: sem edição de pixels, rotacionar o original em resolução plena
-        # para não fixar a preview reduzida como fonte da exportação
-        image = self.edited_images.get(self.current_path)
-        if image is None:
-            image = self._full_original()  # resolução cheia, decodificada só agora
-        if image is None:
-            return
+        edited = self.edited_images.get(self.current_path)
+        if edited is None and self._natural_size_for(self.current_path) is None:
+            return  # arquivo ilegível
         self.save_state_for_undo("Rotacionar à esquerda" if direction == "left" else "Rotacionar à direita")
         angle = 90 if direction == "left" else -90
-        rotated = image.rotate(angle, expand=True)
-        # só rotação (sobre o original ou outra rotação): o histórico guarda os graus
-        rotations = getattr(self, "_edit_rotations", lambda: {})()
-        previous = 0 if self.current_path not in self.edited_images else rotations.get(self.current_path)
-        total = None if previous is None else (previous + angle) % 360
-        if total == 0 and hasattr(self, "_drop_pixel_edit_for_current"):
-            # volta completa: é o próprio arquivo — sem guardar uma cópia cheia "editada"
-            self._drop_pixel_edit_for_current()
+        if edited is None or isinstance(edited, RotatedOriginal):
+            # só rotação (sobre o original ou outra rotação): guarda só os graus —
+            # o export gira o original em resolução cheia (F10), sem cópia na memória
+            total = ((edited.degrees if edited is not None else 0) + angle) % 360
+            if total == 0:
+                # volta completa: é o próprio arquivo
+                self._drop_pixel_edit_for_current()
+            else:
+                self.set_rotation_for_current(total)
         else:
-            self.set_edited_image_for_current(rotated, rotation=total)
-        rotated.close()
+            # edição de IA: os pixels editados giram junto
+            rotated = edited.rotate(angle, expand=True)
+            self.set_edited_image_for_current(rotated)
+            rotated.close()
         self.apply_auto_fit(push_undo=False)
         self.show_status(f"Prévia rotacionada para {direction}.")
 
@@ -159,7 +159,9 @@ class AdjustmentsMixin:
         snapshots = []
         for path in list(self.editor_state.image_list):
             source = self.edited_images.get(path)
-            if source is not None:
+            if isinstance(source, RotatedOriginal):
+                snapshots.append((path, source))  # imutável: girado no worker, reduzido
+            elif source is not None:
                 snapshots.append((path, source.copy()))
             else:
                 snapshots.append((path, self._get_preview_cache_copy(path)))
@@ -172,7 +174,9 @@ class AdjustmentsMixin:
                     if cancel_event and cancel_event.is_set():
                         break
 
-                    if working is None:
+                    if isinstance(working, RotatedOriginal):
+                        working = working.load(1000)
+                    elif working is None:
                         with Image.open(path) as source:
                             # o enquadramento só depende das proporções e do rosto:
                             # reduzido na decodificação, como no enquadramento padrão

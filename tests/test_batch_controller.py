@@ -379,6 +379,38 @@ class TestEditedSourceTemporaries(unittest.TestCase):
                     self.assertEqual(saved.convert("RGBA").tobytes(), image.tobytes())
 
 
+class TestRotationOnlyEdits(unittest.TestCase):
+    """Rotação guardada como graus: o worker gira o original, igual à cópia girada."""
+
+    def test_export_matches_the_rotated_copy_without_temporaries(self):
+        from src.core.batch_worker import render_custom_crop
+        from src.core.editor_state import EditorState
+        from src.core.rotated_source import RotatedOriginal
+        with TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "img.png")
+            source = Image.linear_gradient("L").resize((300, 500)).convert("RGBA")
+            source.save(path)
+            for degrees in (90, 180, 270):
+                state = EditorState(image_list=[path])
+                state.set_image_state(path, (10, 20), (260, 380))
+                edits = {path: RotatedOriginal(path, degrees)}
+                controller = BatchController(editor_state=state, edited_source_images=edits).frozen()
+                data = controller._get_task_data(path, source_dir=os.path.join(tmp, "src"))
+                self.assertEqual(data["source_rotation"], degrees)
+                self.assertNotIn("source_path", data)
+                self.assertFalse(os.path.exists(os.path.join(tmp, "src")))  # nenhum temporário
+                copy_path = os.path.join(tmp, f"rot{degrees}.png")
+                source.rotate(degrees, expand=True).save(copy_path)
+                expected = render_custom_crop(dict(data, source_path=copy_path, source_rotation=None))
+                self.assertEqual(render_custom_crop(data).tobytes(), expected.tobytes(), degrees)
+
+    def test_size_key_changes_with_the_rotation(self):
+        task = {"path": __file__, "state": {"pos": (0, 0), "size": (10, 10)}, "borda_pos": (0, 0),
+                "border_color": "#fff", "anim_type": "Nenhuma"}
+        self.assertNotEqual(BatchController._size_cache_key(task),
+                            BatchController._size_cache_key(dict(task, source_rotation=90)))
+
+
 class TestFileSizes(unittest.TestCase):
     def test_format_bytes(self):
         from src.core.file_sizes import format_bytes

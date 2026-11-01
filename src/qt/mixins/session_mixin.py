@@ -11,6 +11,7 @@ import logging
 
 from PIL import Image
 
+from src.core.rotated_source import RotatedOriginal
 from src.core.session_store import apply_session, snapshot_session
 
 
@@ -61,7 +62,8 @@ class SessionMixin:
         for path, image in self.edited_images.items():
             if self._session_saved_edits.get(path) != id(image):
                 self._session_saved_edits[path] = id(image)
-                pending.append((path, image.copy()))
+                # rotação (RotatedOriginal) é imutável: a imagem só é gerada na gravação
+                pending.append((path, image if isinstance(image, RotatedOriginal) else image.copy()))
         for path in list(self._session_saved_edits):
             if path not in self.edited_images:
                 self._session_saved_edits.pop(path, None)
@@ -71,6 +73,8 @@ class SessionMixin:
         def write_all(*_args):
             for path, image in pending:
                 try:
+                    if isinstance(image, RotatedOriginal):
+                        image = image.load()
                     store.write_edit(path, image)
                 except Exception as exc:
                     logger.warning("Não foi possível salvar a edição de %s na sessão: %s", path, exc)

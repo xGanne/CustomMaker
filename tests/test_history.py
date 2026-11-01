@@ -10,6 +10,7 @@ from PIL import Image
 
 from _qt_helpers import dispose_window
 from src.core.history import Snapshot
+from src.core.rotated_source import RotatedOriginal
 
 
 compat = importlib.import_module("src.qt.compat")
@@ -180,6 +181,19 @@ class TestNamedHistory(unittest.TestCase):
         menu.actions()[0].trigger()  # avança até "Auto fit"
         self.assertEqual(self._stack("undo"), ["Mover", "Auto fit"])
 
+    def _pixels(self, path):
+        edited = self.window.edited_images[path]
+        return edited.load() if isinstance(edited, RotatedOriginal) else edited
+
+    def test_rotation_keeps_no_image_in_memory(self):
+        path = self.window.current_path
+        self.window.rotate_current_image("left")
+        edited = self.window.edited_images[path]
+        self.assertIsInstance(edited, RotatedOriginal)
+        self.assertEqual((edited.degrees, edited.size), (90, (400, 300)))
+        self.assertEqual(self.window._natural_size_for(path), (400, 300))
+        self.assertEqual(self.window.get_active_image_copy().size, (400, 300))  # IA recebe a imagem girada
+
     def test_rotation_undo_keeps_degrees_not_image_copies(self):
         path = self.window.current_path
         with Image.open(path) as src:
@@ -189,13 +203,13 @@ class TestNamedHistory(unittest.TestCase):
         stack = self.window._undo_stacks[path]
         self.assertEqual([s.image for s in stack], [None, None])  # nenhuma cópia de imagem
         self.assertEqual([s.rotation for s in stack], [None, 90])  # 1º passo: original sem edição
-        self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(180, expand=True).tobytes())
+        self.assertEqual(self._pixels(path).tobytes(), original.rotate(180, expand=True).tobytes())
         self.window.undo_current_image()
-        self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(90, expand=True).tobytes())
+        self.assertEqual(self._pixels(path).tobytes(), original.rotate(90, expand=True).tobytes())
         self.window.undo_current_image()
         self.assertNotIn(path, self.window.edited_images)  # de volta ao arquivo original
         self.window.redo_current_image()
-        self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(90, expand=True).tobytes())
+        self.assertEqual(self._pixels(path).tobytes(), original.rotate(90, expand=True).tobytes())
 
     def test_full_turn_drops_the_edit_and_undo_still_works(self):
         path = self.window.current_path
@@ -205,12 +219,12 @@ class TestNamedHistory(unittest.TestCase):
             self.window.rotate_current_image("left")
         self.assertNotIn(path, self.window.edited_images)  # 360°: é o próprio arquivo, sem cópia
         self.window.undo_current_image()
-        self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(270, expand=True).tobytes())
+        self.assertEqual(self._pixels(path).tobytes(), original.rotate(270, expand=True).tobytes())
 
     def test_canvas_shows_a_reduced_preview_of_edited_images(self):
         path = self.window.current_path
         self.window.rotate_current_image("left")
-        edited = self.window.edited_images[path]
+        edited = self._pixels(path)
         shown = self.window.image_canvas._base_image
         max_dim = self.window._preview_max_dimension()
         self.assertLessEqual(max(shown.size), max_dim)

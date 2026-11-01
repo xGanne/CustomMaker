@@ -15,6 +15,7 @@ from PIL import Image
 from src.core.batch_worker import measure_custom, process_image_task
 from src.core.color_adjustments import cache_token
 from src.core.image_processor import ImageProcessor
+from src.core.rotated_source import RotatedOriginal
 
 
 logger = logging.getLogger(__name__)
@@ -106,9 +107,11 @@ class BatchController:
         clone = copy.copy(self)
         if self.editor_state is not None:
             clone.editor_state = copy.deepcopy(self.editor_state)
-        # cópias próprias: o editor fecha a imagem editada anterior ao rotacionar
+        # cópias próprias: o editor fecha a imagem editada anterior ao editar de
+        # novo. Rotação (RotatedOriginal) é imutável e não pesa: vai como está.
         clone._edited_source_images = {
-            path: image.copy() for path, image in (self._edited_source_images or {}).items()
+            path: image if isinstance(image, RotatedOriginal) else image.copy()
+            for path, image in (self._edited_source_images or {}).items()
         }
         return clone
 
@@ -143,7 +146,11 @@ class BatchController:
             "generated_state": generated_state,
         }
         source_image = self._edited_source_images.get(path)
-        if source_image is not None:
+        if isinstance(source_image, RotatedOriginal):
+            # só rotação: o worker gira o original — sem temporário no disco
+            data["edited"] = True
+            data["source_rotation"] = source_image.degrees
+        elif source_image is not None:
             data["edited"] = True
             if write_source:
                 data["source_path"] = self._save_source_override(path, source_image, source_dir)
@@ -173,7 +180,16 @@ class BatchController:
         face_cascade = self._get_face_cascade() if mode == "intelligent" else None
         source_image = self._edited_source_images.get(path)
         try:
-            if source_image is not None:
+            if isinstance(source_image, RotatedOriginal):
+                # o enquadramento só depende das proporções e do rosto: reduzida basta
+                reduced = source_image.load(ImageProcessor.DEFAULT_FIT_DETECTION_MAX_SIDE)
+                try:
+                    fit = ImageProcessor.calculate_default_fit(
+                        reduced, self._resolve_borda_pos(), mode, face_cascade
+                    )
+                finally:
+                    reduced.close()
+            elif source_image is not None:
                 fit = ImageProcessor.calculate_default_fit(
                     source_image, self._resolve_borda_pos(), mode, face_cascade
                 )
@@ -405,7 +421,7 @@ class BatchController:
             task["path"], stat.st_mtime_ns, stat.st_size,
             (int(x - bx), int(y - by)), tuple(int(v) for v in task["state"]["size"]),
             task["border_color"], task["anim_type"], task.get("border_style") or "simples",
-            cache_token(task.get("adjustments")),
+            cache_token(task.get("adjustments")), task.get("source_rotation") or 0,
         )
 
     def measure_sizes(self, paths=None, progress_callback=None, cancel_event=None, on_result=None, cache=None):

@@ -16,6 +16,7 @@ from PIL import Image
 from src.config.settings import BORDA_HEX, SUPPORTED_EXTENSIONS
 from src.core.history import Snapshot
 from src.core.image_processor import ImageProcessor
+from src.core.rotated_source import RotatedOriginal
 
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,14 @@ class ImageLoaderMixin:
         if edited is None:
             return None
         max_dim = self._preview_max_dimension()
+        if isinstance(edited, RotatedOriginal):
+            try:
+                preview = edited.load(max_dim)  # gira a prévia, não o original inteiro
+            except Exception as exc:
+                logger.warning("Não foi possível abrir %s: %s", path, exc)
+                return None
+            self._remember_preview_cache(path, preview)
+            return preview
         preview = ImageProcessor.resize_image(edited, max_dim, max_dim)
         if preview is edited:
             preview = edited.copy()
@@ -331,7 +340,6 @@ class ImageLoaderMixin:
         if getattr(self, "render_cache", None) is not None:
             self.render_cache.clear()
         self.__dict__.pop("_edit_versions", None)
-        self.__dict__.pop("_edit_rotation", None)
 
     def load_folder(self, folder=None):
         if not folder:
@@ -357,7 +365,14 @@ class ImageLoaderMixin:
         original sob demanda."""
         if not self.current_path:
             return None
-        image = self.edited_images.get(self.current_path) or self._full_original()
+        edited = self.edited_images.get(self.current_path)
+        if isinstance(edited, RotatedOriginal):
+            try:
+                return edited.load()
+            except Exception as exc:
+                logger.warning("Não foi possível abrir %s: %s", self.current_path, exc)
+                return None
+        image = edited or self._full_original()
         if image is None:
             return self._get_preview_cache_copy(self.current_path)
         return image.copy()
@@ -377,7 +392,10 @@ class ImageLoaderMixin:
         só do cabeçalho e memorizado, sem decodificar a imagem."""
         edited = self.edited_images.get(path)
         if edited is not None:
-            return edited.size
+            try:
+                return edited.size  # RotatedOriginal: do cabeçalho, já girado
+            except Exception:
+                return None
         cache = self.__dict__.setdefault("_natural_size_cache", {})
         if path not in cache:
             try:
@@ -398,7 +416,6 @@ class ImageLoaderMixin:
         if not path:
             return
         self._dispose_images([self.edited_images.pop(path, None)])
-        self._edit_rotations().pop(path, None)
         self._bump_edit_version(path)
         self.editor_state.mark_pixels_edited(path)  # mudou desde o último export
         self._drop_preview_cache(path)
@@ -415,19 +432,27 @@ class ImageLoaderMixin:
         if hasattr(self, "refresh_list_indicators"):
             self.refresh_list_indicators()
 
-    def set_edited_image_for_current(self, image, rotation=None):
-        """Imagem editada (rotação, IA). `rotation`: graus em relação ao original
-        quando a edição é só rotação — o desfazer refaz a imagem sem guardar cópia."""
-        if not self.current_path:
-            return
-        if rotation is not None:
-            self._edit_rotations()[self.current_path] = rotation % 360
-        else:
-            self._edit_rotations().pop(self.current_path, None)
+    def set_edited_image_for_current(self, image):
+        """Imagem editada de pixels (IA): a cópia vira a fonte da exportação."""
+        if self.current_path:
+            self._store_edit_for_current(image.copy())
+
+    def set_rotation_for_current(self, degrees):
+        """Edição só de rotação: guarda os graus em relação ao original, sem
+        cópia da imagem (ver RotatedOriginal)."""
+        if self.current_path:
+            self._store_edit_for_current(RotatedOriginal(self.current_path, degrees))
+
+    def _edit_rotation_of(self, path):
+        """Graus da edição de `path` se ela for só rotação, senão None."""
+        edited = self.edited_images.get(path)
+        return edited.degrees if isinstance(edited, RotatedOriginal) else None
+
+    def _store_edit_for_current(self, edit):
         previous = self.edited_images.get(self.current_path)
-        self.edited_images[self.current_path] = image.copy()
+        self.edited_images[self.current_path] = edit
         self._bump_edit_version(self.current_path)
-        if previous is not None and previous is not image:
+        if previous is not None and previous is not edit:
             self._dispose_images([previous])
         self.editor_state.mark_pixels_edited(self.current_path)
         self._drop_preview_cache(self.current_path)  # a prévia antiga é de antes da edição
@@ -586,11 +611,12 @@ class ImageLoaderMixin:
         edited = self.edited_images.get(self.current_path)
         state = self.editor_state.image_states.get(self.current_path)
         if state is None:
+            # o auto fit só lê o tamanho: RotatedOriginal também serve
             reference = edited or self.current_original_image or self._preview_cache.get(self.current_path)
             if reference is None:
                 return None
             state = self._ensure_state_for_current(reference)
-        rotation = self._edit_rotations().get(self.current_path) if edited is not None else None
+        rotation = self._edit_rotation_of(self.current_path)
         return Snapshot(
             # só rotação: os graus refazem a imagem; edição de IA: precisa da cópia
             image=edited.copy() if edited is not None and rotation is None else None,
@@ -601,10 +627,6 @@ class ImageLoaderMixin:
             adjustments=dict(self.editor_state.image_adjustments.get(self.current_path, {})),
             rotation=rotation,
         )
-
-    def _edit_rotations(self):
-        """Graus aplicados ao original nas imagens cuja edição é só rotação."""
-        return self.__dict__.setdefault("_edit_rotation", {})
 
     def _original_display_image(self, path):
         """Preview do arquivo original (para desfazer até antes de uma edição de pixels)."""
@@ -636,7 +658,7 @@ class ImageLoaderMixin:
         if not state:
             return  # nunca enquadrada: não há estado anterior a guardar
         edited = self.edited_images.get(path)
-        rotation = self._edit_rotations().get(path) if edited is not None else None
+        rotation = self._edit_rotation_of(path)
         self._push_undo(path, Snapshot(
             image=edited.copy() if edited is not None and rotation is None else None,
             pos=tuple(state["pos"]),
@@ -743,24 +765,19 @@ class ImageLoaderMixin:
         if previous is not None:
             self._dispose_images([previous])
         owned_display = None
-        rebuilt = None
+        restored = None
         if was_pixel_edited and image is None and snapshot.rotation is not None:
-            original = self._full_original()
-            if original is not None:
-                rebuilt = original.rotate(snapshot.rotation, expand=True) if snapshot.rotation else original.copy()
-        if was_pixel_edited and (image is not None or rebuilt is not None):
+            restored = RotatedOriginal(path, snapshot.rotation)  # só os graus, sem cópia
+        elif was_pixel_edited and image is not None:
+            restored = image.copy()
+        if restored is not None:
             # F15: só volta para edited_images se o estado restaurado tinha
             # edição de pixels — senão o indicador "editada" ficava para sempre
-            self.edited_images[path] = rebuilt if rebuilt is not None else image.copy()
-            if snapshot.rotation is not None:
-                self._edit_rotations()[path] = snapshot.rotation
-            else:
-                self._edit_rotations().pop(path, None)
+            self.edited_images[path] = restored
             self._bump_edit_version(path)
             self._drop_preview_cache(path)
             display = owned_display = self._display_image_for(path)
         else:
-            self._edit_rotations().pop(path, None)  # voltou ao arquivo original
             display = owned_display = self._original_display_image(path)
         self._dispose_images([image])
         self.editor_state.set_image_state(path, pos, size)

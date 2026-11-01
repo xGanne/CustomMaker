@@ -1032,7 +1032,6 @@ if QT_AVAILABLE:
             self._drop_redo_stack(path)
             self.__dict__.get("_last_history_op", {}).pop(path, None)
             self.__dict__.get("_face_cycle", {}).pop(path, None)
-            self.__dict__.get("_edit_rotation", {}).pop(path, None)
 
         def toggle_individual_border(self, index):
             if index < 0 or index >= len(self.editor_state.image_list):
