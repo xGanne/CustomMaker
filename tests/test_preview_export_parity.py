@@ -171,9 +171,29 @@ class TestPreviewExportParity(unittest.TestCase):
     def _assert_parity(self, path, label):
         self._idle()
         problems = parity_problems(capture_canvas(self.window), capture_export(self.window, path, self.tmp))
-        context = (f"{label} | atual={self.window.current_path == path} "
-                   f"ajustes={self.window.editor_state.image_adjustments.get(path)} "
-                   f"prévia={getattr(self.window, '_adjust_preview_shown', None)}")
+        context = ""
+        if problems:
+            # diagnóstico para falhas só vistas no CI: onde a prévia parou
+            window = self.window
+            timer = getattr(window, "_adjust_preview_timer", None)
+            wanted = window._wanted_adjustment_preview()
+            context = (f"{label} | atual={window.current_path == path} "
+                       f"ajustes={window.editor_state.image_adjustments.get(path)} "
+                       f"mostrada={getattr(window, '_adjust_preview_shown', None)} "
+                       f"desejada={wanted[0] if wanted else None} "
+                       f"timer={'ativo' if timer is not None and timer.isActive() else 'parado'} "
+                       f"tarefas={list(window.task_runner._tasks)} "
+                       f"before_after={self.canvas._before_after_active}")
+            errors = []
+            import sys as _sys
+            hook, _sys.excepthook = _sys.excepthook, lambda *exc: errors.append(repr(exc[1]))
+            try:
+                window._render_adjustment_preview()
+                self._idle()
+            finally:
+                _sys.excepthook = hook
+            again = parity_problems(capture_canvas(window), capture_export(window, path, self.tmp))
+            context += f" | render manual: {'resolveu' if not again else again} erros={errors}"
         self.assertEqual(problems, [], context)
 
     def _zoom(self, factor):
