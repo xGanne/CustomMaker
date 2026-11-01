@@ -61,6 +61,30 @@ class TestImageProcessor(unittest.TestCase):
 
         self.assertEqual(list(cropped.getdata()), list(rendered.getdata()))
 
+
+class TestFaceDetectionReturnsTuples(unittest.TestCase):
+    """O OpenCV devolve um array do numpy; o "Inteligente" em lote fazia `if face:`
+    numa linha desse array e quebrava (ValueError: truth value ... ambiguous)."""
+
+    class _FakeCascade:
+        def empty(self):
+            return False
+
+        def detectMultiScale(self, *_args, **_kwargs):
+            import numpy as np
+            return np.array([[10, 20, 120, 120], [200, 40, 60, 60]], dtype=np.int32)
+
+    def test_faces_are_plain_int_tuples(self):
+        from PIL import Image
+        image = Image.new("RGB", (400, 400))
+        faces = ImageProcessor.detect_all_anime_faces(image, self._FakeCascade())
+        self.assertEqual(faces, [(10, 20, 120, 120), (200, 40, 60, 60)])
+        self.assertTrue(all(type(v) is int for face in faces for v in face))
+        best = ImageProcessor.detect_anime_face(image, self._FakeCascade())
+        self.assertTrue(bool(best))  # era o `if face:` que quebrava
+        self.assertEqual(best, (10, 20, 120, 120))
+
+
 if __name__ == "__main__":
     unittest.main()
 

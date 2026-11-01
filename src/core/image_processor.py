@@ -177,7 +177,9 @@ class ImageProcessor:
 
             if faces is None or len(faces) == 0:
                 return []
-            return list(faces)
+            # tuplas de int, não as linhas do array do OpenCV: `if face:` num
+            # array de 4 números quebrava o "Inteligente" em lote (ValueError)
+            return [tuple(int(v) for v in face) for face in faces]
         except Exception as exc:
             logger.warning("Erro de detecção OpenCV: %s", exc)
             return []
