@@ -90,6 +90,10 @@ class BatchController:
         self._executor_lock = threading.Lock()
         # cópias congeladas (frozen) usam o pool deste controlador
         self._pool_owner = self
+        # lotes usando o pool agora e o timer que o fecha depois de ocioso
+        self._pool_users = 0
+        self._pool_generation = 0
+        self._idle_timer = None
         # M11: cascade próprio (carregado sob demanda) para o enquadramento
         # inteligente padrão — não compartilha o classificador da GUI entre threads
         self._face_cascade = None
@@ -324,7 +328,48 @@ class BatchController:
         with owner._executor_lock:
             executor, owner._executor = owner._executor, None
             owner._executor_workers = None
+            timer, owner._idle_timer = owner._idle_timer, None
+        if timer is not None:
+            timer.cancel()
         if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    # Pool ocioso: cada processo filho carrega numpy/OpenCV/PIL (~40 MB cada).
+    # Mantido entre exportações seguidas (criar custa ~1 s no Windows), mas
+    # fechado depois deste tempo sem uso, em vez de ficar na RAM até fechar o app.
+    POOL_IDLE_SECONDS = 180
+
+    def _pool_acquire(self):
+        owner = self._pool_owner
+        with owner._executor_lock:
+            owner._pool_users += 1
+            owner._pool_generation += 1
+            timer, owner._idle_timer = owner._idle_timer, None
+        if timer is not None:
+            timer.cancel()
+
+    def _pool_release(self):
+        owner = self._pool_owner
+        with owner._executor_lock:
+            owner._pool_users -= 1
+            if owner._pool_users or owner._executor is None:
+                return
+            generation = owner._pool_generation
+            timer = threading.Timer(type(self).POOL_IDLE_SECONDS, owner._close_idle_pool, args=(generation,))
+            timer.daemon = True
+            owner._idle_timer = timer
+        timer.start()
+
+    def _close_idle_pool(self, generation):
+        """Fecha o pool se nenhum lote o usou desde que este timer foi armado."""
+        with self._executor_lock:
+            if self._pool_users or generation != self._pool_generation:
+                return
+            executor, self._executor = self._executor, None
+            self._executor_workers = None
+            self._idle_timer = None
+        if executor is not None:
+            logger.info("Pool de exportação ocioso encerrado.")
             executor.shutdown(wait=False, cancel_futures=True)
 
     @staticmethod
@@ -358,6 +403,15 @@ class BatchController:
             # iniciadas seguiam lendo os arquivos depois do retorno)
             return {"results": results, "cancelled": True}
 
+        self._pool_acquire()
+        try:
+            return self._run_on_pool(tasks, results, on_progress, cancel_event, worker, on_result)
+        finally:
+            self._pool_release()
+
+    def _run_on_pool(self, tasks, results, on_progress, cancel_event, worker, on_result):
+        total = len(tasks)
+        completed = 0
         max_workers = self._resolve_max_workers()
         logger.info("Iniciando processamento em lote com %s task(s), workers=%s", total, max_workers)
         executor = self._get_executor(max_workers)

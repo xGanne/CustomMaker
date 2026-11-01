@@ -1,4 +1,5 @@
 import os
+import time
 import unittest
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -175,6 +176,44 @@ class TestBatchControllerExecutorReuse(unittest.TestCase):
         self.assertIsNone(self.controller._executor)
         # shutdown repetido é inofensivo
         self.controller.shutdown()
+
+
+def _echo(task):
+    return {"status": "success", "path": task["path"]}
+
+
+class TestIdlePool(unittest.TestCase):
+    """O pool é fechado depois de ocioso, e mantido enquanto há lotes."""
+
+    def setUp(self):
+        patcher = patch.object(BatchController, "POOL_IDLE_SECONDS", 0.15)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.controller = BatchController(DummyApp())
+        self.addCleanup(self.controller.shutdown)
+
+    def _wait_closed(self, timeout=3.0):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end and self.controller._executor is not None:
+            time.sleep(0.02)
+        return self.controller._executor is None
+
+    def test_pool_closes_after_idle_time(self):
+        self.controller._run_batch([{"path": "a"}], worker=_echo)
+        self.assertIsNotNone(self.controller._executor)  # mantido logo após o lote
+        self.assertTrue(self._wait_closed())
+        # o próximo lote recria o pool normalmente
+        result = self.controller._run_batch([{"path": "b"}], worker=_echo)
+        self.assertEqual([r["path"] for r in result["results"]], ["b"])
+
+    def test_pool_in_use_is_not_closed(self):
+        self.controller._run_batch([{"path": "a"}], worker=_echo)
+        frozen = self.controller.frozen()
+        frozen._pool_acquire()  # um lote (de uma cópia congelada) começou antes do timer
+        time.sleep(0.4)
+        self.assertIsNotNone(self.controller._executor)
+        frozen._pool_release()
+        self.assertTrue(self._wait_closed())
 
 
 class TestBatchControllerDefaultFraming(unittest.TestCase):
