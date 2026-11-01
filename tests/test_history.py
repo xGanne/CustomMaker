@@ -62,7 +62,10 @@ class TestNamedHistory(unittest.TestCase):
         self.window.add_images([path], replace=True)
         # carregamento e enquadramento padrão em segundo plano terminados: nada
         # muda o enquadramento por fora durante o teste
-        self.assertTrue(_wait_until(self.app, lambda: not self.window.task_runner._tasks))
+        self.assertTrue(_wait_until(
+            self.app,
+            lambda: not self.window.task_runner._tasks and self.window.current_original_image is not None,
+        ))
         self.statuses = []
         self.window.show_status = lambda message, **_kw: self.statuses.append(message)
 
@@ -180,7 +183,9 @@ class TestNamedHistory(unittest.TestCase):
     def test_clear_history_releases_snapshots(self):
         self.window.rotate_current_image("left")
         self.window.rotate_current_image("left")  # este passo guarda a cópia da 1ª rotação
-        snapshot = self.window._undo_stacks[self.window.current_path][-1]
+        stack = self.window._undo_stacks.get(self.window.current_path)
+        self.assertTrue(stack, f"rotação sem passo: original={self.window.current_original_image}")
+        snapshot = stack[-1]
         closed = []
         snapshot.image.close = lambda: closed.append(True)
         self.window.clear_history()
