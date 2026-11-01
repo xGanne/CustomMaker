@@ -82,6 +82,35 @@ class ImageLoaderMixin:
         self._touch_preview_cache_entry(path)
         return cached.copy()
 
+    def _drop_preview_cache(self, path):
+        image = self._preview_cache.pop(path, None)
+        if image is not None:
+            self._preview_cache_current_bytes = max(
+                0, self._preview_cache_current_bytes - self._estimate_image_bytes(image)
+            )
+            self._dispose_images([image])
+
+    def _display_image_for(self, path):
+        """Imagem para a tela (sempre uma prévia reduzida, dona do chamador).
+
+        Imagem editada (rotação, IA) também: a cópia em resolução cheia fica só
+        em edited_images, para o export. Antes o canvas e o cache de prévias
+        guardavam a imagem editada inteira — ~290 MB para exibir uma foto de
+        24 MP rotacionada, e o cache empurrava as outras imagens para fora.
+        """
+        cached = self._get_preview_cache_copy(path)
+        if cached is not None:
+            return cached
+        edited = self.edited_images.get(path)
+        if edited is None:
+            return None
+        max_dim = self._preview_max_dimension()
+        preview = ImageProcessor.resize_image(edited, max_dim, max_dim)
+        if preview is edited:
+            preview = edited.copy()
+        self._remember_preview_cache(path, preview)
+        return preview
+
     # ── Gerenciamento de recursos PIL ──────────────────────────────────────
 
     def _close_current_original(self):
@@ -302,6 +331,7 @@ class ImageLoaderMixin:
         if getattr(self, "render_cache", None) is not None:
             self.render_cache.clear()
         self.__dict__.pop("_edit_versions", None)
+        self.__dict__.pop("_edit_rotation", None)
 
     def load_folder(self, folder=None):
         if not folder:
@@ -362,23 +392,31 @@ class ImageLoaderMixin:
         versions = self.__dict__.setdefault("_edit_versions", {})
         versions[path] = versions.get(path, 0) + 1
 
-    def set_edited_image_for_current(self, image):
+    def set_edited_image_for_current(self, image, rotation=None):
+        """Imagem editada (rotação, IA). `rotation`: graus em relação ao original
+        quando a edição é só rotação — o desfazer refaz a imagem sem guardar cópia."""
         if not self.current_path:
             return
+        if rotation is not None:
+            self._edit_rotations()[self.current_path] = rotation % 360
+        else:
+            self._edit_rotations().pop(self.current_path, None)
         previous = self.edited_images.get(self.current_path)
         self.edited_images[self.current_path] = image.copy()
         self._bump_edit_version(self.current_path)
         if previous is not None and previous is not image:
             self._dispose_images([previous])
         self.editor_state.mark_pixels_edited(self.current_path)
-        self._remember_preview_cache(self.current_path, self.edited_images[self.current_path])
+        self._drop_preview_cache(self.current_path)  # a prévia antiga é de antes da edição
+        display = self._display_image_for(self.current_path)
         state = self.editor_state.image_states.get(self.current_path)
         self.image_canvas.set_image(
-            self.edited_images[self.current_path],
+            display,
             state=state,
             border_color=self.editor_state.resolve_border_hex(BORDA_HEX, self.current_path),
             natural_size=self._natural_size_for(self.current_path),
         )
+        self._dispose_images([display])
         self._update_preview_animation()
         if hasattr(self, "refresh_list_indicators"):
             self.refresh_list_indicators()
@@ -397,7 +435,7 @@ class ImageLoaderMixin:
         # enquadramentos salvos acompanham o deslocamento
         self.on_border_pos_changed(self.image_canvas.border_pos)
         self.editor_tab.refresh_from_state()
-        display_image = self.edited_images.get(path) or self._get_preview_cache_copy(path)
+        display_image = self._display_image_for(path)
         # M4: sem nada em cache o canvas fica vazio até o disco responder —
         # indicar o carregamento em vez de exibir a orientação de canvas vazio
         self.image_canvas.set_loading(display_image is None)
@@ -409,6 +447,7 @@ class ImageLoaderMixin:
                 border_color=self.editor_state.resolve_border_hex(BORDA_HEX, path),
                 natural_size=self._natural_size_for(path),
             )
+            self._dispose_images([display_image])  # o canvas guarda a própria cópia
         else:
             self.image_canvas.clear_image()
             self.refresh_current_canvas()
@@ -466,7 +505,7 @@ class ImageLoaderMixin:
                 except Exception:
                     pass
 
-            refreshed_image = self.edited_images.get(path) or self._get_preview_cache_copy(path)
+            refreshed_image = self._display_image_for(path)
 
             if refreshed_image is not None and path == self.current_path:
                 state = self._ensure_state_for_current(refreshed_image, default_fit=result.get("default_fit"))
@@ -528,14 +567,21 @@ class ImageLoaderMixin:
             if reference is None:
                 return None
             state = self._ensure_state_for_current(reference)
+        rotation = self._edit_rotations().get(self.current_path) if edited is not None else None
         return Snapshot(
-            image=edited.copy() if edited is not None else None,
+            # só rotação: os graus refazem a imagem; edição de IA: precisa da cópia
+            image=edited.copy() if edited is not None and rotation is None else None,
             pos=tuple(state["pos"]),
             size=tuple(state["size"]),
             pixel_edited=edited is not None,
             label=label,
             adjustments=dict(self.editor_state.image_adjustments.get(self.current_path, {})),
+            rotation=rotation,
         )
+
+    def _edit_rotations(self):
+        """Graus aplicados ao original nas imagens cuja edição é só rotação."""
+        return self.__dict__.setdefault("_edit_rotation", {})
 
     def _original_display_image(self, path):
         """Preview do arquivo original (para desfazer até antes de uma edição de pixels)."""
@@ -567,13 +613,15 @@ class ImageLoaderMixin:
         if not state:
             return  # nunca enquadrada: não há estado anterior a guardar
         edited = self.edited_images.get(path)
+        rotation = self._edit_rotations().get(path) if edited is not None else None
         self._push_undo(path, Snapshot(
-            image=edited.copy() if edited is not None else None,
+            image=edited.copy() if edited is not None and rotation is None else None,
             pos=tuple(state["pos"]),
             size=tuple(state["size"]),
             pixel_edited=edited is not None,
             label=label,
             adjustments=dict(self.editor_state.image_adjustments.get(path, {})),
+            rotation=rotation,
         ))
 
     def _push_undo(self, path, snapshot):
@@ -587,9 +635,37 @@ class ImageLoaderMixin:
         stack.append(snapshot)
         while len(stack) > 20:
             self._dispose_images([stack.pop(0).image])
+        self._enforce_undo_budget()
         # F15: uma nova ação do usuário invalida o redo
         self._drop_redo_stack(path)
         self._history_ops()[path] = "edit"
+
+    UNDO_IMAGE_BUDGET_BYTES = 512 * 1024 * 1024
+
+    def _enforce_undo_budget(self):
+        """Cópias de imagem no histórico (edições de IA) somam no máximo
+        UNDO_IMAGE_BUDGET_BYTES: acima disso, saem os passos mais antigos."""
+        stacks = [self._undo_stacks, self._redo_stack_map()]
+
+        def total():
+            return sum(
+                self._estimate_image_bytes(s.image)
+                for group in stacks for stack in group.values() for s in stack if s.image is not None
+            )
+
+        used = total()
+        while used > self.UNDO_IMAGE_BUDGET_BYTES:
+            candidates = [st for st in self._undo_stacks.values() if any(s.image is not None for s in st)]
+            if not candidates:
+                break
+            # a pilha com a cópia mais antiga perde passos do fundo até liberar uma cópia
+            stack = min(candidates, key=lambda st: next(s.timestamp for s in st if s.image is not None))
+            while stack:
+                dropped = stack.pop(0)
+                if dropped.image is not None:
+                    used -= self._estimate_image_bytes(dropped.image)
+                    self._dispose_images([dropped.image])
+                    break
 
     @staticmethod
     def _same_state(a, b):
@@ -644,14 +720,24 @@ class ImageLoaderMixin:
         if previous is not None:
             self._dispose_images([previous])
         owned_display = None
-        if was_pixel_edited and image is not None:
+        rebuilt = None
+        if was_pixel_edited and image is None and snapshot.rotation is not None:
+            original = self._full_original()
+            if original is not None:
+                rebuilt = original.rotate(snapshot.rotation, expand=True) if snapshot.rotation else original.copy()
+        if was_pixel_edited and (image is not None or rebuilt is not None):
             # F15: só volta para edited_images se o estado restaurado tinha
             # edição de pixels — senão o indicador "editada" ficava para sempre
-            self.edited_images[path] = image.copy()
+            self.edited_images[path] = rebuilt if rebuilt is not None else image.copy()
+            if snapshot.rotation is not None:
+                self._edit_rotations()[path] = snapshot.rotation
+            else:
+                self._edit_rotations().pop(path, None)
             self._bump_edit_version(path)
-            display = self.edited_images[path]
-            self._remember_preview_cache(path, display)
+            self._drop_preview_cache(path)
+            display = owned_display = self._display_image_for(path)
         else:
+            self._edit_rotations().pop(path, None)  # voltou ao arquivo original
             display = owned_display = self._original_display_image(path)
         self._dispose_images([image])
         self.editor_state.set_image_state(path, pos, size)

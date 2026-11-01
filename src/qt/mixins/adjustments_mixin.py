@@ -84,7 +84,10 @@ class AdjustmentsMixin:
         self.save_state_for_undo("Rotacionar à esquerda" if direction == "left" else "Rotacionar à direita")
         angle = 90 if direction == "left" else -90
         rotated = image.rotate(angle, expand=True)
-        self.set_edited_image_for_current(rotated)
+        # só rotação (sobre o original ou outra rotação): o histórico guarda os graus
+        rotations = getattr(self, "_edit_rotations", lambda: {})()
+        previous = 0 if self.current_path not in self.edited_images else rotations.get(self.current_path)
+        self.set_edited_image_for_current(rotated, rotation=None if previous is None else previous + angle)
         rotated.close()
         self.apply_auto_fit(push_undo=False)
         self.show_status(f"Prévia rotacionada para {direction}.")

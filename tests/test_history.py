@@ -180,9 +180,47 @@ class TestNamedHistory(unittest.TestCase):
         menu.actions()[0].trigger()  # avança até "Auto fit"
         self.assertEqual(self._stack("undo"), ["Mover", "Auto fit"])
 
-    def test_clear_history_releases_snapshots(self):
+    def test_rotation_undo_keeps_degrees_not_image_copies(self):
+        path = self.window.current_path
+        with Image.open(path) as src:
+            original = src.convert("RGBA")
         self.window.rotate_current_image("left")
-        self.window.rotate_current_image("left")  # este passo guarda a cópia da 1ª rotação
+        self.window.rotate_current_image("left")
+        stack = self.window._undo_stacks[path]
+        self.assertEqual([s.image for s in stack], [None, None])  # nenhuma cópia de imagem
+        self.assertEqual([s.rotation for s in stack], [None, 90])  # 1º passo: original sem edição
+        self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(180, expand=True).tobytes())
+        self.window.undo_current_image()
+        self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(90, expand=True).tobytes())
+        self.window.undo_current_image()
+        self.assertNotIn(path, self.window.edited_images)  # de volta ao arquivo original
+        self.window.redo_current_image()
+        self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(90, expand=True).tobytes())
+
+    def test_canvas_shows_a_reduced_preview_of_edited_images(self):
+        path = self.window.current_path
+        self.window.rotate_current_image("left")
+        edited = self.window.edited_images[path]
+        shown = self.window.image_canvas._base_image
+        max_dim = self.window._preview_max_dimension()
+        self.assertLessEqual(max(shown.size), max_dim)
+        self.assertEqual(shown.size[0] / shown.size[1], edited.size[0] / edited.size[1])
+
+    def test_undo_image_copies_respect_the_memory_budget(self):
+        path = self.window.current_path
+        self.window.UNDO_IMAGE_BUDGET_BYTES = 300 * 400 * 4 * 2  # duas cópias desta imagem
+        for i in range(4):  # edições "de IA": precisam de cópia no histórico
+            self.window.save_state_for_undo("IA")
+            self.window.set_edited_image_for_current(Image.new("RGBA", (300, 400), (i * 40, 0, 0, 255)))
+        copies = [s for s in self.window._undo_stacks.get(path, []) if s.image is not None]
+        self.assertLessEqual(len(copies), 2)
+
+    def test_clear_history_releases_snapshots(self):
+        # edição "de IA" (não é só rotação): o passo seguinte guarda uma cópia dela
+        self.window.save_state_for_undo("IA")
+        self.window.set_edited_image_for_current(Image.new("RGBA", (300, 400), (9, 9, 9, 255)))
+        self.window.save_state_for_undo("IA")
+        self.window.set_edited_image_for_current(Image.new("RGBA", (300, 400), (7, 7, 7, 255)))
         stack = self.window._undo_stacks.get(self.window.current_path)
         self.assertTrue(stack, f"rotação sem passo: original={self.window.current_original_image}")
         snapshot = stack[-1]

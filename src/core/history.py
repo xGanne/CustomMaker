@@ -22,10 +22,14 @@ class Snapshot:
     label: str = ""
     timestamp: float = field(default_factory=time.monotonic)
     adjustments: dict = field(default_factory=dict)  # ajustes de cor da imagem neste estado
+    # edição de pixels que é só rotação do original: os graus bastam para refazer
+    # a imagem (rotação de 90° é exata) — sem guardar uma cópia de ~96 MB
+    rotation: Optional[int] = None
 
     def shifted(self, dx, dy):
         """Cópia com a posição deslocada (a borda mudou de lugar no canvas)."""
         x, y = self.pos
         return Snapshot(
-            self.image, (x + dx, y + dy), self.size, self.pixel_edited, self.label, self.timestamp, dict(self.adjustments)
+            self.image, (x + dx, y + dy), self.size, self.pixel_edited, self.label, self.timestamp,
+            dict(self.adjustments), self.rotation,
         )
