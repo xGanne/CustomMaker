@@ -255,7 +255,10 @@ class TestPreviewExportParity(unittest.TestCase):
         combo.setCurrentIndex(combo.findData("simples"))
         with self.subTest("ajustes de tom"):
             self.window.editor_state.set_image_adjustments(path, {"brightness": 25, "contrast": 30, "saturation": -40})
-            self.window._schedule_adjustment_preview()
+            # render direto, sem o timer de 60 ms: este teste compara canvas × export.
+            # No CI o timer não disparava aqui (eventos processados à mão, sem o
+            # loop do app); o caminho do timer é coberto por test_adjustments_ui.
+            self.window._render_adjustment_preview()
             self._assert_parity(path, "ajustes de tom")
 
     def test_border_band_is_drawn_inside_like_the_export(self):
