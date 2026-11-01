@@ -196,8 +196,10 @@ class BatchController:
             raise TypeError("Edited source image must be a PIL image.")
         os.makedirs(source_dir, exist_ok=True)
         stem = os.path.splitext(os.path.basename(path))[0]
-        source_path = os.path.join(source_dir, f"{stem}_{secrets.token_hex(4)}.png")
-        image.save(source_path, format="PNG")
+        # TIFF sem compressão: arquivo temporário (apagado no fim da operação),
+        # gravado ~7x mais rápido que PNG (0,17 s × 1,14 s numa imagem de 24 MP)
+        source_path = os.path.join(source_dir, f"{stem}_{secrets.token_hex(4)}.tiff")
+        image.save(source_path, format="TIFF")
         return source_path
 
     def _config_get(self, key, default=None):
