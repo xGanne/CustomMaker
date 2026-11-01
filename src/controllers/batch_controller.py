@@ -59,6 +59,8 @@ class BatchController:
     # usa. Os testes trocam por threads (tests/conftest.py): cada processo do
     # pool carrega numpy/OpenCV/PIL de novo e somava centenas de MB de RAM.
     executor_factory = None
+    # temporários sem compressão das imagens editadas, por operação (ver _save_source_override)
+    SOURCE_RAW_BUDGET_BYTES = 1024 * 1024 * 1024
 
     def __init__(
         self,
@@ -196,10 +198,18 @@ class BatchController:
             raise TypeError("Edited source image must be a PIL image.")
         os.makedirs(source_dir, exist_ok=True)
         stem = os.path.splitext(os.path.basename(path))[0]
-        # TIFF sem compressão: arquivo temporário (apagado no fim da operação),
-        # gravado ~7x mais rápido que PNG (0,17 s × 1,14 s numa imagem de 24 MP)
-        source_path = os.path.join(source_dir, f"{stem}_{secrets.token_hex(4)}.tiff")
-        image.save(source_path, format="TIFF")
+        raw_bytes = image.width * image.height * len(image.getbands())
+        used = sum(entry.stat().st_size for entry in os.scandir(source_dir) if entry.is_file())
+        if used + raw_bytes <= BatchController.SOURCE_RAW_BUDGET_BYTES:
+            # TIFF sem compressão: arquivo temporário (apagado no fim da operação),
+            # 0,1 s numa ilustração de 24 MP — o PNG padrão levava até 14 s
+            source_path = os.path.join(source_dir, f"{stem}_{secrets.token_hex(4)}.tiff")
+            image.save(source_path, format="TIFF")
+        else:
+            # lote grande de imagens editadas: sem compressão seriam ~92 MB cada
+            # no disco ao mesmo tempo; acima do limite, PNG rápido (~2 s, ~1/3)
+            source_path = os.path.join(source_dir, f"{stem}_{secrets.token_hex(4)}.png")
+            image.save(source_path, format="PNG", compress_level=1)
         return source_path
 
     def _config_get(self, key, default=None):

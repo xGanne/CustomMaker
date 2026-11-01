@@ -1,3 +1,4 @@
+import os
 import unittest
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -364,6 +365,18 @@ class TestExportSizes(unittest.TestCase):
             finally:
                 controller.shutdown()
             self.assertTrue(result["cancelled"])
+
+
+class TestEditedSourceTemporaries(unittest.TestCase):
+    def test_raw_tiff_until_the_disk_budget_then_compressed_png(self):
+        with TemporaryDirectory() as tmp:
+            image = Image.new("RGBA", (100, 100), (1, 2, 3, 255))
+            with patch.object(BatchController, "SOURCE_RAW_BUDGET_BYTES", 100 * 100 * 4 * 2 + 1000):
+                paths = [BatchController._save_source_override(f"/x/img{i}.png", image, tmp) for i in range(3)]
+            self.assertEqual([os.path.splitext(p)[1] for p in paths], [".tiff", ".tiff", ".png"])
+            for p in paths:
+                with Image.open(p) as saved:
+                    self.assertEqual(saved.convert("RGBA").tobytes(), image.tobytes())
 
 
 class TestFileSizes(unittest.TestCase):
