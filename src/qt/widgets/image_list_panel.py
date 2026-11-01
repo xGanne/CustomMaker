@@ -233,6 +233,9 @@ if QT_AVAILABLE:
         def _generate_thumb(path):
             try:
                 with Image.open(path) as img:
+                    # JPEG já reduzido na decodificação: a miniatura não precisa
+                    # dos 96 MB de uma foto de 24 MP (eram decodificados inteiros)
+                    img.draft(img.mode, (_THUMB_W * 2, _THUMB_H * 2))
                     thumb = img.convert("RGBA")
                     thumb.thumbnail((_THUMB_W, _THUMB_H), Image.LANCZOS)
                     return thumb

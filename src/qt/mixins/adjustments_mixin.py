@@ -166,6 +166,9 @@ class AdjustmentsMixin:
 
                     if working is None:
                         with Image.open(path) as source:
+                            # o enquadramento só depende das proporções e do rosto:
+                            # reduzido na decodificação, como no enquadramento padrão
+                            source.draft(source.mode, (1000, 1000))
                             working = source.convert("RGBA")
 
                     try:
