@@ -837,6 +837,7 @@ if QT_AVAILABLE:
 
         def _on_canvas_image_set(self):
             """Imagem nova na tela: controles e prévia com os ajustes dela."""
+            self._adjust_preview_shown = None  # o canvas mostra a imagem sem ajuste
             self._on_adjustments_restored()
 
         def _on_adjustments_restored(self):
@@ -853,54 +854,64 @@ if QT_AVAILABLE:
                 timer.timeout.connect(self._render_adjustment_preview)
             timer.start()
 
+        def _wanted_adjustment_preview(self):
+            """(imagem base, caminho, ajustes de tom) que o canvas deveria mostrar, ou None."""
+            from src.core.color_adjustments import cache_token
+            base = self.image_canvas._original_image
+            if base is None or not self.current_path:
+                return None
+            tone = {k: v for k, v in self._current_adjustments().items() if k != "sharpness"}
+            return (id(base), self.current_path, cache_token(tone)), base, tone
+
         def _render_adjustment_preview(self):
-            """Brilho/contraste/saturação na prévia, fora da GUI thread (até 2400 px)."""
-            from src.core.color_adjustments import apply_tone, is_neutral
-            canvas = self.image_canvas
-            base = canvas._original_image
-            path = self.current_path
-            if base is None or not path:
+            """Brilho/contraste/saturação na prévia, fora da GUI thread (até 2400 px).
+
+            Autocorretiva: compara o que está na tela com o que deveria estar
+            (imagem, caminho, ajustes) e renderiza de novo enquanto não bater —
+            não depende da ordem em que tarefas, trocas de imagem e mudanças nos
+            controles acontecem. Uma tarefa por vez (cada uma copia a imagem).
+            """
+            from src.core.color_adjustments import apply_tone
+            wanted = self._wanted_adjustment_preview()
+            if wanted is None:
                 return
-            adjustments = self._current_adjustments()
-            if is_neutral({k: v for k, v in adjustments.items() if k != "sharpness"}):
-                # invalida a prévia em andamento: ela não pode sobrescrever o neutro
-                self._adjust_preview_seq = getattr(self, "_adjust_preview_seq", 0) + 1
-                self._adjust_preview_pending = False
+            token, base, tone = wanted
+            if token == getattr(self, "_adjust_preview_shown", None):
+                return  # a tela já mostra isto
+            canvas = self.image_canvas
+            if not tone:
                 canvas.replace_display_image(base)
+                self._adjust_preview_shown = token
                 return
             if self.task_runner.has_task("qt_adjust_preview"):
-                # uma prévia por vez (cada uma copia a imagem, até ~17 MB): a que está
-                # rodando termina e refaz uma vez só, com o valor mais recente
-                self._adjust_preview_pending = True
-                return
-            self._adjust_preview_pending = False
-            seq = self._adjust_preview_seq = getattr(self, "_adjust_preview_seq", 0) + 1
+                return  # a que está rodando confere de novo ao terminar
             source = base.copy()  # GUI thread: a task não toca no canvas
 
             def task_fn(_cancel_event, _on_progress):
-                return {"seq": seq, "path": path, "image": apply_tone(source, adjustments)}
+                return apply_tone(source, tone)
 
-            def finish():
+            def finish(image=None):
                 source.close()
-                if getattr(self, "_adjust_preview_pending", False) and self._window_alive():
-                    self._schedule_adjustment_preview()
-
-            def on_done(result):
-                image = result.get("image")
                 try:
-                    if result.get("seq") == self._adjust_preview_seq and result.get("path") == self.current_path:
+                    current = self._wanted_adjustment_preview()
+                    if image is not None and current is not None and current[0] == token:
                         canvas.replace_display_image(image)
+                        self._adjust_preview_shown = token
                 finally:
                     if image is not None:
                         image.close()
-                    finish()
+                current = self._wanted_adjustment_preview()
+                if current is not None and current[0] != getattr(self, "_adjust_preview_shown", None) and self._window_alive():
+                    self._schedule_adjustment_preview()  # mudou enquanto renderizava
 
             handle = self.task_runner.submit("qt_adjust_preview", task_fn)
             if handle is None:
                 source.close()
+                self._schedule_adjustment_preview()
                 return
-            handle.done.connect(on_done)
+            handle.done.connect(finish)
             handle.error.connect(lambda _exc: finish())
+            handle.cancelled.connect(lambda: finish())
 
         # ── Guias e área vazia ─────────────────────────────────────────────
 

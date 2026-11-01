@@ -171,7 +171,10 @@ class TestPreviewExportParity(unittest.TestCase):
     def _assert_parity(self, path, label):
         self._idle()
         problems = parity_problems(capture_canvas(self.window), capture_export(self.window, path, self.tmp))
-        self.assertEqual(problems, [], label)
+        context = (f"{label} | atual={self.window.current_path == path} "
+                   f"ajustes={self.window.editor_state.image_adjustments.get(path)} "
+                   f"prévia={getattr(self.window, '_adjust_preview_shown', None)}")
+        self.assertEqual(problems, [], context)
 
     def _zoom(self, factor):
         self.canvas.zoom_by(factor)
