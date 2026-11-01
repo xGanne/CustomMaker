@@ -206,6 +206,20 @@ class TestIdlePool(unittest.TestCase):
         result = self.controller._run_batch([{"path": "b"}], worker=_echo)
         self.assertEqual([r["path"] for r in result["results"]], ["b"])
 
+    def test_idle_timer_does_not_keep_the_controller_alive(self):
+        import gc
+        import weakref
+        with patch.object(BatchController, "POOL_IDLE_SECONDS", 60):
+            controller = BatchController(DummyApp())
+            controller._run_batch([{"path": "a"}], worker=_echo)
+            timer = controller._idle_timer
+            self.assertIsNotNone(timer)
+            ref = weakref.ref(controller)
+            del controller
+            gc.collect()
+            self.assertIsNone(ref())
+            timer.cancel()
+
     def test_pool_in_use_is_not_closed(self):
         self.controller._run_batch([{"path": "a"}], worker=_echo)
         frozen = self.controller.frozen()

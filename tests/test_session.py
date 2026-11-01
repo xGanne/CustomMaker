@@ -92,6 +92,32 @@ compat = importlib.import_module("src.qt.compat")
 
 
 @unittest.skipUnless(compat.QT_AVAILABLE, "PySide6 not installed")
+class TestSessionEditTracking(_TempDirTestCase):
+    def test_every_new_rotation_is_written_even_if_python_reuses_the_id(self):
+        from src.core.rotated_source import RotatedOriginal
+        from src.qt.mixins.session_mixin import SessionMixin
+
+        class Store:
+            written = []
+
+            def write_edit(self, path, image):
+                self.written.append(image.size)
+
+        holder = SessionMixin()
+        holder.edited_images, holder._session_saved_edits = {}, {}
+        path, store = self.paths[0], Store()
+        store.written = []
+        for _ in range(30):  # o reuso do id depende da memória: muitas voltas o provocam
+            holder.edited_images[path] = RotatedOriginal(path, 90)
+            holder._save_session_edits(store, True)
+            holder.edited_images[path] = RotatedOriginal(path, 180)  # sem salvar no meio
+            holder.edited_images[path] = RotatedOriginal(path, 270)  # pode reusar o id do 90
+            holder._save_session_edits(store, True)
+        self.assertEqual(len(store.written), 60)
+        holder._save_session_edits(store, True)  # nada mudou: não grava de novo
+        self.assertEqual(len(store.written), 60)
+
+
 class TestSessionInWindow(_TempDirTestCase):
     @classmethod
     def setUpClass(cls):

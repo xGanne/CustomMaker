@@ -6,6 +6,7 @@ import secrets
 import shutil
 import tempfile
 import threading
+import weakref
 import zipfile
 from concurrent.futures.process import BrokenProcessPool
 from typing import List
@@ -355,10 +356,20 @@ class BatchController:
             if owner._pool_users or owner._executor is None:
                 return
             generation = owner._pool_generation
-            timer = threading.Timer(type(self).POOL_IDLE_SECONDS, owner._close_idle_pool, args=(generation,))
+            # weakref: o timer não prende o controlador (e o pool) por minutos
+            timer = threading.Timer(
+                type(self).POOL_IDLE_SECONDS, BatchController._close_idle_pool_of,
+                args=(weakref.ref(owner), generation),
+            )
             timer.daemon = True
             owner._idle_timer = timer
         timer.start()
+
+    @staticmethod
+    def _close_idle_pool_of(owner_ref, generation):
+        owner = owner_ref()
+        if owner is not None:
+            owner._close_idle_pool(generation)
 
     def _close_idle_pool(self, generation):
         """Fecha o pool se nenhum lote o usou desde que este timer foi armado."""

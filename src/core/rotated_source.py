@@ -32,7 +32,7 @@ class RotatedOriginal:
     pode ser lido de qualquer thread.
     """
 
-    __slots__ = ("path", "degrees", "_size")
+    __slots__ = ("path", "degrees", "_size", "__weakref__")  # weakref: sessão
 
     def __init__(self, path, degrees):
         self.path = path

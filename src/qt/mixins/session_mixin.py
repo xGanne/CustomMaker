@@ -8,6 +8,7 @@ Responsabilidades:
 """
 import json
 import logging
+import weakref
 
 from PIL import Image
 
@@ -26,7 +27,9 @@ class SessionMixin:
         """Liga o salvamento automático. Sem `session_store` (ex.: testes), nada é salvo."""
         self.session_store = session_store
         self._session_signature = None
-        self._session_saved_edits = {}  # path -> id() da imagem editada já gravada
+        # path -> weakref da edição já gravada. Não id(): um objeto novo pode
+        # reusar o id de um liberado, e a edição nova não era gravada
+        self._session_saved_edits = {}
         self._session_edit_seq = 0
         if session_store is None:
             return
@@ -60,8 +63,9 @@ class SessionMixin:
         """Grava as imagens editadas que mudaram desde o último salvamento."""
         pending = []
         for path, image in self.edited_images.items():
-            if self._session_saved_edits.get(path) != id(image):
-                self._session_saved_edits[path] = id(image)
+            saved = self._session_saved_edits.get(path)
+            if saved is None or saved() is not image:
+                self._session_saved_edits[path] = weakref.ref(image)
                 # rotação (RotatedOriginal) é imutável: a imagem só é gerada na gravação
                 pending.append((path, image if isinstance(image, RotatedOriginal) else image.copy()))
         for path in list(self._session_saved_edits):
@@ -120,7 +124,7 @@ class SessionMixin:
             try:
                 with Image.open(store.edit_path(path)) as edited:
                     self.edited_images[path] = edited.convert("RGBA")
-                self._session_saved_edits[path] = id(self.edited_images[path])
+                self._session_saved_edits[path] = weakref.ref(self.edited_images[path])
             except Exception as exc:
                 logger.warning("Edição salva de %s não pôde ser lida: %s", path, exc)
 
