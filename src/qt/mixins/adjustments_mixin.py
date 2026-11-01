@@ -87,7 +87,12 @@ class AdjustmentsMixin:
         # só rotação (sobre o original ou outra rotação): o histórico guarda os graus
         rotations = getattr(self, "_edit_rotations", lambda: {})()
         previous = 0 if self.current_path not in self.edited_images else rotations.get(self.current_path)
-        self.set_edited_image_for_current(rotated, rotation=None if previous is None else previous + angle)
+        total = None if previous is None else (previous + angle) % 360
+        if total == 0 and hasattr(self, "_drop_pixel_edit_for_current"):
+            # volta completa: é o próprio arquivo — sem guardar uma cópia cheia "editada"
+            self._drop_pixel_edit_for_current()
+        else:
+            self.set_edited_image_for_current(rotated, rotation=total)
         rotated.close()
         self.apply_auto_fit(push_undo=False)
         self.show_status(f"Prévia rotacionada para {direction}.")

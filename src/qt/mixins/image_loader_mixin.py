@@ -392,6 +392,29 @@ class ImageLoaderMixin:
         versions = self.__dict__.setdefault("_edit_versions", {})
         versions[path] = versions.get(path, 0) + 1
 
+    def _drop_pixel_edit_for_current(self):
+        """A imagem atual volta a ser o próprio arquivo (sem edição de pixels)."""
+        path = self.current_path
+        if not path:
+            return
+        self._dispose_images([self.edited_images.pop(path, None)])
+        self._edit_rotations().pop(path, None)
+        self._bump_edit_version(path)
+        self.editor_state.mark_pixels_edited(path)  # mudou desde o último export
+        self._drop_preview_cache(path)
+        display = self._original_display_image(path)
+        if display is not None:
+            self.image_canvas.set_image(
+                display,
+                state=self.editor_state.image_states.get(path),
+                border_color=self.editor_state.resolve_border_hex(BORDA_HEX, path),
+                natural_size=self._natural_size_for(path),
+            )
+            self._dispose_images([display])
+        self._update_preview_animation()
+        if hasattr(self, "refresh_list_indicators"):
+            self.refresh_list_indicators()
+
     def set_edited_image_for_current(self, image, rotation=None):
         """Imagem editada (rotação, IA). `rotation`: graus em relação ao original
         quando a edição é só rotação — o desfazer refaz a imagem sem guardar cópia."""

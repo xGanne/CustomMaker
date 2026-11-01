@@ -197,6 +197,16 @@ class TestNamedHistory(unittest.TestCase):
         self.window.redo_current_image()
         self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(90, expand=True).tobytes())
 
+    def test_full_turn_drops_the_edit_and_undo_still_works(self):
+        path = self.window.current_path
+        with Image.open(path) as src:
+            original = src.convert("RGBA")
+        for _ in range(4):
+            self.window.rotate_current_image("left")
+        self.assertNotIn(path, self.window.edited_images)  # 360°: é o próprio arquivo, sem cópia
+        self.window.undo_current_image()
+        self.assertEqual(self.window.edited_images[path].tobytes(), original.rotate(270, expand=True).tobytes())
+
     def test_canvas_shows_a_reduced_preview_of_edited_images(self):
         path = self.window.current_path
         self.window.rotate_current_image("left")
