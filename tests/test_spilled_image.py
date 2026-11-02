@@ -36,6 +36,28 @@ class TestSpilledImage(unittest.TestCase):
         gc.collect()
         self.assertFalse(os.path.exists(path))
 
+    def test_cleanup_removes_only_folders_of_dead_processes(self):
+        import subprocess
+        import sys
+        import tempfile
+        from src.core import spilled_image
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        alive = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            base = tempfile.gettempdir()
+            dead_dir = tempfile.mkdtemp(prefix=f"custommaker_edits_{dead.pid}_", dir=base)
+            alive_dir = tempfile.mkdtemp(prefix=f"custommaker_edits_{alive.pid}_", dir=base)
+            spilled_image._remove_stale_dirs()
+            self.assertFalse(os.path.exists(dead_dir))
+            self.assertTrue(os.path.exists(alive_dir))  # outra janela aberta: intocada
+            self.assertIsNone(alive.poll())  # a checagem não encerrou o processo
+        finally:
+            alive.kill()
+            alive.wait()
+            import shutil
+            shutil.rmtree(alive_dir, ignore_errors=True)
+
     def test_without_disk_keeps_a_copy_in_memory(self):
         image = _gradient((20, 20))
         with patch.object(SpilledImage, "__init__", side_effect=OSError("disco cheio")):
