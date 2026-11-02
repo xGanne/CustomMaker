@@ -17,6 +17,7 @@ from src.config.settings import BORDA_HEX, SUPPORTED_EXTENSIONS
 from src.core.history import Snapshot
 from src.core.image_processor import ImageProcessor
 from src.core.rotated_source import RotatedOriginal
+from src.core.spilled_image import SpilledImage, is_lazy_edit
 
 
 logger = logging.getLogger(__name__)
@@ -28,8 +29,8 @@ class ImageLoaderMixin:
 
     @staticmethod
     def _estimate_image_bytes(image):
-        if image is None:
-            return 0
+        if image is None or is_lazy_edit(image):
+            return 0  # fora da RAM (graus ou arquivo temporário)
         try:
             channels = len(image.getbands())
         except Exception:
@@ -106,9 +107,9 @@ class ImageLoaderMixin:
         if edited is None:
             return None
         max_dim = self._preview_max_dimension()
-        if isinstance(edited, RotatedOriginal):
+        if is_lazy_edit(edited):
             try:
-                preview = edited.load(max_dim)  # gira a prévia, não o original inteiro
+                preview = edited.load(max_dim)  # rotação: gira só a prévia; IA: lê do disco
             except Exception as exc:
                 logger.warning("Não foi possível abrir %s: %s", path, exc)
                 return None
@@ -366,7 +367,7 @@ class ImageLoaderMixin:
         if not self.current_path:
             return None
         edited = self.edited_images.get(self.current_path)
-        if isinstance(edited, RotatedOriginal):
+        if is_lazy_edit(edited):
             try:
                 return edited.load()
             except Exception as exc:
@@ -433,9 +434,10 @@ class ImageLoaderMixin:
             self.refresh_list_indicators()
 
     def set_edited_image_for_current(self, image):
-        """Imagem editada de pixels (IA): a cópia vira a fonte da exportação."""
+        """Imagem editada de pixels (IA): vira a fonte da exportação. Guardada
+        em disco (SpilledImage), não na RAM."""
         if self.current_path:
-            self._store_edit_for_current(image.copy())
+            self._store_edit_for_current(SpilledImage.from_image(image))
 
     def set_rotation_for_current(self, degrees):
         """Edição só de rotação: guarda os graus em relação ao original, sem

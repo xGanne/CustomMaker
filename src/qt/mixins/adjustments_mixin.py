@@ -13,6 +13,7 @@ from PIL import Image
 from src.config.settings import BORDA_HEX
 from src.core.image_processor import ImageProcessor
 from src.core.rotated_source import RotatedOriginal
+from src.core.spilled_image import SpilledImage, is_lazy_edit
 
 
 class AdjustmentsMixin:
@@ -91,7 +92,10 @@ class AdjustmentsMixin:
                 self.set_rotation_for_current(total)
         else:
             # edição de IA: os pixels editados giram junto
-            rotated = edited.rotate(angle, expand=True)
+            pixels = edited.load() if isinstance(edited, SpilledImage) else edited
+            rotated = pixels.rotate(angle, expand=True)
+            if pixels is not edited:
+                pixels.close()
             self.set_edited_image_for_current(rotated)
             rotated.close()
         self.apply_auto_fit(push_undo=False)
@@ -159,8 +163,8 @@ class AdjustmentsMixin:
         snapshots = []
         for path in list(self.editor_state.image_list):
             source = self.edited_images.get(path)
-            if isinstance(source, RotatedOriginal):
-                snapshots.append((path, source))  # imutável: girado no worker, reduzido
+            if is_lazy_edit(source):
+                snapshots.append((path, source))  # imutável: lido no worker, reduzido
             elif source is not None:
                 snapshots.append((path, source.copy()))
             else:
@@ -174,7 +178,7 @@ class AdjustmentsMixin:
                     if cancel_event and cancel_event.is_set():
                         break
 
-                    if isinstance(working, RotatedOriginal):
+                    if is_lazy_edit(working):
                         working = working.load(1000)
                     elif working is None:
                         with Image.open(path) as source:

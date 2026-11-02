@@ -13,6 +13,7 @@ import weakref
 from PIL import Image
 
 from src.core.rotated_source import RotatedOriginal
+from src.core.spilled_image import SpilledImage
 from src.core.session_store import apply_session, snapshot_session
 
 
@@ -82,6 +83,8 @@ class SessionMixin:
         def write_all(*_args):
             for path, image in pending:
                 try:
+                    if isinstance(image, SpilledImage):
+                        image = image.load()  # pixels só na hora de gravar
                     store.write_edit(path, image)
                 except Exception as exc:
                     logger.warning("Não foi possível salvar a edição de %s na sessão: %s", path, exc)
@@ -126,7 +129,11 @@ class SessionMixin:
                 continue
             try:
                 with Image.open(store.edit_path(path)) as edited:
-                    self.edited_images[path] = edited.convert("RGBA")
+                    pixels = edited.convert("RGBA")
+                # em disco, como as edições feitas nesta execução
+                self.edited_images[path] = SpilledImage.from_image(pixels)
+                if self.edited_images[path] is not pixels:
+                    pixels.close()
                 self._session_saved_edits[path] = weakref.ref(self.edited_images[path])
             except Exception as exc:
                 logger.warning("Edição salva de %s não pôde ser lida: %s", path, exc)

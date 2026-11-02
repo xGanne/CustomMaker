@@ -11,6 +11,7 @@ from PIL import Image
 from _qt_helpers import dispose_window
 from src.core.history import Snapshot
 from src.core.rotated_source import RotatedOriginal
+from src.core.spilled_image import SpilledImage
 
 
 compat = importlib.import_module("src.qt.compat")
@@ -230,29 +231,36 @@ class TestNamedHistory(unittest.TestCase):
         self.assertLessEqual(max(shown.size), max_dim)
         self.assertEqual(shown.size[0] / shown.size[1], edited.size[0] / edited.size[1])
 
-    def test_undo_image_copies_respect_the_memory_budget(self):
+    def test_ai_edits_live_on_disk_and_undo_shares_them(self):
         path = self.window.current_path
-        self.window.UNDO_IMAGE_BUDGET_BYTES = 300 * 400 * 4 * 2  # duas cópias desta imagem
-        for i in range(4):  # edições "de IA": precisam de cópia no histórico
+        colors = [(i * 40, 0, 0, 255) for i in range(4)]
+        for color in colors:  # edições "de IA"
             self.window.save_state_for_undo("IA")
-            self.window.set_edited_image_for_current(Image.new("RGBA", (300, 400), (i * 40, 0, 0, 255)))
-        copies = [s for s in self.window._undo_stacks.get(path, []) if s.image is not None]
-        self.assertLessEqual(len(copies), 2)
+            self.window.set_edited_image_for_current(Image.new("RGBA", (300, 400), color))
+        edited = self.window.edited_images[path]
+        self.assertIsInstance(edited, SpilledImage)  # nada da imagem na RAM
+        self.assertEqual(edited.load().getpixel((0, 0)), colors[-1])
+        snapshots = [s.image for s in self.window._undo_stacks[path] if s.image is not None]
+        self.assertTrue(all(isinstance(s, SpilledImage) for s in snapshots))
+        # desfazer volta a edição anterior, lida do disco
+        self.window.undo_current_image()
+        self.assertEqual(self.window.edited_images[path].load().getpixel((0, 0)), colors[-2])
 
-    def test_clear_history_releases_snapshots(self):
-        # edição "de IA" (não é só rotação): o passo seguinte guarda uma cópia dela
+    def test_clear_history_releases_the_temporary_files(self):
+        import gc
         self.window.save_state_for_undo("IA")
         self.window.set_edited_image_for_current(Image.new("RGBA", (300, 400), (9, 9, 9, 255)))
         self.window.save_state_for_undo("IA")
         self.window.set_edited_image_for_current(Image.new("RGBA", (300, 400), (7, 7, 7, 255)))
         stack = self.window._undo_stacks.get(self.window.current_path)
-        self.assertTrue(stack, f"rotação sem passo: original={self.window.current_original_image}")
-        snapshot = stack[-1]
-        closed = []
-        snapshot.image.close = lambda: closed.append(True)
+        self.assertTrue(stack, f"edição sem passo: original={self.window.current_original_image}")
+        old_file = stack[-1].image.path  # a edição anterior só existe no histórico
+        del stack
         self.window.clear_history()
+        gc.collect()
         self.assertEqual(self._stack("undo"), [])
-        self.assertEqual(closed, [True])
+        self.assertFalse(os.path.exists(old_file))
+        self.assertTrue(os.path.exists(self.window.edited_images[self.window.current_path].path))
 
 
 if __name__ == "__main__":

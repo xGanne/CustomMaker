@@ -17,6 +17,7 @@ from src.core.batch_worker import measure_custom, process_image_task
 from src.core.color_adjustments import cache_token
 from src.core.image_processor import ImageProcessor
 from src.core.rotated_source import RotatedOriginal
+from src.core.spilled_image import SpilledImage, is_lazy_edit
 
 
 logger = logging.getLogger(__name__)
@@ -113,9 +114,10 @@ class BatchController:
         if self.editor_state is not None:
             clone.editor_state = copy.deepcopy(self.editor_state)
         # cópias próprias: o editor fecha a imagem editada anterior ao editar de
-        # novo. Rotação (RotatedOriginal) é imutável e não pesa: vai como está.
+        # novo. Rotação e edição em disco são imutáveis e não pesam: vão como
+        # estão (e a referência mantém o arquivo temporário vivo até o fim do lote).
         clone._edited_source_images = {
-            path: image if isinstance(image, RotatedOriginal) else image.copy()
+            path: image if is_lazy_edit(image) else image.copy()
             for path, image in (self._edited_source_images or {}).items()
         }
         return clone
@@ -155,6 +157,10 @@ class BatchController:
             # só rotação: o worker gira o original — sem temporário no disco
             data["edited"] = True
             data["source_rotation"] = source_image.degrees
+        elif isinstance(source_image, SpilledImage):
+            # edição de IA já está em disco: o worker lê o arquivo, sem regravar
+            data["edited"] = True
+            data["source_path"] = source_image.path
         elif source_image is not None:
             data["edited"] = True
             if write_source:
@@ -185,7 +191,7 @@ class BatchController:
         face_cascade = self._get_face_cascade() if mode == "intelligent" else None
         source_image = self._edited_source_images.get(path)
         try:
-            if isinstance(source_image, RotatedOriginal):
+            if is_lazy_edit(source_image):
                 # o enquadramento só depende das proporções e do rosto: reduzida basta
                 reduced = source_image.load(ImageProcessor.DEFAULT_FIT_DETECTION_MAX_SIDE)
                 try:
