@@ -79,3 +79,24 @@ class TestQtTaskRunner(unittest.TestCase):
         handle.done.connect(lambda _result: done_event.set())
 
         self.assertTrue(self._pump_until(done_event.is_set))
+
+    def test_every_done_callback_runs_and_task_is_gone_first(self):
+        # regressão: o handle era apagado no 1º slot e o `done` dos seguintes
+        # se perdia às vezes (~1 em 8) — a imagem carregada não aparecia
+        runner = qt_task_runner.QtTaskRunner()
+        got = []
+        for i in range(150):
+            task_id = f"qt_many_{i}"
+            handle = runner.submit(task_id, lambda _c, _p, i=i: i)
+            handle.done.connect(lambda result, tid=task_id: got.append((result, runner.has_task(tid))))
+            del handle  # como no app: quem submete não guarda o handle
+            self.assertTrue(self._pump_until(lambda: len(got) > i, timeout=2.0), f"done perdido na task {i}")
+        self.assertEqual(got, [(i, False) for i in range(150)])
+
+    def test_failing_callback_does_not_stop_the_others(self):
+        runner = qt_task_runner.QtTaskRunner()
+        calls = []
+        handle = runner.submit("qt_cb_error", lambda _c, _p: 1)
+        handle.done.connect(lambda _r: 1 / 0)
+        handle.done.connect(lambda r: calls.append(r))
+        self.assertTrue(self._pump_until(lambda: calls == [1]))

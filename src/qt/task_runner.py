@@ -29,14 +29,14 @@ if QT_AVAILABLE:
             try:
                 result = self.fn(self.handle.cancel_event, self._emit_progress)
                 if self.handle.cancel_event.is_set():
-                    self._emit(self.handle.cancelled)
+                    self._emit(self.handle.finished, "cancelled", None)
                 else:
-                    self._emit(self.handle.done, result)
+                    self._emit(self.handle.finished, "done", result)
             except Exception as exc:
                 # M21: garante rastro no log mesmo se nenhum slot estiver
                 # conectado ao sinal de erro
                 logger.exception("Falha na task '%s': %s", self.handle.task_id, exc)
-                self._emit(self.handle.error, exc)
+                self._emit(self.handle.finished, "error", exc)
 
         def _emit_progress(self, *args):
             self._emit(self.handle.progress, *args)
@@ -50,14 +50,41 @@ if QT_AVAILABLE:
                 logger.debug("Task '%s' terminou após o fechamento da janela.", self.handle.task_id)
 
 
+    class _Callbacks:
+        """`done`/`error`/`cancelled` de uma task: mesma interface de um sinal
+        (connect), mas chamados pelo runner, em ordem, no mesmo slot.
+
+        Eram sinais Qt, cada slot com sua própria chamada enfileirada. O
+        runner apagava o handle (deleteLater) no primeiro slot, e a chamada
+        ainda pendente dos slots seguintes podia ser descartada junto: o
+        carregamento terminava e a imagem nunca aparecia (~1 em 8 numa
+        reprodução isolada; falhas que só apareciam no CI).
+        """
+
+        def __init__(self):
+            self._callbacks = []
+
+        def connect(self, callback):
+            self._callbacks.append(callback)
+
+        def emit(self, *args):
+            for callback in list(self._callbacks):
+                try:
+                    callback(*args)
+                except Exception:
+                    # como num slot Qt: registra e segue para os demais
+                    logger.exception("Erro num callback de task")
+
     class QtTaskHandle(QObject):
         progress = Signal(int, int, str)
-        done = Signal(object)
-        error = Signal(object)
-        cancelled = Signal()
+        # um único sinal entre threads; o runner repassa para os callbacks
+        finished = Signal(str, object)
 
         def __init__(self, task_id, fn, pool, parent=None):
             super().__init__(parent)
+            self.done = _Callbacks()
+            self.error = _Callbacks()
+            self.cancelled = _Callbacks()
             self.task_id = task_id
             self.fn = fn
             self.pool = pool
@@ -103,23 +130,32 @@ if QT_AVAILABLE:
             # último ref do runner — que destruía o handle (seu filho) de novo
             runner_ref = weakref.ref(self)
 
-            def cleanup(*_args):
+            def finish(kind, payload):
+                # fora da fila antes dos callbacks: eles podem consultar
+                # has_task ou submeter de novo o mesmo id
                 handle.mark_finished()
                 runner = runner_ref()
                 if runner is not None and runner._tasks.get(task_id) is handle:
                     runner._tasks.pop(task_id, None)
-                handle.deleteLater()  # na GUI thread, depois dos slots deste sinal
+                try:
+                    if kind == "done":
+                        handle.done.emit(payload)
+                    elif kind == "error":
+                        handle.error.emit(payload)
+                    else:
+                        handle.cancelled.emit()
+                finally:
+                    # só depois de todos os callbacks terem rodado
+                    handle.deleteLater()
 
-            handle.done.connect(cleanup)
-            handle.error.connect(cleanup)
-            handle.cancelled.connect(cleanup)
+            handle.finished.connect(finish)
 
             def start_later():
                 runner = runner_ref()
                 if runner is None or runner._tasks.get(task_id) is not handle:
                     return
                 if handle.cancel_event.is_set():
-                    handle.cancelled.emit()
+                    finish("cancelled", None)
                     return
                 handle.start()
 
