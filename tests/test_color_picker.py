@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from _qt_helpers import dispose_window
+from _qt_helpers import dispose_window, wait_for_image
 
 
 compat = importlib.import_module("src.qt.compat")
@@ -57,7 +57,8 @@ class TestColorPicker(unittest.TestCase):
         path = os.path.join(self.tmp, "pick.png")
         image.save(path)
         self.window.add_images([path], replace=True)
-        self.assertTrue(_wait_until(self.app, lambda: not self.window.task_runner._tasks))
+        problem = wait_for_image(self.app, self.window)
+        self.assertFalse(problem, problem)
         self.canvas = self.window.image_canvas
         # 1:1 dentro da borda, para cada pixel da cena ser um pixel da imagem
         bx, by = self.canvas.border_pos

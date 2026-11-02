@@ -16,7 +16,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from _qt_helpers import dispose_window
+from _qt_helpers import dispose_window, wait_for_image
 from src.config.settings import BORDA_HEIGHT as H, BORDA_WIDTH as W, BORDER_THICKNESS
 
 
@@ -155,6 +155,8 @@ class TestPreviewExportParity(unittest.TestCase):
         path = os.path.join(self.tmp, name)
         image.save(path, quality=95) if name.endswith(".jpg") else image.save(path)
         self.window.add_images([path], replace=True)
+        problem = wait_for_image(self.app, self.window)
+        self.assertFalse(problem, problem)
         self._idle()
         return path
 

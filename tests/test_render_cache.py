@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from _qt_helpers import dispose_window
+from _qt_helpers import dispose_window, wait_for_image
 from src.core.render_cache import RenderCache, custom_cache_key
 
 
@@ -110,10 +110,8 @@ class TestReviewUsesTheCache(unittest.TestCase):
             Image.new("RGB", (400, 600), color).save(path)
             self.paths.append(path)
         self.window.add_images(self.paths, replace=True)
-        end = time.monotonic() + 5
-        while self.window.task_runner._tasks and time.monotonic() < end:
-            self.app.processEvents()
-            time.sleep(0.01)
+        problem = wait_for_image(self.app, self.window)
+        self.assertFalse(problem, problem)
 
     def _open(self):
         from shiboken6 import isValid

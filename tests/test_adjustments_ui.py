@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from _qt_helpers import dispose_window
+from _qt_helpers import dispose_window, wait_for_image
 
 
 compat = importlib.import_module("src.qt.compat")
@@ -79,12 +79,8 @@ class TestAdjustmentsInWindow(unittest.TestCase):
             Image.new("RGB", (300, 400), (100, 110, 120)).save(path)
             self.paths.append(path)
         self.window.add_images(self.paths, replace=True)
-        # o carregamento pode nem ter começado quando a fila está vazia: espera a
-        # imagem estar no canvas também
-        self.assertTrue(_wait_until(
-            self.app,
-            lambda: not self.window.task_runner._tasks and self.window.image_canvas._base_image is not None,
-        ))
+        problem = wait_for_image(self.app, self.window)
+        self.assertFalse(problem, problem)
         self.tab = self.window.editor_tab
 
     def _settle(self):

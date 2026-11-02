@@ -143,7 +143,7 @@ class TestBorderStyleInWindow(unittest.TestCase):
         import shutil
         import tempfile
         from unittest.mock import patch
-        from _qt_helpers import dispose_window
+        from _qt_helpers import dispose_window, wait_for_image
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         for patcher in (
@@ -159,11 +159,8 @@ class TestBorderStyleInWindow(unittest.TestCase):
         path = os.path.join(self.tmp, "a.png")
         Image.new("RGB", (300, 400), (40, 120, 200)).save(path)
         self.window.add_images([path], replace=True)
-        import time
-        end = time.monotonic() + 5
-        while self.window.task_runner._tasks and time.monotonic() < end:
-            self.app.processEvents()
-            time.sleep(0.01)
+        problem = wait_for_image(self.app, self.window)
+        self.assertFalse(problem, problem)
 
     def _choose(self, style):
         combo = self.window.options_style_combo
