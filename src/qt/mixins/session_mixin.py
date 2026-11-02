@@ -45,7 +45,9 @@ class SessionMixin:
         store = getattr(self, "session_store", None)
         if store is None:
             return
-        data = snapshot_session(self.editor_state, list(self.edited_images))
+        # rotação vai como graus no JSON: sem PNG da imagem girada inteira
+        rotations = {p: e.degrees for p, e in self.edited_images.items() if isinstance(e, RotatedOriginal)}
+        data = snapshot_session(self.editor_state, list(self.edited_images), rotations)
         if not data["images"]:
             if self._session_signature is not None or force:
                 store.clear()
@@ -60,14 +62,17 @@ class SessionMixin:
             self._session_signature = signature
 
     def _save_session_edits(self, store, synchronous):
-        """Grava as imagens editadas que mudaram desde o último salvamento."""
+        """Grava as imagens editadas (IA) que mudaram desde o último salvamento.
+        Rotações não: vão como graus no JSON da sessão."""
         pending = []
         for path, image in self.edited_images.items():
+            if isinstance(image, RotatedOriginal):
+                self._session_saved_edits.pop(path, None)
+                continue
             saved = self._session_saved_edits.get(path)
             if saved is None or saved() is not image:
                 self._session_saved_edits[path] = weakref.ref(image)
-                # rotação (RotatedOriginal) é imutável: a imagem só é gerada na gravação
-                pending.append((path, image if isinstance(image, RotatedOriginal) else image.copy()))
+                pending.append((path, image.copy()))
         for path in list(self._session_saved_edits):
             if path not in self.edited_images:
                 self._session_saved_edits.pop(path, None)
@@ -77,8 +82,6 @@ class SessionMixin:
         def write_all(*_args):
             for path, image in pending:
                 try:
-                    if isinstance(image, RotatedOriginal):
-                        image = image.load()
                     store.write_edit(path, image)
                 except Exception as exc:
                     logger.warning("Não foi possível salvar a edição de %s na sessão: %s", path, exc)
@@ -127,6 +130,12 @@ class SessionMixin:
                 self._session_saved_edits[path] = weakref.ref(self.edited_images[path])
             except Exception as exc:
                 logger.warning("Edição salva de %s não pôde ser lida: %s", path, exc)
+        for path, degrees in (data.get("rotations") or {}).items():
+            if path in self.editor_state.image_list and path not in self.edited_images:
+                try:
+                    self.edited_images[path] = RotatedOriginal(path, int(degrees))
+                except (TypeError, ValueError):
+                    logger.warning("Rotação salva inválida para %s: %r", path, degrees)
 
         self.image_list_panel.set_paths(self.editor_state.image_list)
         self.refresh_list_indicators()

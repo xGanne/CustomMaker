@@ -21,8 +21,12 @@ def _edit_file_name(path):
     return hashlib.sha1(path.encode("utf-8")).hexdigest() + ".png"
 
 
-def snapshot_session(editor_state, edited_paths):
-    """Dicionário serializável com o estado de trabalho atual."""
+def snapshot_session(editor_state, edited_paths, rotations=None):
+    """Dicionário serializável com o estado de trabalho atual.
+
+    `edited_paths`: imagens com pixels editados (gravadas em PNG à parte);
+    `rotations`: {path: graus} das edições só de rotação — vão no JSON."""
+    rotations = rotations or {}
     bx, by = editor_state.borda_pos
     states = {}
     for path, state in editor_state.image_states.items():
@@ -43,7 +47,11 @@ def snapshot_session(editor_state, edited_paths):
         "animation_type": editor_state.animation_type,
         "border_style": editor_state.border_style,
         "adjustments": {p: dict(a) for p, a in editor_state.image_adjustments.items() if p in editor_state.image_list},
-        "edits": {path: _edit_file_name(path) for path in edited_paths if path in editor_state.image_list},
+        "edits": {
+            path: _edit_file_name(path)
+            for path in edited_paths if path in editor_state.image_list and path not in rotations
+        },
+        "rotations": {path: int(deg) for path, deg in rotations.items() if path in editor_state.image_list},
     }
 
 

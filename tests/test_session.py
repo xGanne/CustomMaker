@@ -93,8 +93,7 @@ compat = importlib.import_module("src.qt.compat")
 
 @unittest.skipUnless(compat.QT_AVAILABLE, "PySide6 not installed")
 class TestSessionEditTracking(_TempDirTestCase):
-    def test_every_new_rotation_is_written_even_if_python_reuses_the_id(self):
-        from src.core.rotated_source import RotatedOriginal
+    def test_every_new_edit_is_written_even_if_python_reuses_the_id(self):
         from src.qt.mixins.session_mixin import SessionMixin
 
         class Store:
@@ -108,14 +107,31 @@ class TestSessionEditTracking(_TempDirTestCase):
         path, store = self.paths[0], Store()
         store.written = []
         for _ in range(30):  # o reuso do id depende da memória: muitas voltas o provocam
-            holder.edited_images[path] = RotatedOriginal(path, 90)
+            holder.edited_images[path] = Image.new("RGBA", (4, 4))
             holder._save_session_edits(store, True)
-            holder.edited_images[path] = RotatedOriginal(path, 180)  # sem salvar no meio
-            holder.edited_images[path] = RotatedOriginal(path, 270)  # pode reusar o id do 90
+            holder.edited_images[path] = Image.new("RGBA", (4, 4))  # sem salvar no meio
+            holder.edited_images[path] = Image.new("RGBA", (4, 4))  # pode reusar o id do 1º
             holder._save_session_edits(store, True)
         self.assertEqual(len(store.written), 60)
         holder._save_session_edits(store, True)  # nada mudou: não grava de novo
         self.assertEqual(len(store.written), 60)
+
+    def test_rotations_go_in_the_json_without_png(self):
+        from src.core.rotated_source import RotatedOriginal
+        from src.qt.mixins.session_mixin import SessionMixin
+        state = EditorState(image_list=list(self.paths))
+        data = snapshot_session(state, [self.paths[0], self.paths[1]], {self.paths[0]: 90})
+        self.assertEqual(data["rotations"], {self.paths[0]: 90})
+        self.assertEqual(list(data["edits"]), [self.paths[1]])  # só a edição de pixels vira PNG
+
+        class Store:
+            def write_edit(self, path, image):
+                raise AssertionError("rotação não deve gerar PNG")
+
+        holder = SessionMixin()
+        holder.edited_images = {self.paths[0]: RotatedOriginal(self.paths[0], 90)}
+        holder._session_saved_edits = {}
+        holder._save_session_edits(Store(), True)
 
 
 class TestSessionInWindow(_TempDirTestCase):
@@ -160,6 +176,21 @@ class TestSessionInWindow(_TempDirTestCase):
         restored = self._window(compat.QMessageBox.Yes)
         self.assertEqual(restored.editor_state.image_list, self.paths)
         self.assertEqual(restored.editor_state.individual_bordas, {self.paths[2]: restored.editor_state.selected_borda})
+        restored.close()
+
+    def test_rotation_is_restored_as_degrees(self):
+        from src.core.rotated_source import RotatedOriginal
+        window = self._window(compat.QMessageBox.Yes)
+        window.add_images(self.paths, replace=True)
+        self._pump(0.5)
+        path = window.current_path
+        window.rotate_current_image("left")
+        window.close()
+        restored = self._window(compat.QMessageBox.Yes)
+        edited = restored.edited_images.get(path)
+        self.assertIsInstance(edited, RotatedOriginal)
+        self.assertEqual(edited.degrees, 90)
+        self.assertFalse(os.path.exists(self.store.edit_path(path)))  # nenhum PNG da imagem girada
         restored.close()
 
     def test_declining_restore_discards_session(self):
