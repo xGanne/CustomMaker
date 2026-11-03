@@ -2,7 +2,7 @@ import logging
 import os
 
 from src.core.app_config import AppConfig
-from src.core.logging_config import configure_logging
+from src.core.logging_config import configure_logging, install_error_logging, qt_message_handler
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.main_window import QtMainWindow
 from src.qt.theme import build_stylesheet, set_active_theme
@@ -34,6 +34,10 @@ def main():
 
     app_config = AppConfig()
     configure_logging(app_config.get("log_level", "INFO"))
+    # erros não tratados, avisos do Qt e crash nativo também vão para o log
+    install_error_logging()
+    from PySide6.QtCore import qInstallMessageHandler
+    qInstallMessageHandler(qt_message_handler)
 
     from src.utils.resource_loader import app_data_path
     env_path = app_data_path(".env")

@@ -568,6 +568,7 @@ if QT_AVAILABLE:
                 ("review.open", "Revisar customs", lambda: self.open_review(), "Exportar", "", ("grade", "previa"), has_images, False),
                 ("review.sizes", "Calcular tamanhos das customs", lambda: self.open_review(measure=True), "Exportar", "", ("peso", "mb"), has_images, False),
                 ("app.settings", "Configurações", self._open_settings, "App", "", ("preferencias", "opcoes"), None, False),
+                ("app.logs", "Abrir pasta de logs", self.open_log_folder, "App", "", ("erro", "bug", "crash", "relatorio"), None, False),
                 ("tab.editor", "Ir para a aba Edição", lambda: self.tabs.setCurrentIndex(0), "Navegar", "", (), None, False),
                 ("tab.online", "Ir para a aba Online (Danbooru)", self._focus_online_search, "Navegar", "", ("buscar", "danbooru"), None, False),
                 ("tab.ai", "Ir para a aba IA", lambda: self.tabs.setCurrentIndex(2), "Navegar", "", (), None, False),
@@ -613,6 +614,15 @@ if QT_AVAILABLE:
 
             reg.add_provider(dynamic)
             return reg
+
+        def open_log_folder(self):
+            """Pasta com app.log e crash.log: o que anexar ao relatar um bug."""
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            from src.core.logging_config import LOG_DIR
+            os.makedirs(LOG_DIR, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(LOG_DIR)):
+                self.show_status(f"Logs em: {LOG_DIR}")
 
         def _apply_preset_by_name(self, name):
             data = self.preset_manager.get_preset(name)
