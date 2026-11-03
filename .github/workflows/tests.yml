@@ -3,6 +3,8 @@ name: Testes
 on:
   push:
     branches: [main]
+    # tag de versão (ex.: v1.1.0): além dos testes, publica a Release com o exe
+    tags: ['v*']
   pull_request:
 
 # um push novo cancela a execução anterior ainda em andamento na mesma branch
@@ -65,6 +67,8 @@ jobs:
     needs: pytest
     runs-on: windows-latest
     timeout-minutes: 25
+    permissions:
+      contents: write  # criar a Release nas tags de versão
     env:
       QT_QPA_PLATFORM: offscreen
       PYTHONIOENCODING: utf-8
@@ -127,3 +131,19 @@ jobs:
             dist/CustomMaker.exe
             selftest-report.txt
           retention-days: 14
+
+      # tag v<versão>: confere com src/version.py e publica a Release com o exe
+      # (o app consulta a última Release para avisar de versão nova)
+      - name: Publicar Release
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version=$(python -c "from src.version import __version__; print(__version__)")
+          if [ "$tag" != "v$version" ]; then
+            echo "::error title=Versão não bate::a tag é $tag, mas src/version.py diz $version"
+            exit 1
+          fi
+          gh release create "$tag" dist/CustomMaker.exe --title "Custom Maker $version" --generate-notes
