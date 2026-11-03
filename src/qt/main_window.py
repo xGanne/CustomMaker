@@ -15,6 +15,7 @@ A lógica de domínio está nos mixins em src/qt/mixins/:
   • AnimationMixin    — loop de prévia de borda animada
   • ExportMixin       — salvar/zip/upload em lote
 """
+import logging
 import os
 import sys
 import time as _time
@@ -44,6 +45,8 @@ from src.qt.widgets.image_canvas import ImageCanvas
 from src.qt.widgets.image_list_panel import ImageListPanel
 from src.utils.resource_loader import resource_path
 from src.version import __version__
+
+logger = logging.getLogger(__name__)
 
 if QT_AVAILABLE:
     from src.qt.compat import (
@@ -622,6 +625,7 @@ if QT_AVAILABLE:
         # ── Versão nova ────────────────────────────────────────────────────
 
         UPDATE_CHECK_DELAY_MS = 5000
+        _update_ready = None  # {"version", "path"} depois do download
 
         def _schedule_update_check(self):
             """Só no exe: quem roda do código-fonte atualiza pelo git."""
@@ -629,9 +633,14 @@ if QT_AVAILABLE:
                 QTimer.singleShot(self.UPDATE_CHECK_DELAY_MS, self.check_for_updates)
 
         def check_for_updates(self, manual=False):
-            """Consulta a última Release em segundo plano; avisa se houver versão
-            nova (sem baixar nem instalar nada sozinho)."""
+            """Consulta a última Release em segundo plano. Havendo versão nova, baixa
+            e oferece reiniciar; onde não dá para trocar o exe, oferece a página."""
+            from src.core.self_update import can_self_update
             from src.core.update_check import fetch_latest_release, update_to_offer
+            if self._update_ready is not None:
+                if manual:
+                    self.show_status(f"A versão {self._update_ready['version']} já está pronta: reinicie para atualizar.")
+                return
             dismissed = None if manual else self.app_config.get("update_dismissed_version")
             handle = self.task_runner.submit("qt_update_check", lambda _c, _p: fetch_latest_release())
             if handle is None:
@@ -642,7 +651,11 @@ if QT_AVAILABLE:
                     return
                 offer = update_to_offer(release, __version__, dismissed)
                 if offer:
-                    self._offer_update(offer)
+                    automatic = manual or self.app_config.get("auto_download_updates", True)
+                    if automatic and offer.get("exe_url") and can_self_update():
+                        self._download_update(offer, manual)
+                    else:
+                        self._offer_update(offer)
                 elif manual:
                     self.show_status(
                         f"Você já está na versão mais nova ({__version__})." if release
@@ -650,6 +663,53 @@ if QT_AVAILABLE:
                     )
 
             handle.done.connect(on_done)
+
+        def _download_update(self, release, manual=False):
+            """Sem janela nem barra de progresso: quem trabalha não é interrompido."""
+            from src.core.self_update import download_update
+            handle = self.task_runner.submit(
+                "qt_update_download", lambda cancel_event, _p: download_update(release, cancel_event)
+            )
+            if handle is None:
+                return  # já baixando
+            if manual:
+                self.show_status(f"Baixando a versão {release['version']}...", timeout_ms=10000)
+
+            def on_done(path):
+                if path and self._window_alive():
+                    self._show_update_ready(release, path)
+
+            def on_error(exc):
+                logger.warning("Download da versão %s falhou: %s", release["version"], exc)
+                if manual and self._window_alive():
+                    self._offer_update(release)  # a página continua sendo um caminho
+
+            handle.done.connect(on_done)
+            handle.error.connect(on_error)
+
+        def _show_update_ready(self, release, path):
+            self._update_ready = {"version": release["version"], "path": path}
+            button = QPushButton(f"Reiniciar para atualizar ({release['version']})")
+            button.setToolTip("Fecha o app (salvando a sessão), troca a versão e abre de novo.")
+            button.clicked.connect(self.restart_to_update)
+            self._update_button = button
+            self.statusBar().addPermanentWidget(button)
+            self.show_status(f"Versão {release['version']} pronta para instalar.", timeout_ms=10000)
+
+        def restart_to_update(self):
+            from src.core.self_update import apply_update, discard_staged, stage_update
+            exe_path = sys.executable
+            try:
+                staged = stage_update(self._update_ready["path"], exe_path)
+            except OSError as exc:
+                logger.warning("Não foi possível preparar a atualização: %s", exc)
+                self.show_error("Atualização", f"Não foi possível preparar a atualização: {exc}")
+                return
+            if not self.close():  # a pergunta de sair foi recusada: segue trabalhando
+                discard_staged(staged)
+                return
+            apply_update(staged, exe_path)
+            QApplication.quit()
 
         def _offer_update(self, release):
             box = QMessageBox(self)

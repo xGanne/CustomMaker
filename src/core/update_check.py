@@ -1,4 +1,4 @@
-"""Aviso de versão nova: consulta a última Release do GitHub (sem atualizar sozinho)."""
+"""Versão nova: consulta a última Release do GitHub (a troca do exe fica em self_update)."""
 
 import logging
 import re
@@ -6,6 +6,7 @@ import re
 logger = logging.getLogger(__name__)
 
 RELEASES_API = "https://api.github.com/repos/xGanne/CustomMaker/releases/latest"
+EXE_ASSET_NAME = "CustomMaker.exe"
 
 
 def parse_version(text):
@@ -41,7 +42,21 @@ def fetch_latest_release(timeout=8):
     tag, url = data.get("tag_name"), data.get("html_url")
     if data.get("draft") or data.get("prerelease") or not tag or not url:
         return None
-    return {"version": tag.lstrip("v"), "url": url}
+    release = {"version": tag.lstrip("v"), "url": url}
+    release.update(_exe_asset(data.get("assets")))
+    return release
+
+
+def _exe_asset(assets):
+    """Link e SHA-256 do exe, se a Release tiver: sem os dois, só dá para avisar.
+
+    O hash vem da API e o arquivo do CDN: um download corrompido ou trocado no
+    caminho não passa. Não é assinatura — a origem de ambos é o GitHub."""
+    for asset in assets or []:
+        url, digest = asset.get("browser_download_url") or "", asset.get("digest") or ""
+        if asset.get("name") == EXE_ASSET_NAME and url.startswith("https://") and digest.startswith("sha256:"):
+            return {"exe_url": url, "sha256": digest.split(":", 1)[1]}
+    return {}
 
 
 def update_to_offer(release, current, dismissed=None):

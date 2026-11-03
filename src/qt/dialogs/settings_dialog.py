@@ -5,6 +5,7 @@ from src.qt.theme import tokens
 
 if QT_AVAILABLE:
     from src.qt.compat import (
+        QCheckBox,
         QComboBox,
         QDialog,
         QDialogButtonBox,
@@ -65,6 +66,18 @@ if QT_AVAILABLE:
             theme_note.setWordWrap(True)
             theme_note.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px; margin-top: 8px;")
             layout.addWidget(theme_note)
+
+            layout.addSpacing(12)
+            self._auto_download_updates = QCheckBox("Baixar atualizações automaticamente")
+            self._auto_download_updates.setChecked(bool(self.app_config.get("auto_download_updates", True)))
+            layout.addWidget(self._auto_download_updates)
+            update_note = QLabel(
+                "A versão nova é baixada em segundo plano e só é instalada quando você "
+                "clicar em Reiniciar para atualizar. Desligado, o app só avisa."
+            )
+            update_note.setWordWrap(True)
+            update_note.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px;")
+            layout.addWidget(update_note)
             layout.addStretch(1)
             return widget
 
@@ -256,6 +269,7 @@ if QT_AVAILABLE:
             theme = self._theme.currentData()
             self.theme_changed = theme != self.app_config.get("ui_theme_variant", DEFAULT_THEME_VARIANT)
             self.app_config.set("ui_theme_variant", theme)
+            self.app_config.set("auto_download_updates", self._auto_download_updates.isChecked())
             self.app_config.set("ai_mode", self._ai_mode.currentText())
             prompt = self._ai_base_prompt.toPlainText().strip()
             if prompt:
