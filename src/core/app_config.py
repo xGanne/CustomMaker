@@ -71,6 +71,9 @@ DEFAULT_CONFIG = {
     "command_palette_recent": [],
     "command_palette_hint_shown": False,
     "canvas_guides_pinned": False,
+    # aviso de versão nova (só no exe): a versão dispensada não é oferecida de novo
+    "check_updates": True,
+    "update_dismissed_version": None,
 }
 
 

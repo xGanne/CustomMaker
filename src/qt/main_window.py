@@ -16,6 +16,7 @@ A lógica de domínio está nos mixins em src/qt/mixins/:
   • ExportMixin       — salvar/zip/upload em lote
 """
 import os
+import sys
 import time as _time
 from collections import OrderedDict
 
@@ -42,6 +43,7 @@ from src.qt.task_runner import QtTaskRunner
 from src.qt.widgets.image_canvas import ImageCanvas
 from src.qt.widgets.image_list_panel import ImageListPanel
 from src.utils.resource_loader import resource_path
+from src.version import __version__
 
 if QT_AVAILABLE:
     from src.qt.compat import (
@@ -131,7 +133,7 @@ if QT_AVAILABLE:
             # Color picker state
             self._color_picker_enabled = False
 
-            self.setWindowTitle("Custom Maker Pro (Qt)")
+            self.setWindowTitle(f"Custom Maker Pro {__version__}")
             self.resize(1440, 920)
             self._apply_icon()
             self.setAcceptDrops(True)
@@ -150,6 +152,7 @@ if QT_AVAILABLE:
                 )
             else:
                 self.show_status("UI Qt pronta.")
+            self._schedule_update_check()
 
         FACE_DETECTION_UNAVAILABLE_TIP = (
             "Indisponível: lbpcascade_animeface.xml não foi encontrado, "
@@ -568,6 +571,7 @@ if QT_AVAILABLE:
                 ("review.open", "Revisar customs", lambda: self.open_review(), "Exportar", "", ("grade", "previa"), has_images, False),
                 ("review.sizes", "Calcular tamanhos das customs", lambda: self.open_review(measure=True), "Exportar", "", ("peso", "mb"), has_images, False),
                 ("app.settings", "Configurações", self._open_settings, "App", "", ("preferencias", "opcoes"), None, False),
+                ("app.update", "Verificar atualizações", lambda: self.check_for_updates(manual=True), "App", "", ("versao", "nova", "baixar"), None, False),
                 ("app.logs", "Abrir pasta de logs", self.open_log_folder, "App", "", ("erro", "bug", "crash", "relatorio"), None, False),
                 ("tab.editor", "Ir para a aba Edição", lambda: self.tabs.setCurrentIndex(0), "Navegar", "", (), None, False),
                 ("tab.online", "Ir para a aba Online (Danbooru)", self._focus_online_search, "Navegar", "", ("buscar", "danbooru"), None, False),
@@ -614,6 +618,57 @@ if QT_AVAILABLE:
 
             reg.add_provider(dynamic)
             return reg
+
+        # ── Versão nova ────────────────────────────────────────────────────
+
+        UPDATE_CHECK_DELAY_MS = 5000
+
+        def _schedule_update_check(self):
+            """Só no exe: quem roda do código-fonte atualiza pelo git."""
+            if getattr(sys, "frozen", False) and self.app_config.get("check_updates", True):
+                QTimer.singleShot(self.UPDATE_CHECK_DELAY_MS, self.check_for_updates)
+
+        def check_for_updates(self, manual=False):
+            """Consulta a última Release em segundo plano; avisa se houver versão
+            nova (sem baixar nem instalar nada sozinho)."""
+            from src.core.update_check import fetch_latest_release, update_to_offer
+            dismissed = None if manual else self.app_config.get("update_dismissed_version")
+            handle = self.task_runner.submit("qt_update_check", lambda _c, _p: fetch_latest_release())
+            if handle is None:
+                return  # já checando
+
+            def on_done(release):
+                if not self._window_alive():
+                    return
+                offer = update_to_offer(release, __version__, dismissed)
+                if offer:
+                    self._offer_update(offer)
+                elif manual:
+                    self.show_status(
+                        f"Você já está na versão mais nova ({__version__})." if release
+                        else "Não foi possível consultar a versão mais nova (sem internet?)."
+                    )
+
+            handle.done.connect(on_done)
+
+        def _offer_update(self, release):
+            box = QMessageBox(self)
+            box.setWindowTitle("Versão nova")
+            box.setText(f"O Custom Maker {release['version']} está disponível (você usa {__version__}).")
+            box.setInformativeText("Abrir a página de download? O app não se atualiza sozinho.")
+            open_btn = box.addButton("Abrir página", QMessageBox.AcceptRole)
+            box.addButton("Agora não", QMessageBox.RejectRole)
+            skip_btn = box.addButton("Não avisar desta versão", QMessageBox.DestructiveRole)
+            box.setDefaultButton(open_btn)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is open_btn:
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+                QDesktopServices.openUrl(QUrl(release["url"]))
+            elif clicked is skip_btn:
+                self.app_config.set("update_dismissed_version", release["version"])
+                self.app_config.save()
 
         def open_log_folder(self):
             """Pasta com app.log e crash.log: o que anexar ao relatar um bug."""
