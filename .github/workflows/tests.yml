@@ -122,6 +122,36 @@ jobs:
             echo "::error title=--batch do exe::o executável não gerou o relatório"
           fi
 
+      # autoatualização de verdade: uma cópia do exe se troca por outra e reabre
+      # com --self-test. Só no exe dá para provar a troca e o reinício do PyInstaller
+      - name: Autoatualização no executável
+        shell: bash
+        run: |
+          mkdir upd
+          cp dist/CustomMaker.exe upd/CustomMaker.exe
+          cp dist/CustomMaker.exe upd/novo.exe
+          ./upd/CustomMaker.exe --update-smoke upd/novo.exe relaunched.txt
+          for _ in $(seq 1 90); do
+            if [ -f upd/relaunched.txt ]; then break; fi
+            sleep 2
+          done
+          if [ ! -f upd/relaunched.txt ]; then
+            echo "::error title=Autoatualização::o exe trocado não reabriu (sem relatório)"
+            exit 1
+          fi
+          cat upd/relaunched.txt
+          if grep -q "FALHOU" upd/relaunched.txt; then
+            echo "::error title=Autoatualização::o exe trocado reabriu, mas o autoteste falhou"
+            exit 1
+          fi
+          if [ -e upd/CustomMaker.exe.new ]; then
+            echo "::error title=Autoatualização::sobrou o .new"
+            exit 1
+          fi
+          if [ -e upd/CustomMaker.exe.old ]; then
+            echo "::warning title=Autoatualização::o .old ainda não foi apagado"
+          fi
+
       - name: Publicar o executável
         if: success()
         uses: actions/upload-artifact@v7
