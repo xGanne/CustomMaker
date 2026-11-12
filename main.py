@@ -17,8 +17,9 @@ if __name__ == "__main__":
         raise SystemExit(0 if ok else 1)
     if getattr(sys, "frozen", False):
         # sobras da atualização anterior (.old, download já instalado)
-        from src.core.self_update import cleanup_previous_in_background
+        from src.core.self_update import cleanup_previous_in_background, hold_instance_lock
         from src.version import __version__
+        hold_instance_lock()
         cleanup_previous_in_background(__version__)
     if "--batch" in sys.argv:
         # modo linha de comando (sem janela; não importa o Qt): ver src/cli.py

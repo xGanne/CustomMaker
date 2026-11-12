@@ -22,12 +22,60 @@ from src.utils.resource_loader import app_data_path
 logger = logging.getLogger(__name__)
 
 CHUNK_BYTES = 1024 * 1024
-# o novo exe é considerado ok se ainda está rodando depois deste tempo
-LAUNCH_CHECK_SECONDS = 3
+# espera a confirmação do exe novo (só se extrair já leva segundos); passado
+# isto ele é dado como aberto: pode ser só um antivírus demorando
+START_TIMEOUT_SECONDS = 60
+STARTED_FILE_ENV = "CUSTOMMAKER_UPDATE_STARTED_FILE"
+INSTANCE_LOCK_NAME = "instance.lock"
+
+_instance_lock = None
 
 
 def updates_dir():
     return app_data_path("updates")
+
+
+def hold_instance_lock(folder=None):
+    """Mantém um arquivo aberto enquanto este processo vive (ver abaixo)."""
+    global _instance_lock
+    folder = folder or updates_dir()
+    try:
+        os.makedirs(folder, exist_ok=True)
+        _instance_lock = open(os.path.join(folder, INSTANCE_LOCK_NAME), "ab")
+    except OSError as exc:
+        logger.info("Sem trava de instância: %s", exc)
+
+
+def other_instances_running(folder=None):
+    """Há outro CustomMaker aberto? Não dá para trocar o exe com ele rodando: o
+    PyInstaller relê o exe a cada import, e a outra janela passaria a ler o
+    arquivo novo com os endereços do antigo. O Windows não apaga arquivo aberto:
+    soltando a nossa trava, se o apagar falhar, alguém mais a segura."""
+    global _instance_lock
+    folder = folder or updates_dir()
+    if _instance_lock is not None:
+        _instance_lock.close()
+        _instance_lock = None
+    try:
+        os.remove(os.path.join(folder, INSTANCE_LOCK_NAME))
+        busy = False
+    except FileNotFoundError:
+        busy = False
+    except OSError:
+        busy = True
+    hold_instance_lock(folder)
+    return busy
+
+
+def mark_started():
+    """O app novo avisa que abriu de verdade: quem atualizou pode sair."""
+    path = os.environ.pop(STARTED_FILE_ENV, None)
+    if path:
+        try:
+            with open(path, "w", encoding="utf-8"):
+                pass
+        except OSError as exc:
+            logger.info("Não foi possível confirmar a abertura: %s", exc)
 
 
 def can_self_update(exe_path=None):
@@ -99,7 +147,11 @@ def stage_update(downloaded, exe_path):
     (disco, permissão): roda antes de fechar o app e sem tocar no exe atual."""
     import shutil
     staged = exe_path + ".new"
-    shutil.copyfile(downloaded, staged)
+    try:
+        shutil.copyfile(downloaded, staged)
+    except BaseException:
+        _remove(staged)  # disco cheio: não deixa meia cópia
+        raise
     return staged
 
 
@@ -107,11 +159,13 @@ def discard_staged(staged):
     _remove(staged)
 
 
-def _launch(exe_path, args=()):
+def _launch(exe_path, args=(), started_file=None):
     env = dict(os.environ)
     # sem isto o exe novo herda o estado do PyInstaller deste processo e se
     # comporta como filho dele (usaria a pasta temporária que está sendo apagada)
     env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    if started_file:
+        env[STARTED_FILE_ENV] = started_file
     flags = 0
     if os.name == "nt":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
@@ -120,11 +174,42 @@ def _launch(exe_path, args=()):
     )
 
 
-def apply_update(staged, exe_path, args=(), check_seconds=LAUNCH_CHECK_SECONDS):
+def _replace_with_retry(source, target, attempts=6, delay=0.5):
+    """O antivírus costuma segurar um exe recém-gravado por um instante."""
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
+
+
+def _wait_started(process, started_file, timeout):
+    """Espera o exe novo confirmar que abriu; exceção se ele morrer antes."""
+    deadline = time.monotonic() + timeout
+    while True:
+        if os.path.exists(started_file):
+            return
+        code = process.poll()
+        if code == 0:
+            return  # terminou bem sem janela (--self-test)
+        if code is not None:
+            raise RuntimeError(f"o exe novo saiu com código {code}")
+        if time.monotonic() >= deadline:
+            logger.warning("Atualização: o exe novo não confirmou em %s s.", timeout)
+            return
+        time.sleep(0.2)
+
+
+def apply_update(staged, exe_path, args=(), start_timeout=START_TIMEOUT_SECONDS):
     """Troca o exe e abre o novo. Chamar com a janela já fechada, logo antes de
-    sair. Nunca deixa o usuário sem app: em qualquer falha, o antigo volta e é
+    sair. Nunca deixa o usuário sem app: se o novo não abrir, o antigo volta e é
     aberto. Devolve True se o novo abriu."""
     old = exe_path + ".old"
+    started_file = exe_path + ".started"
+    _remove(started_file)
     _remove(old)  # sobra de uma atualização anterior
     try:
         os.replace(exe_path, old)
@@ -134,26 +219,22 @@ def apply_update(staged, exe_path, args=(), check_seconds=LAUNCH_CHECK_SECONDS):
         _relaunch_quietly(exe_path, args)
         return False
     try:
-        os.replace(staged, exe_path)
-        process = _launch(exe_path, args)
-        try:
-            code = process.wait(timeout=check_seconds)
-        except subprocess.TimeoutExpired:
-            return True  # segue rodando
-        if code == 0:
-            return True
-        raise RuntimeError(f"o exe novo saiu com código {code}")
+        _replace_with_retry(staged, exe_path)
+        _wait_started(_launch(exe_path, args, started_file), started_file, start_timeout)
+        return True
     except Exception as exc:
         logger.error("Atualização desfeita, voltando ao exe anterior: %s", exc)
         _restore(old, exe_path)
         _remove(staged)
         _relaunch_quietly(exe_path, args)
         return False
+    finally:
+        _remove(started_file)
 
 
 def _restore(old, exe_path):
     try:
-        os.replace(old, exe_path)
+        _replace_with_retry(old, exe_path)
     except OSError as exc:
         logger.critical("Atualização: não foi possível restaurar %s: %s", exe_path, exc)
 

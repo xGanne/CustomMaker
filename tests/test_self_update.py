@@ -3,6 +3,7 @@ import importlib
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -79,27 +80,78 @@ class TestDownload(_TempCase):
 class TestApply(_TempCase):
     def _running(self):
         process = MagicMock()
-        process.wait.side_effect = subprocess.TimeoutExpired("exe", 1)
+        process.poll.return_value = None
         return process
 
     def test_swaps_and_launches_the_new_exe(self):
         with patch.object(self_update, "_launch", return_value=self._running()) as launch:
-            self.assertTrue(self_update.apply_update(self.staged, self.exe, check_seconds=0))
+            self.assertTrue(self_update.apply_update(self.staged, self.exe, start_timeout=0))
         self.assertEqual(self._read(self.exe), b"novo")
         self.assertEqual(self._read(self.exe + ".old"), b"antigo")
-        launch.assert_called_once_with(self.exe, ())
+        launch.assert_called_once_with(self.exe, (), self.exe + ".started")
 
     def test_new_exe_that_dies_brings_the_old_one_back(self):
         crashed = MagicMock()
-        crashed.wait.return_value = 3
+        crashed.poll.return_value = 3
         with patch.object(self_update, "_launch", side_effect=[crashed, self._running()]) as launch:
-            self.assertFalse(self_update.apply_update(self.staged, self.exe, check_seconds=0))
+            self.assertFalse(self_update.apply_update(self.staged, self.exe, start_timeout=0))
         self.assertEqual(self._read(self.exe), b"antigo")
         self.assertEqual(launch.call_count, 2)  # o antigo foi reaberto
 
+    def test_crash_after_seconds_extracting_still_rolls_back(self):
+        # um exe de arquivo único só se extrai por segundos: o crash vem depois
+        slow_crash = MagicMock()
+        slow_crash.poll.side_effect = [None, None, 1]
+        with patch.object(self_update, "_launch", side_effect=[slow_crash, self._running()]):
+            self.assertFalse(self_update.apply_update(self.staged, self.exe, start_timeout=30))
+        self.assertEqual(self._read(self.exe), b"antigo")
+
+    def test_confirmation_from_the_new_app_ends_the_wait(self):
+        process = self._running()
+
+        def launch(_exe, _args, started_file):
+            with patch.dict(os.environ, {self_update.STARTED_FILE_ENV: started_file}):
+                self_update.mark_started()  # o que o app novo faz ao abrir
+                self.assertNotIn(self_update.STARTED_FILE_ENV, os.environ)
+            return process
+
+        with patch.object(self_update, "_launch", side_effect=launch):
+            started = time.monotonic()
+            self.assertTrue(self_update.apply_update(self.staged, self.exe, start_timeout=30))
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertFalse(os.path.exists(self.exe + ".started"))
+
+    def test_antivirus_holding_the_new_exe_is_waited(self):
+        real_replace = os.replace
+        calls = []
+
+        def flaky(source, target):
+            calls.append(source)
+            if source == self.staged and calls.count(source) < 3:
+                raise PermissionError("em análise")
+            real_replace(source, target)
+
+        with patch.object(self_update.os, "replace", side_effect=flaky), \
+                patch.object(self_update.time, "sleep"), \
+                patch.object(self_update, "_launch", return_value=self._running()):
+            self.assertTrue(self_update.apply_update(self.staged, self.exe, start_timeout=0))
+        self.assertEqual(self._read(self.exe), b"novo")
+
+    def test_failed_copy_leaves_no_partial_file(self):
+        os.remove(self.staged)
+
+        def partial(_source, target):
+            self._write(target, b"meio")
+            raise OSError("disco cheio")
+
+        with patch("shutil.copyfile", side_effect=partial):
+            with self.assertRaises(OSError):
+                self_update.stage_update("x", self.exe)
+        self.assertFalse(os.path.exists(self.staged))
+
     def test_launch_failure_brings_the_old_one_back(self):
         with patch.object(self_update, "_launch", side_effect=[OSError("bloqueado"), self._running()]):
-            self.assertFalse(self_update.apply_update(self.staged, self.exe, check_seconds=0))
+            self.assertFalse(self_update.apply_update(self.staged, self.exe, start_timeout=0))
         self.assertEqual(self._read(self.exe), b"antigo")
 
     def test_exe_that_cannot_be_moved_stays_and_reopens(self):
@@ -120,6 +172,36 @@ class TestApply(_TempCase):
         self.assertTrue(self_update.apply_update(self.staged, self.exe, args=["-n", "1", "127.0.0.1"]))
         self.assertTrue(os.path.exists(self.exe + ".old"))
         self.assertFalse(os.path.exists(self.staged))
+
+
+@unittest.skipUnless(os.name == "nt", "o Windows não apaga arquivo aberto")
+class TestInstanceLock(_TempCase):
+    def setUp(self):
+        super().setUp()
+
+        def release():
+            if self_update._instance_lock is not None:
+                self_update._instance_lock.close()
+                self_update._instance_lock = None
+
+        self.addCleanup(release)
+
+    def test_detects_another_process_holding_the_lock(self):
+        self_update.hold_instance_lock(self.tmp)
+        self.assertFalse(self_update.other_instances_running(self.tmp))  # só este processo
+
+        path = os.path.join(self.tmp, self_update.INSTANCE_LOCK_NAME)
+        code = f"import sys,time; f=open({path!r},'ab'); print('ok',flush=True); time.sleep(30)"
+        other = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE)
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        other.stdout.readline()
+        self.assertTrue(self_update.other_instances_running(self.tmp))
+
+        other.kill()
+        other.wait()
+        self.assertFalse(self_update.other_instances_running(self.tmp))
+        self.assertIsNotNone(self_update._instance_lock)  # continua segurando a própria
 
 
 class TestCleanup(_TempCase):
@@ -158,6 +240,8 @@ class TestUpdateInWindow(_TempCase):
         for patcher in (
             patch("src.core.app_config.CONFIG_FILE", os.path.join(self.tmp, "config.json")),
             patch("src.core.preset_manager.PRESETS_FILE", os.path.join(self.tmp, "presets.json")),
+            # a trava real fica na pasta de dados do usuário
+            patch("src.core.self_update.other_instances_running", return_value=False),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -208,6 +292,17 @@ class TestUpdateInWindow(_TempCase):
         self.assertEqual((self.window._update_ready, self.pages), (None, []))
         self._check(download=fail, manual=True)
         self.assertEqual(len(self.pages), 1)
+
+    def test_other_window_open_blocks_the_swap(self):
+        self.window._update_ready = {"version": "9.0.0", "path": self.staged}
+        self.window.show_warning = MagicMock()
+        with patch("src.core.self_update.other_instances_running", return_value=True), \
+                patch.object(self.window, "close") as close, \
+                patch("src.core.self_update.apply_update") as apply:
+            self.window.restart_to_update()
+        close.assert_not_called()
+        apply.assert_not_called()
+        self.window.show_warning.assert_called_once()
 
     def test_refused_exit_keeps_the_app_and_drops_the_copy(self):
         source = self.staged + "x"

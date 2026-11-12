@@ -8,7 +8,7 @@ from src.qt.main_window import QtMainWindow
 from src.qt.theme import build_stylesheet, set_active_theme
 
 if QT_AVAILABLE:
-    from src.qt.compat import QApplication, QFont
+    from src.qt.compat import QApplication, QFont, QTimer
 
 
 logger = logging.getLogger(__name__)
@@ -61,4 +61,7 @@ def main():
     from src.core.session_store import SessionStore
     window = QtMainWindow(app_config, session_store=SessionStore())
     window.show()
+    # depois de uma atualização: confirma que a janela abriu e o loop está rodando
+    from src.core.self_update import mark_started
+    QTimer.singleShot(0, mark_started)
     return app.exec()

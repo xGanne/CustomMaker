@@ -697,8 +697,11 @@ if QT_AVAILABLE:
             self.show_status(f"Versão {release['version']} pronta para instalar.", timeout_ms=10000)
 
         def restart_to_update(self):
-            from src.core.self_update import apply_update, discard_staged, stage_update
+            from src.core.self_update import apply_update, discard_staged, other_instances_running, stage_update
             exe_path = sys.executable
+            if other_instances_running():
+                self.show_warning("Atualização", "Feche as outras janelas do Custom Maker antes de atualizar.")
+                return
             try:
                 staged = stage_update(self._update_ready["path"], exe_path)
             except OSError as exc:
