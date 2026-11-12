@@ -46,23 +46,30 @@ def hold_instance_lock(folder=None):
         logger.info("Sem trava de instância: %s", exc)
 
 
-def other_instances_running(folder=None):
+def other_instances_running(folder=None, attempts=5, delay=0.2):
     """Há outro CustomMaker aberto? Não dá para trocar o exe com ele rodando: o
     PyInstaller relê o exe a cada import, e a outra janela passaria a ler o
     arquivo novo com os endereços do antigo. O Windows não apaga arquivo aberto:
-    soltando a nossa trava, se o apagar falhar, alguém mais a segura."""
+    soltando a nossa trava, se o apagar falhar, alguém mais a segura. Tenta
+    algumas vezes: uma janela recém-fechada (ou o antivírus) solta o arquivo
+    com um pequeno atraso."""
     global _instance_lock
     folder = folder or updates_dir()
     if _instance_lock is not None:
         _instance_lock.close()
         _instance_lock = None
-    try:
-        os.remove(os.path.join(folder, INSTANCE_LOCK_NAME))
-        busy = False
-    except FileNotFoundError:
-        busy = False
-    except OSError:
-        busy = True
+    busy = True
+    for attempt in range(attempts):
+        try:
+            os.remove(os.path.join(folder, INSTANCE_LOCK_NAME))
+            busy = False
+        except FileNotFoundError:
+            busy = False
+        except OSError:
+            if attempt < attempts - 1:
+                time.sleep(delay)
+            continue
+        break
     hold_instance_lock(folder)
     return busy
 
