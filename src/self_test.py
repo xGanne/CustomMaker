@@ -22,6 +22,10 @@ def _check(report, name, fn):
 
 
 def run_self_test(report_path=None):
+    # reaberto por uma atualização (CI): confirma já, como a janela faz ao
+    # abrir — o exe antigo sai e o .old pode ser apagado durante o autoteste
+    from src.core.self_update import mark_started
+    mark_started()
     report = [f"CustomMaker autoteste — frozen={getattr(sys, 'frozen', False)}"]
     tmp = tempfile.mkdtemp(prefix="custommaker_selftest_")
 
