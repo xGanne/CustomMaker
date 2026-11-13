@@ -3,9 +3,6 @@ import os
 import time
 from urllib.parse import urlparse
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 
 logger = logging.getLogger(__name__)
@@ -118,14 +115,13 @@ class DanbooruClient:
         self.base_url = "https://danbooru.donmai.us"
         self.headers = {"User-Agent": user_agent}
         self.config = config
-        self.session = requests.Session()
+        self._session = None  # criada no primeiro uso (ver session)
 
         self.timeout_search_s = self._cfg_int("danbooru_timeout_search_s", 10, minimum=1, maximum=120)
         self.timeout_tags_s = self._cfg_int("danbooru_timeout_tags_s", 5, minimum=1, maximum=120)
         self.timeout_download_s = self._cfg_int("danbooru_timeout_download_s", 15, minimum=1, maximum=300)
         self._auth = None
         self.load_credentials()
-        self._configure_session()
 
     def load_credentials(self, env_values=None):
         """Conta do Danbooru (login + chave de API) lida do .env.
@@ -155,6 +151,7 @@ class DanbooruClient:
         ainda não salvas; `auth=None` consulta como anônimo. 401 vira uma
         mensagem clara de login/chave inválidos.
         """
+        import requests  # carregado sob demanda (ver session)
         if auth is DanbooruClient._SAVED_AUTH:
             auth = self._auth
         try:
@@ -210,7 +207,20 @@ class DanbooruClient:
             value = min(maximum, value)
         return value
 
+    @property
+    def session(self):
+        """Sessão HTTP criada no primeiro uso: importar o requests custava ~0,7 s
+        na abertura do app, e a aba Online (que cria este cliente) é montada ao abrir."""
+        if self._session is None:
+            import requests
+            self._session = requests.Session()
+            self._configure_session()
+        return self._session
+
     def _configure_session(self):
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+
         pool_connections = self._cfg_int("danbooru_pool_connections", 16, minimum=1, maximum=256)
         pool_maxsize = self._cfg_int("danbooru_pool_maxsize", 32, minimum=1, maximum=256)
         retry_total = self._cfg_int("danbooru_retry_total", 2, minimum=0, maximum=10)
@@ -257,6 +267,7 @@ class DanbooruClient:
 
     def search_posts(self, tags, limit=20, page=1):
         """Searches posts on Danbooru."""
+        import requests
         url = f"{self.base_url}/posts.json"
         params = {"tags": tags, "limit": limit, "page": page, "only": POST_FIELDS}
         start = time.perf_counter()
@@ -311,6 +322,7 @@ class DanbooruClient:
         if not query or len(query) < 2:
             return []
 
+        import requests
         url = f"{self.base_url}/tags.json"
         params = {
             "search[name_matches]": f"{query}*",
@@ -346,6 +358,7 @@ class DanbooruClient:
             logger.debug("Danbooru fetch_tags latency: %.1fms query='%s'", elapsed_ms, query)
 
     def download_image(self, url):
+        import requests
         start = time.perf_counter()
         try:
             response = self.session.get(
@@ -371,7 +384,9 @@ class DanbooruClient:
             logger.debug("Danbooru download latency: %.1fms url='%s'", elapsed_ms, url)
 
     def close(self):
+        if self._session is None:
+            return  # nunca usado: nada a fechar (e sem importar o requests)
         try:
-            self.session.close()
+            self._session.close()
         except Exception as exc:
             logger.debug("Falha ao fechar sessao Danbooru: %s", exc)

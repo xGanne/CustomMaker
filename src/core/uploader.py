@@ -5,7 +5,6 @@ import os
 import time
 from typing import List, Tuple
 
-import requests
 from dotenv import dotenv_values
 
 from src.config.settings import IMG_CHEST_API_TOKEN, UPLOAD_BATCH_SIZE
@@ -31,9 +30,21 @@ def _normalize_token(token):
 
 
 class ImgChestUploader:
-    def __init__(self, api_token=None, session: requests.Session = None):
+    def __init__(self, api_token=None, session=None):
         self.api_token = _normalize_token(api_token) or _normalize_token(IMG_CHEST_API_TOKEN)
-        self.session = session or requests.Session()
+        self._session = session  # sem sessão: criada no primeiro envio (ver session)
+
+    @property
+    def session(self):
+        """Criada no primeiro uso: importar o requests custava ~0,7 s na abertura."""
+        if self._session is None:
+            import requests
+            self._session = requests.Session()
+        return self._session
+
+    @session.setter
+    def session(self, value):
+        self._session = value
 
     def reload_token(self, env_file=None):
         """Relê o token do .env — editar o arquivo não exige reiniciar o app (F6)."""
