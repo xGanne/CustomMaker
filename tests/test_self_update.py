@@ -78,6 +78,29 @@ class TestDownload(_TempCase):
 
 
 class TestApply(_TempCase):
+    def setUp(self):
+        super().setUp()
+        # o registro de atualização desfeita iria para a pasta de dados real
+        self.updates = os.path.join(self.tmp, "updates")
+        patcher = patch.object(self_update, "updates_dir", return_value=self.updates)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_rollback_is_reported_once_on_the_next_open(self):
+        crashed = MagicMock()
+        crashed.poll.return_value = 3
+        with patch.object(self_update, "_launch", side_effect=[crashed, self._running()]):
+            self.assertFalse(self_update.apply_update(self.staged, self.exe, start_timeout=0, version="9.0.0"))
+        failed = self_update.pop_failed_update()
+        self.assertEqual(failed["version"], "9.0.0")
+        self.assertIn("código 3", failed["reason"])
+        self.assertIsNone(self_update.pop_failed_update())  # uma vez só
+
+    def test_success_leaves_no_failure_report(self):
+        with patch.object(self_update, "_launch", return_value=self._running()):
+            self.assertTrue(self_update.apply_update(self.staged, self.exe, start_timeout=0, version="9.0.0"))
+        self.assertIsNone(self_update.pop_failed_update())
+
     def _running(self):
         process = MagicMock()
         process.poll.return_value = None
@@ -293,6 +316,15 @@ class TestUpdateInWindow(_TempCase):
         self._check(download=fail, manual=True)
         self.assertEqual(len(self.pages), 1)
 
+    def test_rolled_back_update_is_explained_on_open(self):
+        self.window.show_warning = MagicMock()
+        failed = {"version": "9.0.0", "reason": "o exe novo saiu com código 3"}
+        with patch("src.core.self_update.pop_failed_update", return_value=failed):
+            self.window._report_failed_update()
+        title, message = self.window.show_warning.call_args.args
+        self.assertIn("9.0.0", message)
+        self.assertIn("código 3", message)
+
     def test_other_window_open_blocks_the_swap(self):
         self.window._update_ready = {"version": "9.0.0", "path": self.staged}
         self.window.show_warning = MagicMock()
@@ -325,7 +357,7 @@ class TestUpdateInWindow(_TempCase):
                 patch("src.core.self_update.apply_update") as apply, \
                 patch("src.qt.main_window.QApplication.quit") as quit_app:
             self.window.restart_to_update()
-        apply.assert_called_once_with(self.staged, self.exe)
+        apply.assert_called_once_with(self.staged, self.exe, version="9.0.0")
         quit_app.assert_called_once()
 
     def test_setting_is_saved(self):

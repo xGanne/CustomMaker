@@ -629,8 +629,26 @@ if QT_AVAILABLE:
 
         def _schedule_update_check(self):
             """Só no exe: quem roda do código-fonte atualiza pelo git."""
-            if getattr(sys, "frozen", False) and self.app_config.get("check_updates", True):
+            if not getattr(sys, "frozen", False):
+                return
+            QTimer.singleShot(1500, self._report_failed_update)
+            if self.app_config.get("check_updates", True):
                 QTimer.singleShot(self.UPDATE_CHECK_DELAY_MS, self.check_for_updates)
+
+        def _report_failed_update(self):
+            """Reaberto depois de uma atualização desfeita: diz por que a versão
+            não mudou (antes só o log sabia)."""
+            from src.core.self_update import pop_failed_update
+            failed = pop_failed_update()
+            if not failed or not self._window_alive():
+                return
+            self.show_warning(
+                "Atualização desfeita",
+                f"A versão {failed.get('version') or 'nova'} não abriu, então o Custom Maker voltou "
+                f"para a {__version__}.\n\nMotivo: {failed.get('reason')}\n\n"
+                "Detalhes em Abrir pasta de logs (Ctrl+K). Você pode tentar de novo pelo "
+                "botão Reiniciar para atualizar.",
+            )
 
         def check_for_updates(self, manual=False):
             """Consulta a última Release em segundo plano. Havendo versão nova, baixa
@@ -711,7 +729,7 @@ if QT_AVAILABLE:
             if not self.close():  # a pergunta de sair foi recusada: segue trabalhando
                 discard_staged(staged)
                 return
-            apply_update(staged, exe_path)
+            apply_update(staged, exe_path, version=self._update_ready["version"])
             QApplication.quit()
 
         def _offer_update(self, release):

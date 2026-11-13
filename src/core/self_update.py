@@ -210,10 +210,39 @@ def _wait_started(process, started_file, timeout):
         time.sleep(0.2)
 
 
-def apply_update(staged, exe_path, args=(), start_timeout=START_TIMEOUT_SECONDS):
+FAILED_UPDATE_NAME = "update_failed.json"
+
+
+def _record_failure(version, reason, folder=None):
+    """O app antigo reaberto conta ao usuário por que continua na mesma versão."""
+    import json
+    folder = folder or updates_dir()
+    try:
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, FAILED_UPDATE_NAME), "w", encoding="utf-8") as file_obj:
+            json.dump({"version": version, "reason": str(reason)}, file_obj)
+    except OSError as exc:
+        logger.warning("Não foi possível registrar a atualização desfeita: %s", exc)
+
+
+def pop_failed_update(folder=None):
+    """{"version", "reason"} da última atualização desfeita (uma vez só), ou None."""
+    import json
+    path = os.path.join(folder or updates_dir(), FAILED_UPDATE_NAME)
+    try:
+        with open(path, encoding="utf-8") as file_obj:
+            data = json.load(file_obj)
+    except (OSError, ValueError):
+        return None
+    finally:
+        _remove(path)
+    return data if isinstance(data, dict) else None
+
+
+def apply_update(staged, exe_path, args=(), start_timeout=START_TIMEOUT_SECONDS, version=None, folder=None):
     """Troca o exe e abre o novo. Chamar com a janela já fechada, logo antes de
     sair. Nunca deixa o usuário sem app: se o novo não abrir, o antigo volta e é
-    aberto. Devolve True se o novo abriu."""
+    aberto (e avisa na abertura, ver pop_failed_update). Devolve True se o novo abriu."""
     old = exe_path + ".old"
     started_file = exe_path + ".started"
     _remove(started_file)
@@ -223,6 +252,7 @@ def apply_update(staged, exe_path, args=(), start_timeout=START_TIMEOUT_SECONDS)
     except OSError as exc:
         logger.error("Atualização: não foi possível liberar o exe atual: %s", exc)
         _remove(staged)
+        _record_failure(version, f"o exe atual não pôde ser substituído ({exc})", folder)
         _relaunch_quietly(exe_path, args)
         return False
     try:
@@ -233,6 +263,7 @@ def apply_update(staged, exe_path, args=(), start_timeout=START_TIMEOUT_SECONDS)
         logger.error("Atualização desfeita, voltando ao exe anterior: %s", exc)
         _restore(old, exe_path)
         _remove(staged)
+        _record_failure(version, exc, folder)
         _relaunch_quietly(exe_path, args)
         return False
     finally:
