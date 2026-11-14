@@ -8,6 +8,7 @@ from PIL import Image
 
 from src.core.custom_scorer import (
     DEFAULT_AVOID_TAGS,
+    MIN_AUTO_SCORE,
     is_auto_eligible,
     metadata_score,
     parse_avoid_tags,
@@ -1024,7 +1025,7 @@ if QT_AVAILABLE:
                         or post.get("sample_url")
                         or post.get("file_url")
                     )
-                    if preview_url and face_cascade is not None:
+                    if preview_url:  # cor sempre; rosto só com o detector
                         data = self.client.download_image(preview_url)
                         if data:
                             try:
@@ -1040,16 +1041,23 @@ if QT_AVAILABLE:
             def on_done(result):
                 scores = result.get("scores") or []
                 scores.sort(key=lambda pair: pair[1], reverse=True)
-                top_ids = [post_id for post_id, _score in scores[:count] if post_id is not None]
+                good = [(post_id, score) for post_id, score in scores if post_id is not None and score >= MIN_AUTO_SCORE]
+                top_ids = [post_id for post_id, _score in good[:count]]
                 if not top_ids:
-                    self.main_window.show_warning("Auto-selecionar", "Nenhum candidato pôde ser avaliado.")
+                    self.main_window.show_info(
+                        "Auto-selecionar",
+                        "Nenhum resultado desta página parece um bom custom (páginas de "
+                        "quadrinho, P&B, grupo, sem personagem...). Tente a próxima página "
+                        "ou outra busca.",
+                    )
                     return
                 self.results_grid.select_posts_by_id(top_ids)
                 skipped = f" ({excluded} questionável/explícito fora)" if excluded else ""
+                fewer = f" — só {len(top_ids)} de {count} pareceram bons" if len(top_ids) < count else ""
                 self.main_window.show_status(
-                    f"{len(top_ids)} candidato(s) pré-selecionado(s) pela pontuação{skipped} — "
+                    f"{len(top_ids)} candidato(s) pré-selecionado(s) pela pontuação{skipped}{fewer} — "
                     "revise e clique em Importar.",
-                    timeout_ms=8000,
+                    timeout_ms=10000,
                 )
 
             self.main_window.run_task(

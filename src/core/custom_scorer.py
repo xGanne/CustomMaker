@@ -48,10 +48,15 @@ _TAG_PENALTIES = {
     "multiple_girls": 3.0,
     "multiple_boys": 3.0,
     "multiple_others": 3.0,
-    "monochrome": 1.5,
-    "greyscale": 1.5,
+    # páginas de mangá nem sempre vêm com a tag "comic": P&B e balão de fala
+    # são o que sobra para reconhecê-las (custom em P&B quase nunca serve)
+    "monochrome": 4.0,
+    "greyscale": 4.0,
+    "partially_colored": 2.0,
     "text": 1.5,
-    "speech_bubble": 1.5,
+    "speech_bubble": 2.5,
+    "english_text": 1.5,
+    "translated": 1.0,
     "watermark": 1.0,
     "from_behind": 2.0,
     "faceless": 3.0,
@@ -169,15 +174,42 @@ def metadata_score(post, avoid_tags=None):
     return score
 
 
+# Pontuação final mínima para o Auto pré-selecionar: abaixo disso ele seleciona
+# menos do que o pedido (uma página só de quadrinhos não vira "os menos piores")
+MIN_AUTO_SCORE = 0.0
+
+_GRAYSCALE_PENALTY = 4.0
+# fração de pixels com cor de verdade abaixo da qual a imagem é tratada como P&B
+_MIN_COLOR_FRACTION = 0.05
+
+
+def colorful_fraction(image):
+    """Fração (0-1) dos pixels com cor visível — mangá/P&B fica perto de 0."""
+    small = image.convert("RGB")
+    small.thumbnail((160, 160))
+    hsv = small.convert("HSV")
+    saturation, value = hsv.getchannel("S").getdata(), hsv.getchannel("V").getdata()
+    colorful = sum(1 for s, v in zip(saturation, value) if s > 50 and v > 40)
+    return colorful / max(1, small.width * small.height)
+
+
 def visual_score(image, face_cascade):
-    """Pontuação baseada na imagem baixada (detecção de rosto).
+    """Pontuação baseada na imagem baixada: cor e rosto.
 
     image: PIL.Image já carregada (preview é suficiente).
-    face_cascade: o mesmo classificador de ImageProcessor.load_face_cascade().
+    face_cascade: o mesmo classificador de ImageProcessor.load_face_cascade();
+    sem ele, só a checagem de cor roda.
     """
-    if face_cascade is None or image is None:
+    if image is None:
         return 0.0
+    # pega mangá mesmo quando o post não tem a tag "monochrome"/"comic"
+    score = -_GRAYSCALE_PENALTY if colorful_fraction(image) < _MIN_COLOR_FRACTION else 0.0
+    if face_cascade is None:
+        return score
+    return score + _face_score(image, face_cascade)
 
+
+def _face_score(image, face_cascade):
     faces = ImageProcessor.detect_all_anime_faces(image, face_cascade)
     if not faces:
         return -2.0  # provavelmente paisagem/objeto/corpo sem rosto visível

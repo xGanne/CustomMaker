@@ -4,6 +4,7 @@ from PIL import Image, ImageDraw
 
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
 from src.core.custom_scorer import (
+    colorful_fraction,
     combined_score,
     is_auto_eligible,
     metadata_score,
@@ -103,9 +104,29 @@ class TestSafeAndQuality(unittest.TestCase):
         self.assertGreater(one, metadata_score(self._post(tag_string_character="miku rin")))
 
 
+class TestColor(unittest.TestCase):
+    """Página de mangá sem a tag certa: a imagem em P&B denuncia."""
+
+    def test_black_and_white_page_is_penalized(self):
+        page = Image.new("RGB", (300, 450), "white")
+        draw = ImageDraw.Draw(page)
+        for y in range(0, 450, 30):
+            draw.line((0, y, 300, y + 40), fill=(20, 20, 20), width=6)
+        colored = Image.new("RGB", (300, 450), (210, 80, 120))
+        self.assertLess(colorful_fraction(page), 0.05)
+        self.assertGreater(colorful_fraction(colored), 0.9)
+        self.assertLess(visual_score(page, None), visual_score(colored, None))
+
+    def test_mostly_gray_with_a_little_color_still_counts_as_gray(self):
+        image = Image.new("RGB", (100, 100), (128, 128, 128))
+        image.paste((255, 0, 0), (0, 0, 10, 10))  # 1% colorido (partially_colored)
+        self.assertLess(visual_score(image, None), 0)
+
+
 class TestVisualScore(unittest.TestCase):
     def setUp(self):
-        self.image = Image.new("RGB", (400, 600), "white")
+        # colorida: a checagem de cor fica neutra e o teste mede só o rosto
+        self.image = Image.new("RGB", (400, 600), (210, 80, 120))
         ImageDraw.Draw(self.image)
 
     def test_no_face_detected_is_penalized(self):

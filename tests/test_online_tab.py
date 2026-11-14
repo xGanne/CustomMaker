@@ -314,6 +314,21 @@ class TestAutoSelectSafeContent(unittest.TestCase):
         self.tab._auto_select_best()
         self.assertIn(1, self.selected)
 
+    def test_bad_candidates_are_not_used_to_fill_the_count(self):
+        # página de mangá sem a tag "comic" (caso real): P&B, texto, sem rosto
+        manga = "1girl monochrome english_text faceless twitter_username"
+        self.tab.posts = [self._post(1, "g"), self._post(2, "g", manga), self._post(3, "g", manga)]
+        self.tab._auto_select_best()  # pede 2: só 1 é bom
+        self.assertEqual(self.selected, [1])
+        self.assertIn("só 1 de 2", self.main.statuses[-1])
+
+    def test_page_with_only_bad_candidates_selects_nothing_and_says_why(self):
+        manga = "monochrome comic speech_bubble multiple_girls"
+        self.tab.posts = [self._post(1, "g", manga), self._post(2, "g", manga)]
+        self.tab._auto_select_best()
+        self.assertEqual(self.selected, [])
+        self.assertIn("quadrinho", self.main.infos[-1])
+
     def test_page_with_only_explicit_results_explains_why(self):
         self.tab.posts = [self._post(1, "e"), self._post(2, "q")]
         self.tab._auto_select_best()
