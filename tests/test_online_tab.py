@@ -246,6 +246,82 @@ class TestOnlineTabSearch(unittest.TestCase):
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
+class TestAutoSelectSafeContent(unittest.TestCase):
+    """★ Auto: questionável/explícito nunca é pré-selecionado; tags sugestivas pesam contra."""
+
+    @classmethod
+    def setUpClass(cls):
+        compat = importlib.import_module("src.qt.compat")
+        cls.app = compat.QApplication.instance() or compat.QApplication([])
+        cls.TaskRunner = importlib.import_module("src.qt.task_runner").QtTaskRunner
+
+    def setUp(self):
+        from unittest.mock import patch
+        self.main = FakeMainWindow(self.TaskRunner())
+        self.main.face_cascade = None  # sem download de prévias no teste
+        self.main.infos = []
+        self.main.show_info = lambda title, message: self.main.infos.append(message)
+
+        def run_task(_task_id, _title, task_fn, on_done=None, **_kwargs):
+            result = task_fn(None, None)
+            if on_done:
+                on_done(result)
+
+        self.main.run_task = run_task
+        self.tab = online_module.OnlineTab(self.main)
+        self.addCleanup(self.app.processEvents)
+        self.addCleanup(self.tab.deleteLater)
+        self.addCleanup(self.tab.close)
+        self.selected = []
+        self.tab.results_grid.select_posts_by_id = self.selected.extend
+        patcher = patch("src.qt.compat.QInputDialog.getInt", return_value=(2, True))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _post(post_id, rating, tags="solo upper_body"):
+        return {"id": post_id, "rating": rating, "tag_string": tags, "tag_string_character": "hatsune_miku",
+                "image_width": 1000, "image_height": 1500, "file_ext": "png", "fav_count": 10}
+
+    def test_explicit_and_questionable_are_never_preselected(self):
+        # os explícitos são os "melhores" pelas tags e pela popularidade, e mesmo assim ficam fora
+        self.tab.posts = [
+            dict(self._post(1, "e", "solo upper_body portrait official_art"), fav_count=9000),
+            dict(self._post(2, "q", "solo upper_body portrait official_art"), fav_count=9000),
+            self._post(3, "g"),
+            self._post(4, "s"),
+        ]
+        self.tab._auto_select_best()
+        self.assertEqual(sorted(self.selected), [3, 4])
+        self.assertIn("2 questionável/explícito fora", self.main.statuses[-1])
+
+    def test_suggestive_tags_lose_to_clean_ones(self):
+        self.tab.posts = [
+            self._post(1, "s", "solo upper_body cleavage swimsuit"),
+            self._post(2, "g"),
+            self._post(3, "g", "solo"),
+        ]
+        self.tab._auto_select_best()
+        self.assertEqual(sorted(self.selected), [2, 3])
+
+    def test_cleared_avoid_list_avoids_nothing(self):
+        self.main.app_config.set("danbooru_auto_avoid_tags", "")
+        self.tab.posts = [
+            dict(self._post(1, "g", "solo upper_body portrait cleavage"), fav_count=500),
+            self._post(2, "g", "solo"),
+            self._post(3, "g", "solo"),
+        ]
+        self.tab._auto_select_best()
+        self.assertIn(1, self.selected)
+
+    def test_page_with_only_explicit_results_explains_why(self):
+        self.tab.posts = [self._post(1, "e"), self._post(2, "q")]
+        self.tab._auto_select_best()
+        self.assertEqual(self.selected, [])
+        self.assertIn("questionável ou explícito", self.main.infos[-1])
+
+
+@unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")
 class TestImportDownloadsLargeVersion(unittest.TestCase):
     """Importar baixa a versão large (quando basta); "Baixar" mantém o original."""
 

@@ -143,6 +143,20 @@ if QT_AVAILABLE:
             self._blacklist.setPlaceholderText("ex: gore violence nsfw")
             layout.addWidget(self._blacklist)
 
+            avoid_hint = QLabel(
+                "Tags que o ★ Auto evita (pesam contra, não excluem). Questionável e "
+                "explícito ficam sempre de fora do Auto:"
+            )
+            avoid_hint.setWordWrap(True)
+            avoid_hint.setStyleSheet(f"color: {tokens()['text_muted']}; font-size: 11px; margin-top: 6px;")
+            layout.addWidget(avoid_hint)
+            from src.core.custom_scorer import DEFAULT_AVOID_TAGS
+            configured = self.app_config.get("danbooru_auto_avoid_tags")
+            self._auto_avoid_tags = QLineEdit(DEFAULT_AVOID_TAGS if configured is None else configured)
+            self._auto_avoid_tags.setPlaceholderText("vazio: não evita nenhuma tag")
+            self._auto_avoid_tags.setCursorPosition(0)
+            layout.addWidget(self._auto_avoid_tags)
+
             layout.addSpacing(8)
 
             self._timeout_search = self._spin_field(
@@ -276,6 +290,7 @@ if QT_AVAILABLE:
                 self.app_config.set("ai_base_prompt", prompt)
 
             self.app_config.set("danbooru_tag_blacklist", self._blacklist.text().strip())
+            self.app_config.set("danbooru_auto_avoid_tags", " ".join(self._auto_avoid_tags.text().split()))
             self.app_config.set("danbooru_timeout_search_s", self._timeout_search.value())
             self.app_config.set("danbooru_timeout_download_s", self._timeout_download.value())
             self.app_config.set("danbooru_page_size", self._page_size.value())

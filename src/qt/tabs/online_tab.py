@@ -6,7 +6,13 @@ from io import BytesIO
 
 from PIL import Image
 
-from src.core.custom_scorer import metadata_score, visual_score
+from src.core.custom_scorer import (
+    DEFAULT_AVOID_TAGS,
+    is_auto_eligible,
+    metadata_score,
+    parse_avoid_tags,
+    visual_score,
+)
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
 from src.core.import_history import ImportHistory
 from src.core.danbooru import DanbooruClient, filter_blacklisted, import_source, is_image_post, parse_tag_list
@@ -223,8 +229,9 @@ if QT_AVAILABLE:
             self.auto_select_button.setProperty("class", "secondary")
             self.auto_select_button.setToolTip(
                 "Auto-selecionar melhores: pontua os resultados desta página "
-                "(tags, proporção, rosto detectado) e pré-marca os melhores "
-                "candidatos para você revisar."
+                "(tags, proporção, resolução, personagem, rosto detectado) e "
+                "pré-marca os melhores para você revisar. Só considera posts "
+                "Geral/Sensível; tags sugestivas pesam contra (Configurações › Danbooru)."
             )
             self.auto_select_button.clicked.connect(self._auto_select_best)
             self.select_all_button = QPushButton("✓ Todos")
@@ -977,11 +984,29 @@ if QT_AVAILABLE:
             # F1: pontuação de metadado é síncrona e barata — roda aqui mesmo,
             # sem worker. Só o refinamento visual (que baixa imagem) vai para
             # a task em background.
-            # vídeos/ugoira não viram custom: fora da disputa
-            candidates = [p for p in self.posts if is_image_post(p)]
+            # vídeos/ugoira não viram custom; questionável/explícito nunca entra
+            # no Auto, qualquer que seja o filtro da busca
+            images = [p for p in self.posts if is_image_post(p)]
+            candidates = [p for p in images if is_auto_eligible(p)]
+            if not candidates:
+                self.main_window.show_info(
+                    "Auto-selecionar",
+                    "Nenhum resultado desta página é Geral ou Sensível — o Auto não "
+                    "pré-seleciona conteúdo questionável ou explícito.",
+                )
+                return
+            excluded = len(images) - len(candidates)
+            configured = self.main_window.app_config.get("danbooru_auto_avoid_tags")
+            # None = nunca configurado (padrão); "" = o usuário limpou de propósito
+            avoid_tags = parse_avoid_tags(DEFAULT_AVOID_TAGS if configured is None else configured)
+
+            def score_of(post):
+                return metadata_score(post, avoid_tags)
+
             fresh = [p for p in candidates if not self.import_history.get(p.get("id"))]
             # prefere o que ainda não foi importado; se tudo já foi, usa todos
-            ranked = sorted(fresh or candidates, key=metadata_score, reverse=True)
+            ranked = sorted(fresh or candidates, key=score_of, reverse=True)
+            count = min(count, len(ranked))
             shortlist_size = min(len(ranked), max(count * 2, count + 5))
             shortlist = ranked[:shortlist_size]
             face_cascade = self.main_window.face_cascade
@@ -1007,7 +1032,7 @@ if QT_AVAILABLE:
                                     bonus = visual_score(img.convert("RGB"), face_cascade)
                             except Exception as exc:
                                 logger.debug("Falha ao avaliar %s: %s", preview_url, exc)
-                    results.append((post.get("id"), metadata_score(post) + bonus))
+                    results.append((post.get("id"), score_of(post) + bonus))
                     if on_progress:
                         on_progress(index, total, f"Avaliando candidatos... {index}/{total}")
                 return {"scores": results}
@@ -1020,8 +1045,9 @@ if QT_AVAILABLE:
                     self.main_window.show_warning("Auto-selecionar", "Nenhum candidato pôde ser avaliado.")
                     return
                 self.results_grid.select_posts_by_id(top_ids)
+                skipped = f" ({excluded} questionável/explícito fora)" if excluded else ""
                 self.main_window.show_status(
-                    f"{len(top_ids)} candidato(s) pré-selecionado(s) pela pontuação — "
+                    f"{len(top_ids)} candidato(s) pré-selecionado(s) pela pontuação{skipped} — "
                     "revise e clique em Importar.",
                     timeout_ms=8000,
                 )

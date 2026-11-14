@@ -15,7 +15,7 @@ DANBOORU_API_KEY_KEY = "DANBOORU_API_KEY"
 # busca ~4x menor. Ao ler um campo novo de `post`, acrescente-o aqui.
 POST_FIELDS = (
     "id,rating,score,fav_count,image_width,image_height,file_ext,tag_string,"
-    "file_url,large_file_url,preview_file_url,uploader_id"
+    "tag_string_character,file_url,large_file_url,preview_file_url,uploader_id"
 )
 
 # Formatos que viram custom. Vídeos (mp4/webm), ugoira (zip) e flash não:

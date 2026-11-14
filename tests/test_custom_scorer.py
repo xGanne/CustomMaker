@@ -5,7 +5,9 @@ from PIL import Image, ImageDraw
 from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
 from src.core.custom_scorer import (
     combined_score,
+    is_auto_eligible,
     metadata_score,
+    parse_avoid_tags,
     rank_posts_by_metadata,
     visual_score,
 )
@@ -64,6 +66,41 @@ class TestMetadataScore(unittest.TestCase):
         ranked = rank_posts_by_metadata(posts)
         scores = [metadata_score(p) for p in ranked]
         self.assertEqual(scores, sorted(scores, reverse=True))
+
+
+class TestSafeAndQuality(unittest.TestCase):
+    def _post(self, rating="g", tags="solo", width=1000, height=1500, **extra):
+        post = _post(tags, width=width, height=height)
+        post.update({"rating": rating, "tag_string_character": "hatsune_miku", **extra})
+        return post
+
+    def test_only_general_and_sensitive_are_eligible(self):
+        self.assertEqual(
+            [is_auto_eligible(self._post(rating)) for rating in ("g", "s", "q", "e", "")],
+            [True, True, False, False, False],
+        )
+
+    def test_sensitive_and_suggestive_tags_score_lower(self):
+        clean = metadata_score(self._post("g"))
+        self.assertLess(metadata_score(self._post("s")), clean)
+        self.assertLess(metadata_score(self._post("g", "solo cleavage swimsuit")), metadata_score(self._post("s")))
+
+    def test_custom_avoid_list_replaces_the_default(self):
+        post = self._post("g", "solo cleavage")
+        self.assertGreater(metadata_score(post, avoid_tags=set()), metadata_score(post))
+        self.assertLess(metadata_score(self._post("g", "solo hat"), avoid_tags=parse_avoid_tags("HAT")),
+                        metadata_score(self._post("g", "solo hat"), avoid_tags=set()))
+
+    def test_quality_and_resolution(self):
+        base = metadata_score(self._post())
+        self.assertGreater(metadata_score(self._post(tags="solo official_art")), base)
+        self.assertLess(metadata_score(self._post(tags="solo ai-generated")), base)
+        self.assertLess(metadata_score(self._post(width=200, height=300)), metadata_score(self._post(width=400, height=600)))
+
+    def test_one_identified_character_is_best(self):
+        one = metadata_score(self._post())
+        self.assertGreater(one, metadata_score(self._post(tag_string_character="")))
+        self.assertGreater(one, metadata_score(self._post(tag_string_character="miku rin")))
 
 
 class TestVisualScore(unittest.TestCase):

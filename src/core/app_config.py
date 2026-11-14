@@ -61,6 +61,9 @@ DEFAULT_CONFIG = {
     "danbooru_portrait_only": False,
     "danbooru_search_history": [],
     "danbooru_tag_blacklist": "",
+    # tags sugestivas que o Auto-selecionar evita (pesam contra, não excluem);
+    # o padrão fica em custom_scorer.DEFAULT_AVOID_TAGS
+    "danbooru_auto_avoid_tags": None,
     "recent_folders": [],
     "strobe_warning_acknowledged": False,
     "default_framing": "auto_fit",

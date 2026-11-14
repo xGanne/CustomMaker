@@ -12,6 +12,11 @@ Dois níveis, pensados para serem baratos primeiro e caros depois:
 
 A pontuação é uma heurística, não um classificador treinado — o objetivo é
 priorizar candidatos plausíveis para revisão humana, não decidir sozinha.
+
+Conteúdo explícito: a classificação (`rating`) do Danbooru é feita por pessoas
+e vem em todo post — é mais confiável para arte de anime que um modelo local.
+Questionável/explícito nunca entra no Auto (`is_auto_eligible`); dentro do
+permitido, tags sugestivas pesam contra (`DEFAULT_AVOID_TAGS`, editável).
 """
 import math
 
@@ -53,7 +58,71 @@ _TAG_PENALTIES = {
     "full_body": 1.0,
 }
 
+# Qualidade da arte: o que costuma render (ou estragar) um custom.
+_QUALITY_BOOSTS = {
+    "official_art": 1.5,
+    "absurdres": 0.8,
+    "highres": 0.5,
+}
+_QUALITY_PENALTIES = {
+    "ai-generated": 4.0,
+    "photo_(medium)": 3.0,
+    "cosplay": 3.0,
+    "3d": 2.0,
+    "lowres": 2.0,
+    "sketch": 1.5,
+    "jpeg_artifacts": 1.0,
+}
+
+# Classificação do Danbooru: g (geral), s (sensível), q (questionável), e (explícito)
+AUTO_RATINGS = frozenset({"g", "s"})
+_SENSITIVE_RATING_PENALTY = 1.5
+
+# Tags sugestivas que aparecem mesmo em g/s: cada uma tira pontos (não exclui).
+# Editável em Configurações › Danbooru (danbooru_auto_avoid_tags).
+DEFAULT_AVOID_TAGS = (
+    "cleavage large_breasts huge_breasts underwear panties bra lingerie swimsuit "
+    "bikini see-through sideboob underboob ass pantyshot upskirt spread_legs "
+    "towel bathing undressing partially_undressed topless nude censored"
+)
+_AVOID_TAG_PENALTY = 2.5
+
 _TARGET_RATIO = BORDA_WIDTH / BORDA_HEIGHT  # ~0.643 (retrato)
+
+
+def parse_avoid_tags(text):
+    """'a b  c' -> {'a', 'b', 'c'} (minúsculas, sem vazios)."""
+    return {tag.lower() for tag in (text or "").split() if tag}
+
+
+def is_auto_eligible(post):
+    """Pode ser pré-selecionado pelo Auto? Só Geral e Sensível — questionável e
+    explícito (e post sem classificação) nunca, qualquer que seja o filtro da busca."""
+    return (post.get("rating") or "").lower() in AUTO_RATINGS
+
+
+def _resolution_score(width, height):
+    """O recorte de 225x350 precisa de imagem grande: ampliar fica borrado."""
+    if not width or not height:
+        return 0.0
+    if width < BORDA_WIDTH or height < BORDA_HEIGHT:
+        return -2.0  # teria que ampliar
+    if width < BORDA_WIDTH * 2 or height < BORDA_HEIGHT * 2:
+        return -0.5  # pouca margem para enquadrar o rosto
+    return 0.0
+
+
+def _character_score(post):
+    """Custom é de um personagem: post sem personagem identificado (ou com
+    vários) costuma ser cenário, original ou grupo."""
+    characters = (post.get("tag_string_character") or "").split()
+    if "tag_string_character" not in post:
+        return 0.0  # busca antiga, sem o campo: neutro
+    if not characters:
+        return -1.0
+    if len(characters) > 1:
+        return -1.0
+    return 1.0
 
 
 def _aspect_ratio_score(width, height):
@@ -75,21 +144,27 @@ def _popularity_score(post):
         return 0.0
 
 
-def metadata_score(post):
+def metadata_score(post, avoid_tags=None):
     """Pontuação baseada só nos campos já retornados pela busca — sem I/O.
 
     Maior é melhor. Não tem piso/teto definido; use para ordenar, não para
-    comparar contra um limiar absoluto sem calibrar primeiro.
+    comparar contra um limiar absoluto sem calibrar primeiro. `avoid_tags`:
+    tags sugestivas que pesam contra (padrão: DEFAULT_AVOID_TAGS).
     """
+    if avoid_tags is None:
+        avoid_tags = parse_avoid_tags(DEFAULT_AVOID_TAGS)
     tags = set((post.get("tag_string") or "").split())
     score = 0.0
-    for tag, weight in _TAG_BOOSTS.items():
-        if tag in tags:
-            score += weight
-    for tag, weight in _TAG_PENALTIES.items():
-        if tag in tags:
-            score -= weight
+    for boosts, sign in ((_TAG_BOOSTS, 1), (_TAG_PENALTIES, -1), (_QUALITY_BOOSTS, 1), (_QUALITY_PENALTIES, -1)):
+        for tag, weight in boosts.items():
+            if tag in tags:
+                score += sign * weight
+    score -= _AVOID_TAG_PENALTY * len(tags & avoid_tags)
+    if (post.get("rating") or "").lower() == "s":
+        score -= _SENSITIVE_RATING_PENALTY
     score += _aspect_ratio_score(post.get("image_width"), post.get("image_height"))
+    score += _resolution_score(post.get("image_width"), post.get("image_height"))
+    score += _character_score(post)
     score += _popularity_score(post)
     return score
 
