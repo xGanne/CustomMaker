@@ -414,6 +414,19 @@ if QT_AVAILABLE:
             self._syncing_selection = False
             self._sync_selection_state()
 
+        def select_posts(self, posts):
+            """Marca posts desta página e de outras (o Auto procura em várias):
+            os de outras páginas entram direto na seleção, que sobrevive à troca
+            de página — aparecem marcados ao navegar e o Importar os inclui."""
+            for post in posts:
+                post_id = post.get("id")
+                if post_id is not None:
+                    self.selection_state.selected_post_ids.add(post_id)
+                    self.selection_state.selected_posts_details[post_id] = post
+            # na página atual, marca os itens (e não desmarca nada)
+            self.select_posts_by_id([post.get("id") for post in posts])
+            self.selection_count_changed.emit(len(self.selection_state.selected_post_ids))
+
         def _on_double_click(self, item):
             """A2: double-click imports the post directly."""
             post = item.data(Qt.UserRole)

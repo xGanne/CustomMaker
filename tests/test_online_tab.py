@@ -273,7 +273,7 @@ class TestAutoSelectSafeContent(unittest.TestCase):
         self.addCleanup(self.tab.deleteLater)
         self.addCleanup(self.tab.close)
         self.selected = []
-        self.tab.results_grid.select_posts_by_id = self.selected.extend
+        self.tab.results_grid.select_posts = lambda posts: self.selected.extend(p["id"] for p in posts)
         patcher = patch("src.qt.compat.QInputDialog.getInt", return_value=(2, True))
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -348,7 +348,7 @@ class TestAutoSelectSafeContent(unittest.TestCase):
         self._mark_imported(1, 2)
         self.tab._auto_select_best()
         self.assertEqual(self.selected, [])  # antes: escolhia os mesmos de novo
-        self.assertIn("já foram importados", self.main.infos[-1])
+        self.assertIn("2 já importado(s)", self.main.infos[-1])
 
     def test_no_good_left_mentions_what_was_already_imported(self):
         manga = "monochrome comic speech_bubble multiple_girls"
@@ -357,11 +357,63 @@ class TestAutoSelectSafeContent(unittest.TestCase):
         self.tab._auto_select_best()
         self.assertIn("1 já importado(s)", self.main.infos[-1])
 
+    def _paged_search(self, pages, page_size=2):
+        """Busca ativa com `pages` = {página: posts}; a 1ª já está na tela."""
+        self.tab._active_search_tags = "hatsune_miku"
+        self.tab._page_size = page_size
+        self.tab.current_page = 1
+        self.tab.posts = pages[1]
+        self.fetched = []
+
+        def search(tags, limit=20, page=1):
+            self.fetched.append(page)
+            return list(pages.get(page, []))
+
+        self.tab.client.search_posts = search
+
+    def test_looks_at_the_next_pages_when_this_one_is_not_enough(self):
+        manga = "monochrome comic speech_bubble multiple_girls"
+        self._paged_search({
+            1: [self._post(1, "g", manga), self._post(2, "e")],
+            2: [self._post(3, "g", manga), self._post(4, "g")],
+            3: [self._post(5, "g", "solo"), self._post(6, "q")],
+        })
+        self.tab._auto_select_best()  # pede 2
+        self.assertEqual(sorted(self.selected), [4, 5])
+        self.assertEqual(self.fetched, [2, 3])  # parou quando achou os 2
+        status = self.main.statuses[-1]
+        self.assertIn("páginas 1–3", status)
+        self.assertIn("2 em outras páginas", status)
+        self.assertIn("2 questionável/explícito", status)
+
+    def test_page_limit_is_respected(self):
+        manga = "monochrome comic speech_bubble multiple_girls"
+        self._paged_search({n: [self._post(n * 10 + i, "g", manga) for i in range(2)] for n in range(1, 20)})
+        self.tab._auto_select_best()
+        self.assertEqual(self.fetched, list(range(2, self.tab.AUTO_SELECT_MAX_PAGES + 1)))
+        self.assertEqual(self.selected, [])
+        self.assertIn(f"páginas 1–{self.tab.AUTO_SELECT_MAX_PAGES}", self.main.infos[-1])
+
+    def test_stops_at_the_last_result_page(self):
+        self._paged_search({1: [self._post(1, "g"), self._post(2, "e")], 2: [self._post(3, "e")]})
+        self.tab._auto_select_best()  # pág. 2 incompleta = fim da busca: não pede a 3
+        self.assertEqual(self.fetched, [2])
+        self.assertEqual(self.selected, [1])
+
+    def test_real_grid_keeps_posts_selected_on_other_pages(self):
+        grid = self.tab.results_grid
+        del grid.select_posts  # o método de verdade, não o do setUp
+        grid.display_posts([self._post(1, "g")])
+        grid.select_posts([self._post(1, "g"), self._post(99, "g")])  # 99 está em outra página
+        self.assertEqual(grid.selection_state.selected_post_ids, {1, 99})
+        grid.display_posts([self._post(99, "g")])  # navegar até a página dele
+        self.assertTrue(grid.item(0).isSelected())
+
     def test_page_with_only_explicit_results_explains_why(self):
         self.tab.posts = [self._post(1, "e"), self._post(2, "q")]
         self.tab._auto_select_best()
         self.assertEqual(self.selected, [])
-        self.assertIn("questionável ou explícito", self.main.infos[-1])
+        self.assertIn("2 questionável/explícito", self.main.infos[-1])
 
 
 @unittest.skipUnless(QT_AVAILABLE, "PySide6 not installed")

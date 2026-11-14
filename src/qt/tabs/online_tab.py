@@ -963,121 +963,147 @@ if QT_AVAILABLE:
                 return
             self._download_posts(target_dir, import_after=True)
 
-        # ── Auto-seleção por pontuação (tags + rosto detectado) ─────────────
+        # ── Auto-seleção por pontuação (tags + cor + rosto) ─────────────────
+        # Sem candidatos bons suficientes na página atual, o Auto segue para as
+        # próximas até este total de páginas (a atual inclusa)
+        AUTO_SELECT_MAX_PAGES = 5
+
         def _auto_select_best(self):
             if not self.posts:
                 self.main_window.show_info("Auto-selecionar", "Faça uma busca primeiro.")
                 return
 
             from src.qt.compat import QInputDialog
-            default_count = min(10, len(self.posts))
+            can_page = bool(self._active_search_tags)
+            page_size = self._page_size or len(self.posts)
+            maximum = page_size * self.AUTO_SELECT_MAX_PAGES if can_page else len(self.posts)
             count, ok = QInputDialog.getInt(
                 self,
                 "Auto-selecionar melhores",
-                "Quantos candidatos pré-selecionar?",
-                default_count,
+                (
+                    "Quantos candidatos pré-selecionar?\n"
+                    f"Se esta página não tiver o bastante, o Auto procura nas próximas "
+                    f"(até {self.AUTO_SELECT_MAX_PAGES} páginas)."
+                    if can_page else "Quantos candidatos pré-selecionar?"
+                ),
+                min(10, len(self.posts)),
                 1,
-                len(self.posts),
+                max(1, maximum),
             )
             if not ok:
                 return
 
-            # F1: pontuação de metadado é síncrona e barata — roda aqui mesmo,
-            # sem worker. Só o refinamento visual (que baixa imagem) vai para
-            # a task em background.
-            # vídeos/ugoira não viram custom; questionável/explícito nunca entra
-            # no Auto, qualquer que seja o filtro da busca
-            images = [p for p in self.posts if is_image_post(p)]
-            candidates = [p for p in images if is_auto_eligible(p)]
-            if not candidates:
-                self.main_window.show_info(
-                    "Auto-selecionar",
-                    "Nenhum resultado desta página é Geral ou Sensível — o Auto não "
-                    "pré-seleciona conteúdo questionável ou explícito.",
-                )
-                return
-            excluded = len(images) - len(candidates)
             configured = self.main_window.app_config.get("danbooru_auto_avoid_tags")
             # None = nunca configurado (padrão); "" = o usuário limpou de propósito
             avoid_tags = parse_avoid_tags(DEFAULT_AVOID_TAGS if configured is None else configured)
+            face_cascade = self.main_window.face_cascade
+            first_page = self.current_page
+            first_posts = list(self.posts)
+            tags = self._active_search_tags
+            blacklist = list(self._active_blacklist)
+            already_selected = set(self.selection_state.selected_post_ids)
+            history = self.import_history
+            client = self.client
+            last_page = first_page + (self.AUTO_SELECT_MAX_PAGES - 1 if can_page else 0)
 
             def score_of(post):
                 return metadata_score(post, avoid_tags)
 
-            # o que já foi importado nunca volta: antes, com a página toda
-            # importada, o Auto escolhia de novo os mesmos
-            fresh = [p for p in candidates if not self.import_history.get(p.get("id"))]
-            imported = len(candidates) - len(fresh)
-            if not fresh:
-                self.main_window.show_info(
-                    "Auto-selecionar",
-                    f"Os {imported} resultado(s) Geral/Sensível desta página já foram importados. "
-                    "Vá para a próxima página (→) ou faça outra busca.",
+            def visual_bonus(post):
+                preview_url = (
+                    post.get("preview_file_url")
+                    or post.get("preview_url")
+                    or post.get("sample_url")
+                    or post.get("file_url")
                 )
-                return
-            requested = count
-            ranked = sorted(fresh, key=score_of, reverse=True)
-            count = min(count, len(ranked))
-            shortlist_size = min(len(ranked), max(count * 2, count + 5))
-            shortlist = ranked[:shortlist_size]
-            face_cascade = self.main_window.face_cascade
+                if not preview_url:  # cor sempre; rosto só com o detector
+                    return 0.0
+                data = client.download_image(preview_url)
+                if not data:
+                    return 0.0
+                try:
+                    with Image.open(BytesIO(data)) as img:
+                        return visual_score(img.convert("RGB"), face_cascade)
+                except Exception as exc:
+                    logger.debug("Falha ao avaliar %s: %s", preview_url, exc)
+                    return 0.0
 
             def task_fn(cancel_event, on_progress):
-                results = []
-                total = len(shortlist)
-                for index, post in enumerate(shortlist, start=1):
-                    if cancel_event and cancel_event.is_set():
+                good = []  # (pontuação, post)
+                stats = {"imported": 0, "excluded": 0, "pages": 0}
+                seen = set()
+                page, posts = first_page, first_posts
+                while True:
+                    stats["pages"] += 1
+                    # vídeos/ugoira não viram custom; questionável/explícito nunca
+                    # entra no Auto; o já importado (ou já marcado) não volta
+                    images = [p for p in posts if is_image_post(p) and p.get("id") not in seen]
+                    seen.update(p.get("id") for p in images)
+                    eligible = [p for p in images if is_auto_eligible(p)]
+                    stats["excluded"] += len(images) - len(eligible)
+                    fresh = [p for p in eligible if not history.get(p.get("id"))]
+                    stats["imported"] += len(eligible) - len(fresh)
+                    fresh = [p for p in fresh if p.get("id") not in already_selected]
+                    missing = count - len(good)
+                    # a pontuação visual (que baixa a prévia) só para os mais promissores
+                    ranked = sorted(fresh, key=score_of, reverse=True)
+                    shortlist = ranked[: max(missing * 2, missing + 5)]
+                    for index, post in enumerate(shortlist, start=1):
+                        if cancel_event is not None and cancel_event.is_set():
+                            return None
+                        total = score_of(post) + visual_bonus(post)
+                        if total >= MIN_AUTO_SCORE:
+                            good.append((total, post))
+                        if on_progress:
+                            on_progress(index, len(shortlist), f"Página {page}: avaliando {index}/{len(shortlist)}...")
+                    if len(good) >= count or page >= last_page or len(posts) < page_size:
                         break
-                    bonus = 0.0
-                    preview_url = (
-                        post.get("preview_file_url")
-                        or post.get("preview_url")
-                        or post.get("sample_url")
-                        or post.get("file_url")
-                    )
-                    if preview_url:  # cor sempre; rosto só com o detector
-                        data = self.client.download_image(preview_url)
-                        if data:
-                            try:
-                                with Image.open(BytesIO(data)) as img:
-                                    bonus = visual_score(img.convert("RGB"), face_cascade)
-                            except Exception as exc:
-                                logger.debug("Falha ao avaliar %s: %s", preview_url, exc)
-                    results.append((post.get("id"), score_of(post) + bonus))
+                    page += 1
                     if on_progress:
-                        on_progress(index, total, f"Avaliando candidatos... {index}/{total}")
-                return {"scores": results}
+                        on_progress(0, 1, f"Poucos bons até aqui ({len(good)}/{count}): buscando a página {page}...")
+                    try:
+                        posts = filter_blacklisted(client.search_posts(tags, limit=page_size, page=page), blacklist)
+                    except Exception as exc:  # sem a próxima página: fica com o que achou
+                        logger.warning("Auto: página %s não carregou: %s", page, exc)
+                        break
+                    if not posts:
+                        break
+                good.sort(key=lambda pair: pair[0], reverse=True)
+                return {"posts": [post for _score, post in good[:count]], "stats": stats, "last_page": page}
 
             def on_done(result):
-                scores = result.get("scores") or []
-                scores.sort(key=lambda pair: pair[1], reverse=True)
-                good = [(post_id, score) for post_id, score in scores if post_id is not None and score >= MIN_AUTO_SCORE]
-                top_ids = [post_id for post_id, _score in good[:count]]
-                # o que ficou de fora, para não parecer que a página "não tem nada"
+                if not result:
+                    return  # cancelado
+                chosen = result["posts"]
+                stats = result["stats"]
+                pages = stats["pages"]
+                where = f"nas páginas {first_page}–{result['last_page']}" if pages > 1 else "nesta página"
                 out = []
-                if imported:
-                    out.append(f"{imported} já importado(s)")
-                if excluded:
-                    out.append(f"{excluded} questionável/explícito")
+                if stats["imported"]:
+                    out.append(f"{stats['imported']} já importado(s)")
+                if stats["excluded"]:
+                    out.append(f"{stats['excluded']} questionável/explícito")
                 out_text = f" Fora da disputa: {', '.join(out)}." if out else ""
-                if not top_ids:
+                if not chosen:
                     self.main_window.show_info(
                         "Auto-selecionar",
-                        f"Dos {len(fresh)} resultado(s) ainda não importados desta página, nenhum "
-                        "parece um bom custom (páginas de quadrinho, P&B, grupo, sem personagem...)."
-                        f"{out_text}\n\nVá para a próxima página (→) ou faça outra busca.",
+                        f"Nenhum resultado {where} parece um bom custom (páginas de quadrinho, "
+                        f"P&B, grupo, sem personagem...).{out_text}\n\n"
+                        "Tente outra busca ou continue a partir de outra página.",
                     )
                     return
-                self.results_grid.select_posts_by_id(top_ids)
+                self.results_grid.select_posts(chosen)
+                visible = {p.get("id") for p in self.posts}
+                elsewhere = sum(1 for p in chosen if p.get("id") not in visible)
+                elsewhere_text = f" {elsewhere} em outras páginas (→ para revisar)." if elsewhere else ""
                 fewer = (
-                    f" Só {len(top_ids)} de {requested} pareceram bons nesta página — "
-                    "a próxima (→) pode ter mais."
-                    if len(top_ids) < requested else ""
+                    f" Só {len(chosen)} de {count} pareceram bons {where}."
+                    if len(chosen) < count else ""
                 )
                 self.main_window.show_status(
-                    f"{len(top_ids)} candidato(s) pré-selecionado(s) — revise e clique em Importar."
-                    f"{out_text}{fewer}",
-                    timeout_ms=12000,
+                    f"{len(chosen)} candidato(s) pré-selecionado(s) {where} — revise e clique em Importar."
+                    f"{elsewhere_text}{out_text}{fewer}",
+                    timeout_ms=15000,
                 )
 
             self.main_window.run_task(
@@ -1085,7 +1111,7 @@ if QT_AVAILABLE:
                 "Avaliando candidatos",
                 task_fn,
                 on_done=on_done,
-                maximum=max(1, len(shortlist)),
+                maximum=max(1, count),
             )
 
         def open_expanded_gallery(self):
