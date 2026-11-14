@@ -1004,9 +1004,19 @@ if QT_AVAILABLE:
             def score_of(post):
                 return metadata_score(post, avoid_tags)
 
+            # o que já foi importado nunca volta: antes, com a página toda
+            # importada, o Auto escolhia de novo os mesmos
             fresh = [p for p in candidates if not self.import_history.get(p.get("id"))]
-            # prefere o que ainda não foi importado; se tudo já foi, usa todos
-            ranked = sorted(fresh or candidates, key=score_of, reverse=True)
+            imported = len(candidates) - len(fresh)
+            if not fresh:
+                self.main_window.show_info(
+                    "Auto-selecionar",
+                    f"Os {imported} resultado(s) Geral/Sensível desta página já foram importados. "
+                    "Vá para a próxima página (→) ou faça outra busca.",
+                )
+                return
+            requested = count
+            ranked = sorted(fresh, key=score_of, reverse=True)
             count = min(count, len(ranked))
             shortlist_size = min(len(ranked), max(count * 2, count + 5))
             shortlist = ranked[:shortlist_size]
@@ -1043,21 +1053,31 @@ if QT_AVAILABLE:
                 scores.sort(key=lambda pair: pair[1], reverse=True)
                 good = [(post_id, score) for post_id, score in scores if post_id is not None and score >= MIN_AUTO_SCORE]
                 top_ids = [post_id for post_id, _score in good[:count]]
+                # o que ficou de fora, para não parecer que a página "não tem nada"
+                out = []
+                if imported:
+                    out.append(f"{imported} já importado(s)")
+                if excluded:
+                    out.append(f"{excluded} questionável/explícito")
+                out_text = f" Fora da disputa: {', '.join(out)}." if out else ""
                 if not top_ids:
                     self.main_window.show_info(
                         "Auto-selecionar",
-                        "Nenhum resultado desta página parece um bom custom (páginas de "
-                        "quadrinho, P&B, grupo, sem personagem...). Tente a próxima página "
-                        "ou outra busca.",
+                        f"Dos {len(fresh)} resultado(s) ainda não importados desta página, nenhum "
+                        "parece um bom custom (páginas de quadrinho, P&B, grupo, sem personagem...)."
+                        f"{out_text}\n\nVá para a próxima página (→) ou faça outra busca.",
                     )
                     return
                 self.results_grid.select_posts_by_id(top_ids)
-                skipped = f" ({excluded} questionável/explícito fora)" if excluded else ""
-                fewer = f" — só {len(top_ids)} de {count} pareceram bons" if len(top_ids) < count else ""
+                fewer = (
+                    f" Só {len(top_ids)} de {requested} pareceram bons nesta página — "
+                    "a próxima (→) pode ter mais."
+                    if len(top_ids) < requested else ""
+                )
                 self.main_window.show_status(
-                    f"{len(top_ids)} candidato(s) pré-selecionado(s) pela pontuação{skipped}{fewer} — "
-                    "revise e clique em Importar.",
-                    timeout_ms=10000,
+                    f"{len(top_ids)} candidato(s) pré-selecionado(s) — revise e clique em Importar."
+                    f"{out_text}{fewer}",
+                    timeout_ms=12000,
                 )
 
             self.main_window.run_task(

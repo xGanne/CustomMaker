@@ -293,7 +293,7 @@ class TestAutoSelectSafeContent(unittest.TestCase):
         ]
         self.tab._auto_select_best()
         self.assertEqual(sorted(self.selected), [3, 4])
-        self.assertIn("2 questionável/explícito fora", self.main.statuses[-1])
+        self.assertIn("2 questionável/explícito", self.main.statuses[-1])
 
     def test_suggestive_tags_lose_to_clean_ones(self):
         self.tab.posts = [
@@ -320,7 +320,7 @@ class TestAutoSelectSafeContent(unittest.TestCase):
         self.tab.posts = [self._post(1, "g"), self._post(2, "g", manga), self._post(3, "g", manga)]
         self.tab._auto_select_best()  # pede 2: só 1 é bom
         self.assertEqual(self.selected, [1])
-        self.assertIn("só 1 de 2", self.main.statuses[-1])
+        self.assertIn("Só 1 de 2", self.main.statuses[-1])
 
     def test_page_with_only_bad_candidates_selects_nothing_and_says_why(self):
         manga = "monochrome comic speech_bubble multiple_girls"
@@ -328,6 +328,34 @@ class TestAutoSelectSafeContent(unittest.TestCase):
         self.tab._auto_select_best()
         self.assertEqual(self.selected, [])
         self.assertIn("quadrinho", self.main.infos[-1])
+
+    def _mark_imported(self, *post_ids):
+        import tempfile
+        for post_id in post_ids:
+            handle, path = tempfile.mkstemp(dir=_HISTORY_DIR, suffix=".png")
+            os.close(handle)
+            self.tab.import_history.record(post_id, path)
+
+    def test_imported_posts_are_never_selected_again(self):
+        self.tab.posts = [self._post(1, "g"), self._post(2, "g"), self._post(3, "g", "solo")]
+        self._mark_imported(1, 2)
+        self.tab._auto_select_best()
+        self.assertEqual(self.selected, [3])
+        self.assertIn("2 já importado(s)", self.main.statuses[-1])
+
+    def test_page_fully_imported_says_so_instead_of_repeating(self):
+        self.tab.posts = [self._post(1, "g"), self._post(2, "g")]
+        self._mark_imported(1, 2)
+        self.tab._auto_select_best()
+        self.assertEqual(self.selected, [])  # antes: escolhia os mesmos de novo
+        self.assertIn("já foram importados", self.main.infos[-1])
+
+    def test_no_good_left_mentions_what_was_already_imported(self):
+        manga = "monochrome comic speech_bubble multiple_girls"
+        self.tab.posts = [self._post(1, "g"), self._post(2, "g", manga)]
+        self._mark_imported(1)
+        self.tab._auto_select_best()
+        self.assertIn("1 já importado(s)", self.main.infos[-1])
 
     def test_page_with_only_explicit_results_explains_why(self):
         self.tab.posts = [self._post(1, "e"), self._post(2, "q")]
