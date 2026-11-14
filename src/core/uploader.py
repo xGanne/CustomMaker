@@ -132,10 +132,12 @@ class ImgChestUploader:
                 if len(title_part) < 3:
                     title_part = f"Upload_{batch_num}"
 
+                # sem "anonymous": o ImgChest desativou uploads anônimos (HTTP 403
+                # "Anonymous uploads are currently disabled"); o post fica na
+                # conta do token, ainda oculto ("hidden": só quem tem o link vê)
                 payload = {
                     "title": title_part,
                     "privacy": privacy,
-                    "anonymous": "1",
                     "nsfw": "1",
                 }
 

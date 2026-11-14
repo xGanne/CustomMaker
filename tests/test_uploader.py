@@ -59,6 +59,23 @@ class RetryFileAwareSession:
 
 
 class TestUploader(unittest.TestCase):
+    def test_upload_is_not_anonymous_and_stays_hidden(self):
+        # o ImgChest recusa upload anônimo (HTTP 403 "Anonymous uploads are
+        # currently disabled"): o post vai para a conta do token, oculto
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = f"{tmp}/a.png"
+            with open(image_path, "wb") as f:
+                f.write(b"png")
+            session = DummySession([DummyResponse(
+                status_code=200, payload={"data": {"images": [{"link": "https://imgchest.com/p/x"}]}},
+            )])
+            uploader = ImgChestUploader(api_token="token", session=session)
+            links, errors = uploader.upload_images([{"path": image_path, "filename": "a.png"}], album_title="album", retries=0)
+        self.assertEqual((links, errors), (["https://imgchest.com/p/x"], []))
+        data = session.calls[0]["data"]
+        self.assertNotIn("anonymous", data)
+        self.assertEqual(data["privacy"], "hidden")
+
     def test_upload_requires_token(self):
         with patch("src.core.uploader.IMG_CHEST_API_TOKEN", None):
             uploader = ImgChestUploader(api_token=None)
