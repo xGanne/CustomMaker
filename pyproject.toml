@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "custommaker"
-version = "0.1.0"
+# a versão vem de src/version.py (a mesma que o app mostra e o CI confere na tag)
+dynamic = ["version"]
 description = "Desktop editor for Mudae custom card workflows."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
@@ -17,6 +18,14 @@ dependencies = [
     "python-dotenv==1.0.1",
     "requests==2.32.3",
 ]
+
+[tool.setuptools.dynamic]
+version = { attr = "src.version.__version__" }
+
+# o app importa "src.core...": sem isto o setuptools tratava src/ como layout
+# "src" e instalava core/, qt/... soltos (o pip install . nunca funcionou)
+[tool.setuptools.packages.find]
+include = ["src", "src.*"]
 
 [project.optional-dependencies]
 dev = [
