@@ -4,50 +4,57 @@
 
 CustomMaker é um editor desktop para criar customs do Mudae no formato 225x350. A interface principal usa Qt/PySide6 e reúne edição de borda, ajustes de enquadramento, processamento em lote, busca online, presets, exportação e upload.
 
+## Baixar
+
+Baixe o `CustomMaker.exe` da [última Release](https://github.com/xGanne/CustomMaker/releases/latest) — não precisa instalar nem ter Python.
+
+Depois disso o app se atualiza sozinho: quando sai uma versão nova, ele baixa em segundo plano,
+confere o arquivo (SHA-256) e mostra **Reiniciar para atualizar** na barra de status; nada é
+trocado antes do clique, e se a versão nova não abrir, a anterior volta. Para isso o exe precisa
+ficar numa pasta onde dá para gravar (não em Arquivos de Programas). Desligue em
+Configurações › Aparência para só ser avisado.
+
 ## Recursos
 
-- **Editor Qt**: carregue uma pasta, cole imagens da área de transferência, ajuste enquadramento, desfaça alterações e aplique bordas.
-- **Bordas e animações**: escolha cores prontas, cor personalizada, conta-gotas e efeitos animados como rainbow, neon, strobe, glitch, spin e flow.
-- **Processamento em lote**: aplique auto fit ou ajuste inteligente em todas as imagens e exporte tudo como imagens ou ZIP.
-- **Busca Danbooru**: pesquise por tags, filtre rating/ordenação, visualize resultados e importe imagens para a lista.
-- **Presets**: salve combinações de borda, cor e animação para reutilizar depois.
-- **Upload ImgChest**: envie as imagens processadas e copie o comando pronto para usar no Mudae.
+- **Editor Qt**: carregue uma pasta, cole imagens da área de transferência, ajuste enquadramento, desfaça alterações (com histórico nomeado) e aplique bordas.
+- **Bordas e animações**: cores prontas, cor personalizada, conta-gotas, estilos de borda e efeitos animados como rainbow, neon, strobe, glitch, spin e flow.
+- **Ajustes de cor**: brilho, contraste, saturação e outros, com prévia ao vivo igual ao export.
+- **Processamento em lote**: auto fit ou ajuste inteligente (rosto) em todas as imagens; exporte como imagens ou ZIP.
+- **Revisão**: grade com todas as customs como sairão e o tamanho de cada arquivo antes do upload.
+- **Busca Danbooru**: pesquise por tags, filtre rating/ordenação e importe imagens. O **★ Auto** pré-seleciona boas candidatas a custom (personagem único, colorida, boa resolução) em uma ou mais páginas — conteúdo questionável/explícito nunca entra, e tags sugestivas pesam contra.
+- **Presets**: salve combinações de borda, cor, animação e ajustes para reutilizar depois.
+- **Upload ImgChest**: envie as customs e copie o comando pronto para o Mudae.
+- **Sessão**: lista, enquadramentos e edições são salvos sozinhos e oferecidos de volta ao reabrir.
+- **Paleta de comandos** (`Ctrl+K`): encontre qualquer ação digitando.
 - **IA em modo seguro**: com Gemini configurado, a aba IA gera uma descrição textual da edição desejada quando edição real de imagem não está disponível.
-
-## Requisitos
-
-- Python 3.11
-- Dependências:
-
-```sh
-pip install -r requirements.txt
-```
-
-Ou via metadata do projeto:
-
-```sh
-pip install .
-pip install ".[dev]"
-```
 
 ## Configuração
 
-Crie um arquivo `.env` na raiz do projeto:
+Crie um arquivo `.env` (no exe ele fica em `%LOCALAPPDATA%\CustomMaker\`; rodando pelo código,
+na raiz do projeto):
 
 ```sh
 IMG_CHEST_API_TOKEN=seu_token_aqui
 GEMINI_API_KEY=sua_chave_gemini_aqui
 ```
 
-`IMG_CHEST_API_TOKEN` é necessário para upload. `GEMINI_API_KEY` é opcional e habilita a geração de descrições na aba IA.
+`IMG_CHEST_API_TOKEN` é necessário para upload. `GEMINI_API_KEY` é opcional e habilita a
+geração de descrições na aba IA. A conta do Danbooru (opcional, libera mais tags por busca) é
+configurada em Configurações › Danbooru e também fica só no `.env`.
 
-As preferências locais ficam em `custommaker_config.json`. A chave `ai_base_prompt` controla a instrução base usada pela IA.
+As preferências ficam em `custommaker_config.json`, na mesma pasta do `.env`.
 
-## Uso
+## Logs e relato de bugs
 
-Execute a aplicação principal:
+`Ctrl+K` › **Abrir pasta de logs** abre a pasta com o `app.log` (erros, avisos do Qt) e o
+`crash.log` (fechamentos inesperados). São esses os arquivos a anexar ao relatar um problema.
+
+## Rodar pelo código-fonte
+
+Requer Python 3.11:
 
 ```sh
+pip install -r requirements.txt
 python main.py
 ```
 
@@ -103,6 +110,21 @@ tudo, como `tests/conftest.py`.
 Nos testes, a exportação roda em threads dentro do próprio processo, e não no pool de
 processos do app: cada processo do pool carrega numpy/OpenCV/PIL de novo. Só os testes
 marcados com `@pytest.mark.real_pool` (autoteste do exe e o pool em si) usam processos.
+
+## Lançar uma versão
+
+1. Suba o número em `src/version.py` (ex.: `1.2.3`) e faça o commit.
+2. Crie e envie a tag com o mesmo número:
+
+   ```sh
+   git tag -a v1.2.3 -m "Custom Maker 1.2.3"
+   git push origin main
+   git push origin v1.2.3
+   ```
+
+O CI roda os testes, gera o exe, testa a autoatualização nele de verdade e publica a Release
+com o `CustomMaker.exe`. Se a tag não bater com `src/version.py`, nada é publicado. Quem já
+tem o app recebe a versão nova pela autoatualização.
 
 ## Sobre
 
