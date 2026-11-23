@@ -328,7 +328,11 @@ h1 {
   background: repeating-conic-gradient(#313244 0 25%, #45475a 0 50%) 0 0 / 16px 16px;
 }
 
-.custom a {
+.custom a,
+.custom .link {
+  border: 0;
+  background: none;
+  font: inherit;
   color: var(--accent);
   font-size: 0.9rem;
   min-height: 32px;

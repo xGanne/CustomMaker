@@ -16,12 +16,14 @@ import {
   type SearchOptions,
 } from "../core/danbooru";
 import { decodeImage, fetchImage } from "../core/images";
+import { isNativeApp } from "../core/network";
 import { encodePng } from "../core/png";
 import type { Raster } from "../core/raster";
 import { renderToBorder } from "../core/render";
 import { rules, type BorderStyle } from "../core/rules";
 import { autoSelect } from "../core/scorer";
 import { h, store } from "./dom";
+import { handleBackButton, shareNative, type PngFile } from "./native";
 
 const PAGE_SIZE = 40;
 const BORDA_POS: [number, number] = [0, 0];
@@ -326,12 +328,7 @@ async function cropFor(item: Item): Promise<Raster> {
   return cropped;
 }
 
-interface Built {
-  name: string;
-  png: Blob;
-}
-
-const built: Built[] = [];
+const built: PngFile[] = [];
 
 async function buildAll(grid: HTMLElement): Promise<void> {
   const run = ++generation;
@@ -355,10 +352,15 @@ async function buildAll(grid: HTMLElement): Promise<void> {
       const custom = applyBorder(cropped, state.style, state.color, borderMasks);
       const png = new Blob([(await encodePng(custom)) as BlobPart], { type: "image/png" });
       if (run !== generation) return;
-      built.push({ name: `${item.name}_custom.png`, png });
+      const file = { name: `${item.name}_custom.png`, png };
+      built.push(file);
       const canvas = h("canvas", { width: custom.width, height: custom.height });
       canvas.getContext("2d")?.putImageData(new ImageData(custom.data, custom.width, custom.height), 0, 0);
-      card.replaceChildren(canvas, h("a", { href: URL.createObjectURL(png), download: `${item.name}_custom.png` }, "Baixar"));
+      // no app Android não existe download: abre o menu de compartilhar do sistema
+      const save = isNativeApp()
+        ? h("button.link", { type: "button", onclick: () => void shareFiles([file]) }, "Compartilhar")
+        : h("a", { href: URL.createObjectURL(png), download: file.name }, "Baixar");
+      card.replaceChildren(canvas, save);
     } catch (error) {
       card.replaceChildren(h("p.hint", {}, `Falhou: ${(error as Error).message}`));
     }
@@ -367,9 +369,19 @@ async function buildAll(grid: HTMLElement): Promise<void> {
   setStatus(`${built.length} de ${list.length} custom(s) prontas.${timing}`);
 }
 
-async function shareOrDownload(): Promise<void> {
-  const files = built.map((b) => new File([b.png], b.name, { type: "image/png" }));
-  if (!files.length) return;
+async function shareFiles(pngs: PngFile[]): Promise<void> {
+  if (!pngs.length) return;
+  if (isNativeApp()) {
+    try {
+      await shareNative(pngs);
+    } catch (error) {
+      // fechar o menu sem escolher também cai aqui: só avisa se for outra coisa
+      const message = (error as Error).message ?? "";
+      if (!/cancel/i.test(message)) setStatus(`Não foi possível compartilhar: ${message}`);
+    }
+    return;
+  }
+  const files = pngs.map((b) => new File([b.png], b.name, { type: "image/png" }));
   if (navigator.canShare?.({ files })) {
     try {
       await navigator.share({ files, title: "Customs" });
@@ -425,7 +437,8 @@ function generateView(): HTMLElement {
     h("p.hint#status", {}, ""),
     grid,
     h("footer.actions", {},
-      h("button.button.primary.wide", { type: "button", onclick: () => void shareOrDownload() }, "Compartilhar / baixar todas")));
+      h("button.button.primary.wide", { type: "button", onclick: () => void shareFiles([...built]) },
+        isNativeApp() ? "Compartilhar todas" : "Compartilhar / baixar todas")));
   queueMicrotask(() => void buildAll(grid));
   return view;
 }
@@ -445,6 +458,7 @@ function render(): void {
 
 export function startApp(): void {
   window.addEventListener("hashchange", render);
+  if (isNativeApp()) handleBackButton();
   const params = new URLSearchParams(location.search);
   // ?q=tags abre já buscando (links de busca); ?auto=N roda o ★ Auto em seguida
   const query = params.get("q");

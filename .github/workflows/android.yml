@@ -22,6 +22,8 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: write # atualizar a Release de teste do Android
     defaults:
       run:
         working-directory: web
@@ -58,3 +60,21 @@ jobs:
           name: CustomMaker-android-${{ github.sha }}
           path: web/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
+
+      # link fixo, sem login, para baixar direto no celular. É pré-release: a
+      # autoatualização do app do PC (que lê a última release normal) não a vê
+      - name: Atualizar a Release de teste do Android
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        working-directory: web/android
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk CustomMaker.apk
+          notes="APK de teste do commit ${GITHUB_SHA::7}. Para instalar, permita fontes desconhecidas quando o Android pedir."
+          if gh release view android-teste >/dev/null 2>&1; then
+            gh release upload android-teste CustomMaker.apk --clobber
+            gh release edit android-teste --notes "$notes"
+          else
+            gh release create android-teste CustomMaker.apk --prerelease --target "$GITHUB_SHA" \
+              --title "App Android (teste)" --notes "$notes"
+          fi
