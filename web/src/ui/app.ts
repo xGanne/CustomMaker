@@ -92,13 +92,18 @@ interface UploadState {
 const root = document.getElementById("app") as HTMLElement;
 let masksPromise: Promise<BorderMasks> | null = null;
 
+/** Máscaras das bordas (arquivo do próprio app). Falhou: a próxima chamada tenta de novo. */
 function masks(): Promise<BorderMasks> {
-  masksPromise ??= fetch(`${import.meta.env.BASE_URL}${rules.masks.file}`)
+  masksPromise ??= fetch(`${import.meta.env.BASE_URL}${rules.masks.file}`, { signal: AbortSignal.timeout(20_000) })
     .then((response) => {
-      if (!response.ok) throw new Error(`máscaras de borda: HTTP ${response.status}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.arrayBuffer();
     })
-    .then(loadMasks);
+    .then(loadMasks)
+    .catch((error: Error) => {
+      masksPromise = null;
+      throw new Error(`não deu para abrir as bordas (${error.name === "TimeoutError" ? "demorou demais" : error.message})`);
+    });
   return masksPromise;
 }
 
@@ -463,7 +468,17 @@ async function buildAll(grid: HTMLElement): Promise<void> {
   // recortes de imagens que saíram da seleção não servem mais
   const keys = new Set(list.map((item) => item.key));
   for (const key of crops.keys()) if (!keys.has(key)) crops.delete(key);
-  const borderMasks = await masks();
+  let borderMasks: BorderMasks;
+  try {
+    borderMasks = await masks();
+  } catch (error) {
+    // sem as bordas nada é gerado: mostra o motivo em vez de ficar "Na fila" para sempre
+    if (run !== generation) return;
+    const message = `Falhou: ${(error as Error).message}`;
+    for (const card of grid.children) card.replaceChildren(h("p.hint", {}, message));
+    setStatus(`${message}. Toque em Voltar e entre de novo para tentar outra vez.`);
+    return;
+  }
   let renderMs = 0;
   let rendered = 0;
   for (const [index, item] of list.entries()) {
@@ -828,6 +843,12 @@ function render(): void {
 
 export function startApp(): void {
   window.addEventListener("hashchange", render);
+  // erro não tratado em qualquer tela: aparece na linha de status (no celular não há console)
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason as Error | undefined;
+    if (reason?.name !== "AbortError") setStatus(`Erro inesperado: ${reason?.message ?? String(event.reason)}`);
+  });
+  window.addEventListener("error", (event) => setStatus(`Erro inesperado: ${event.message}`));
   if (isNativeApp()) handleBackButton();
   const params = new URLSearchParams(location.search);
   // ?q=tags abre já buscando (links de busca); ?auto=N roda o ★ Auto em seguida
