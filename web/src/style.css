@@ -7,6 +7,13 @@
   --accent: #89b4fa;
   --danger: #f38ba8;
   --radius: 10px;
+  /* Área tomada pela barra de status/navegação do sistema. No app Android
+     (tela cheia, Android 15+) o Capacitor informa em --safe-area-inset-*;
+     no navegador vem do env(). Sem isto a hora do celular fica por cima do app. */
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
   color-scheme: dark;
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
 }
@@ -28,7 +35,8 @@ main {
 }
 
 .view {
-  padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
+  padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(96px + var(--safe-bottom))
+    calc(16px + var(--safe-left));
 }
 
 h1 {
@@ -166,8 +174,9 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: -16px -16px 8px;
-  padding: 10px 12px;
+  /* cobre também a faixa da barra de status (o fundo fica atrás da hora) */
+  margin: calc(-16px - var(--safe-top)) -16px 8px;
+  padding: calc(10px + var(--safe-top)) 12px 10px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
@@ -300,7 +309,7 @@ h1 {
   right: 0;
   bottom: 0;
   z-index: 2;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  padding: 10px calc(16px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(16px + var(--safe-left));
   background: var(--bg);
   border-top: 1px solid var(--line);
 }
