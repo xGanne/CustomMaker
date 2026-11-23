@@ -7,6 +7,10 @@ __pycache__/
 venv/
 env/
 
+# ── App web (web/) ────────────────────────────────────────────────────
+node_modules/
+# web/dist é coberto por dist/ abaixo
+
 # ── Build do exe (PyInstaller) ────────────────────────────────────────
 # o exe oficial é gerado pelo CI; build/ e dist/ são só de builds locais
 build/
