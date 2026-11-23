@@ -3,6 +3,7 @@ import os
 import time
 from urllib.parse import urlparse
 
+from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,36 @@ def is_image_post(post):
     ext = str((post or {}).get("file_ext") or "").lower()
     return not ext or ext in IMAGE_FILE_EXTENSIONS
 
+
+# Filtros e ordenações da busca (aba Online do PC e app web — ver
+# scripts/export_web_rules.py)
+RATING_TAGS = {
+    "Qualquer classificação": "",
+    "Geral": "rating:g",
+    "Sensível": "rating:s",
+    "Questionável": "rating:q",
+    "Explícito": "rating:e",
+}
+
+# "Mais recentes" é a ordem padrão do Danbooru: não enviar order: economiza
+# uma das 2 tags permitidas sem login (order: conta no limite; rating: não)
+SORT_TAGS = {
+    "Mais recentes": "",
+    "Melhor avaliados": "order:score",
+    "Mais favoritos": "order:favcount",
+}
+
+# A custom é 225x350 (proporção 0,64). ratio: é largura/altura e, ao contrário
+# de order: e das exclusões, não conta no limite de 2 tags do Danbooru.
+PORTRAIT_RATIO_TAG = "ratio:0.5..0.85"
+
+# resolução mínima da fonte importada: o dobro da custom, para sobrar margem
+# de zoom/corte no editor (abaixo disso importa o original)
+IMPORT_MIN_SIZE = (BORDA_WIDTH * 2, BORDA_HEIGHT * 2)
+# limite de paginação do Danbooru para contas comuns
+MAX_PAGE = 1000
+# ★ Auto: sem candidatos bons na página atual, segue até este total de páginas
+AUTO_SELECT_MAX_PAGES = 5
 
 # Largura da versão "large" (sample) que o Danbooru gera para imagens maiores
 DANBOORU_SAMPLE_WIDTH = 850

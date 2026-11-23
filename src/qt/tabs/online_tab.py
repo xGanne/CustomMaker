@@ -14,9 +14,20 @@ from src.core.custom_scorer import (
     parse_avoid_tags,
     visual_score,
 )
-from src.config.settings import BORDA_HEIGHT, BORDA_WIDTH
 from src.core.import_history import ImportHistory
-from src.core.danbooru import DanbooruClient, filter_blacklisted, import_source, is_image_post, parse_tag_list
+from src.core.danbooru import (
+    AUTO_SELECT_MAX_PAGES,
+    IMPORT_MIN_SIZE,
+    MAX_PAGE as _MAX_PAGE,
+    PORTRAIT_RATIO_TAG,
+    RATING_TAGS,
+    SORT_TAGS,
+    DanbooruClient,
+    filter_blacklisted,
+    import_source,
+    is_image_post,
+    parse_tag_list,
+)
 from src.qt.compat import QT_AVAILABLE, qt_unavailable_error
 from src.qt.theme import tokens
 from src.qt.dialogs.danbooru_gallery_dialog import DanbooruGalleryDialog
@@ -44,27 +55,6 @@ if QT_AVAILABLE:
 
 logger = logging.getLogger(__name__)
 
-
-RATING_TAGS = {
-    "Qualquer classificação": "",
-    "Geral": "rating:g",
-    "Sensível": "rating:s",
-    "Questionável": "rating:q",
-    "Explícito": "rating:e",
-}
-
-# "Mais recentes" é a ordem padrão do Danbooru: não enviar order: economiza
-# uma das 2 tags permitidas sem login (order: conta no limite; rating: não)
-SORT_TAGS = {
-    "Mais recentes": "",
-    "Melhor avaliados": "order:score",
-    "Mais favoritos": "order:favcount",
-}
-
-# A custom é 225x350 (proporção 0,64). ratio: é largura/altura e, ao contrário
-# de order: e das exclusões, não conta no limite de 2 tags do Danbooru.
-PORTRAIT_RATIO_TAG = "ratio:0.5..0.85"
-
 _HISTORY_MAX = 15
 
 
@@ -73,11 +63,6 @@ def import_folder_name(query):
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", query or "")
     name = re.sub(r"\s+", " ", name).strip(" .")
     return name[:60].strip(" .") or "importados"
-# resolução mínima da fonte importada: o dobro da custom, para sobrar margem
-# de zoom/corte no editor (abaixo disso importa o original)
-IMPORT_MIN_SIZE = (BORDA_WIDTH * 2, BORDA_HEIGHT * 2)
-# limite de paginação do Danbooru para contas comuns
-_MAX_PAGE = 1000
 
 
 if QT_AVAILABLE:
@@ -966,7 +951,7 @@ if QT_AVAILABLE:
         # ── Auto-seleção por pontuação (tags + cor + rosto) ─────────────────
         # Sem candidatos bons suficientes na página atual, o Auto segue para as
         # próximas até este total de páginas (a atual inclusa)
-        AUTO_SELECT_MAX_PAGES = 5
+        AUTO_SELECT_MAX_PAGES = AUTO_SELECT_MAX_PAGES
 
         def _auto_select_best(self):
             if not self.posts:
