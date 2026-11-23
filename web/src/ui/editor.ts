@@ -149,17 +149,18 @@ export function createEditor(options: EditorOptions): Editor {
   }
   stage.addEventListener("pointerup", pointerEnd);
   stage.addEventListener("pointercancel", pointerEnd);
+  // o sistema tirou o dedo sem pointerup/pointercancel: sem isto ele ficaria
+  // "na tela" e o próximo arrastar com um dedo viraria pinça
+  stage.addEventListener("lostpointercapture", pointerEnd);
 
   // roda do mouse (para testar no PC): zoom em torno do cursor
-  let wheelTimer = 0;
   stage.addEventListener("wheel", (event) => {
     if (!framing) return;
     event.preventDefault();
     const [cx, cy] = toCustom(event.clientX, event.clientY);
     framing = zoomAt(framing, Math.exp(-event.deltaY * 0.0015), cx, cy, fitWidth);
     place();
-    window.clearTimeout(wheelTimer);
-    wheelTimer = window.setTimeout(commit, 200);
+    commit(); // a cada passo: clicar em "Gerar" logo depois não perde o último zoom
   }, { passive: false });
 
   // ── imagem ──────────────────────────────────────────────────────────
