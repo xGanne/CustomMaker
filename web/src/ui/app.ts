@@ -367,8 +367,11 @@ function chooseView(): HTMLElement {
 
 // ── Gerar ───────────────────────────────────────────────────────────────
 
-/** Recortes já calculados, por imagem e enquadramento (cor/estilo não mudam o recorte). */
-const crops = new Map<string, Raster>();
+/**
+ * Recorte já calculado de cada imagem (Item.key), com o enquadramento que o gerou
+ * (cor/estilo não mudam o recorte). Só o mais recente de cada imagem fica.
+ */
+const crops = new Map<string, { framing: string; raster: Raster }>();
 let generation = 0;
 
 function items(): Item[] {
@@ -378,39 +381,50 @@ function items(): Item[] {
   return [...state.selected.values()].map((post) => ({ key: `post:${post.id}`, name: String(post.id), post }));
 }
 
-/** Endereço da imagem para a tela de enquadrar (a mesma que vira a custom). */
-const photoUrls = new Map<string, string>();
+/**
+ * Imagens abertas (já reduzidas a no máximo 2400 px). A tela de enquadrar mostra
+ * a mesma que vira a custom. Só as últimas ficam: cada uma ocupa ~17 MB.
+ */
+const sources = new Map<string, Promise<Raster>>();
+const SOURCES_KEPT = 2;
 
-function sourceUrl(item: Item): string | null {
-  if (item.file) {
-    let url = photoUrls.get(item.key);
-    if (!url) {
-      url = URL.createObjectURL(item.file);
-      photoUrls.set(item.key, url);
-    }
-    return url;
+function loadSource(item: Item): Promise<Raster> {
+  let loading = sources.get(item.key);
+  if (loading) {
+    sources.delete(item.key); // volta a ser a mais recente
+  } else {
+    const url = item.post ? importSource(item.post) : null;
+    loading = item.file
+      ? decodeImage(item.file)
+      : url ? fetchImage(url) : Promise.reject(new Error("post sem imagem"));
+    const mine = loading;
+    // falhou (sem internet...): a próxima tentativa abre de novo
+    loading.catch(() => {
+      if (sources.get(item.key) === mine) sources.delete(item.key);
+    });
   }
-  return item.post ? importSource(item.post) : null;
+  sources.set(item.key, loading);
+  while (sources.size > SOURCES_KEPT) sources.delete(sources.keys().next().value as string);
+  return loading;
+}
+
+/** Enquadramento salvo da imagem, como texto ("auto" = encaixe automático). */
+function framingOf(item: Item): string {
+  const saved = state.framings.get(item.key);
+  return saved ? framingKey(saved) : "auto";
 }
 
 async function cropFor(item: Item): Promise<Raster> {
+  const key = framingOf(item);
+  const cached = crops.get(item.key);
+  if (cached?.framing === key) return cached.raster;
+  const source = await loadSource(item);
   const saved = state.framings.get(item.key);
-  const cacheKey = `${item.key}|${saved ? framingKey(saved) : "auto"}`;
-  const cached = crops.get(cacheKey);
-  if (cached) return cached;
-  let source: Raster;
-  if (item.file) {
-    source = await decodeImage(item.file);
-  } else {
-    const url = sourceUrl(item);
-    if (!url) throw new Error("post sem imagem");
-    source = await fetchImage(url);
-  }
   // sem enquadramento salvo (não passou pela tela de enquadrar): encaixe automático
   const framing = saved ? rounded(saved) : fitFraming(source.width, source.height);
   if (!framing) throw new Error("imagem pequena demais");
   const cropped = await renderInBackground(source, framing.pos, framing.size, BORDA_POS);
-  crops.set(cacheKey, cropped);
+  crops.set(item.key, { framing: key, raster: cropped });
   return cropped;
 }
 
@@ -428,6 +442,9 @@ async function buildAll(grid: HTMLElement): Promise<void> {
   const list = items();
   built.length = 0;
   builtPosts.clear();
+  // recortes de imagens que saíram da seleção não servem mais
+  const keys = new Set(list.map((item) => item.key));
+  for (const key of crops.keys()) if (!keys.has(key)) crops.delete(key);
   const borderMasks = await masks();
   let renderMs = 0;
   let rendered = 0;
@@ -436,7 +453,7 @@ async function buildAll(grid: HTMLElement): Promise<void> {
     setStatus(`Gerando ${index + 1} de ${list.length}...`);
     const card = grid.children[index] as HTMLElement;
     try {
-      const fresh = !crops.has(item.key);
+      const fresh = crops.get(item.key)?.framing !== framingOf(item);
       const started = performance.now();
       const cropped = await cropFor(item);
       if (fresh) {
@@ -541,7 +558,7 @@ function frameView(): HTMLElement {
   state.editIndex = Math.max(0, Math.min(state.editIndex, list.length - 1));
   const item = list[state.editIndex];
   const editor = createEditor({
-    src: sourceUrl(item) ?? "",
+    source: loadSource(item),
     framing: state.framings.get(item.key) ?? null,
     overlay: createRaster(rules.border.width, rules.border.height),
     onChange: (framing) => state.framings.set(item.key, framing),

@@ -2,7 +2,7 @@
  * Tela de enquadrar: a borda fica parada no centro e a imagem se move por baixo.
  *
  * Durante o gesto a imagem anda só por CSS (transform na GPU): fica fluido em
- * qualquer celular. A borda por cima é desenhada com as mesmas máscaras da
+ * qualquer celular. A imagem mostrada é a mesma (já reduzida) que vira a custom. A borda por cima é desenhada com as mesmas máscaras da
  * custom final. A custom exata sai depois, do enquadramento (posição e tamanho),
  * pelo mesmo render do PC.
  */
@@ -12,7 +12,8 @@ import { rules } from "../core/rules";
 import { h } from "./dom";
 
 export interface EditorOptions {
-  src: string;
+  /** a imagem que vira a custom (a tela mostra exatamente estes pixels) */
+  source: Promise<Raster>;
   /** enquadramento salvo; null = encaixe automático quando a imagem carregar */
   framing: Framing | null;
   /** borda (225x350, transparente no meio) já na cor e estilo atuais */
@@ -34,7 +35,7 @@ const TAP_SLOP_PX = 10;
 
 export function createEditor(options: EditorOptions): Editor {
   const { width: W, height: H } = rules.border;
-  const image = h("img", { alt: "", draggable: false, decoding: "async" });
+  const image = h("canvas.picture", { width: 1, height: 1 });
   const overlayCanvas = h("canvas", { width: W, height: H });
   const frame = h("div.frame", {}, overlayCanvas);
   const stage = h("div.stage", {}, image, frame, h("div.stage-hint", {}, "Carregando a imagem..."));
@@ -162,25 +163,29 @@ export function createEditor(options: EditorOptions): Editor {
   }, { passive: false });
 
   // ── imagem ──────────────────────────────────────────────────────────
-  image.addEventListener("load", () => {
-    natural = [image.naturalWidth, image.naturalHeight];
-    fitWidth = fitFraming(natural[0], natural[1])?.size[0] ?? natural[0];
-    stage.querySelector(".stage-hint")?.remove();
-    if (!framing) {
-      fit();
-    } else {
-      place();
-    }
-  });
-  image.addEventListener("error", () => {
-    const hint = stage.querySelector(".stage-hint");
-    if (hint) hint.textContent = "Não foi possível abrir a imagem.";
-    options.onError?.("Não foi possível abrir a imagem.");
-  });
+  options.source.then(
+    (raster) => {
+      image.width = raster.width;
+      image.height = raster.height;
+      image.getContext("2d")?.putImageData(new ImageData(raster.data, raster.width, raster.height), 0, 0);
+      natural = [raster.width, raster.height];
+      fitWidth = fitFraming(natural[0], natural[1])?.size[0] ?? natural[0];
+      stage.querySelector(".stage-hint")?.remove();
+      if (!framing) {
+        fit();
+      } else {
+        place();
+      }
+    },
+    () => {
+      const hint = stage.querySelector(".stage-hint");
+      if (hint) hint.textContent = "Não foi possível abrir a imagem.";
+      options.onError?.("Não foi possível abrir a imagem.");
+    },
+  );
 
   new ResizeObserver(layout).observe(stage);
   drawOverlay(options.overlay);
-  image.src = options.src;
 
   return { element: stage, setOverlay: drawOverlay, fit };
 }

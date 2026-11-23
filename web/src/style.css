@@ -324,7 +324,7 @@ h1 {
   -webkit-user-select: none;
 }
 
-.stage img {
+.stage .picture {
   position: absolute;
   left: 0;
   top: 0;
