@@ -19,6 +19,28 @@ export interface UploadResult {
 
 export class ImgChestAuthError extends Error {}
 
+/**
+ * Tempo máximo de um lote (10 imagens de ~150 KB). Numa conexão móvel que trava
+ * sem dar erro, o pedido ficaria esperando para sempre; assim ele é refeito.
+ */
+export const BATCH_TIMEOUT_MS = 90_000;
+
+/** `signal` do usuário + limite de tempo; `clear()` desliga o relógio. */
+function attemptSignal(user: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException("tempo esgotado", "TimeoutError")), timeoutMs);
+  const onAbort = () => controller.abort(user?.reason);
+  if (user?.aborted) onAbort();
+  else user?.addEventListener("abort", onAbort, { once: true });
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timer);
+      user?.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
 function isRetryable(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
 }
@@ -39,12 +61,21 @@ async function sendBatch(files: UploadFile[], title: string, token: string, sign
   });
 }
 
-/** Envia em lotes; devolve os links na ordem das imagens e os erros de cada lote. */
+/**
+ * Envia em lotes; devolve os links na ordem das imagens e os erros de cada lote.
+ * Cancelado (`signal`): para e devolve os links dos lotes que já subiram, como o PC.
+ */
 export async function uploadCustoms(
   files: UploadFile[],
   albumTitle: string,
   token: string,
-  options: { signal?: AbortSignal; onProgress?: (done: number, total: number) => void; retries?: number; retryDelayMs?: number } = {},
+  options: {
+    signal?: AbortSignal;
+    onProgress?: (done: number, total: number) => void;
+    retries?: number;
+    retryDelayMs?: number;
+    timeoutMs?: number;
+  } = {},
 ): Promise<UploadResult> {
   const cleanToken = token.trim();
   if (!cleanToken) throw new ImgChestAuthError("Configure o token do ImgChest (Configurações).");
@@ -56,14 +87,19 @@ export async function uploadCustoms(
 
   for (let start = 0; start < files.length; start += batchSize) {
     const number = start / batchSize + 1;
+    if (options.signal?.aborted) {
+      errors.push(`Lote ${number}: cancelado.`);
+      break;
+    }
     const batch = files.slice(start, start + batchSize);
     let title = batches > 1 ? `${albumTitle} (Part ${number})` : albumTitle;
     if (title.length < 3) title = `Upload_${number}`;
     let done = false;
     for (let attempt = 0; attempt <= retries && !done; attempt++) {
-      if (options.signal?.aborted) throw new DOMException("cancelado", "AbortError");
+      if (options.signal?.aborted) break;
+      const timed = attemptSignal(options.signal, options.timeoutMs ?? BATCH_TIMEOUT_MS);
       try {
-        const response = await sendBatch(batch, title, cleanToken, options.signal);
+        const response = await sendBatch(batch, title, cleanToken, timed.signal);
         if (response.status === 401) throw new ImgChestAuthError("Token do ImgChest inválido: confira nas Configurações.");
         if (response.ok) {
           const data = (await response.json().catch(() => null)) as { data?: { images?: { link?: string }[] } } | null;
@@ -77,13 +113,23 @@ export async function uploadCustoms(
           done = true;
         }
       } catch (error) {
-        if (error instanceof ImgChestAuthError || (error as Error).name === "AbortError") throw error;
+        if (error instanceof ImgChestAuthError) throw error;
+        if (options.signal?.aborted) break; // cancelado: o lote não conta
         if (attempt === retries) {
-          errors.push(`Lote ${number}: sem conexão com o ImgChest (${(error as Error).message}).`);
+          const reason = (error as Error).name === "TimeoutError" ? "demorou demais" : (error as Error).message;
+          errors.push(`Lote ${number}: sem conexão com o ImgChest (${reason}).`);
           done = true;
         }
+      } finally {
+        timed.clear();
       }
-      if (!done) await new Promise((resolve) => setTimeout(resolve, (options.retryDelayMs ?? 1000) * (attempt + 1)));
+      if (!done && !options.signal?.aborted) {
+        await new Promise((resolve) => setTimeout(resolve, (options.retryDelayMs ?? 1000) * (attempt + 1)));
+      }
+    }
+    if (!done) {
+      errors.push(`Lote ${number}: cancelado.`);
+      break;
     }
     options.onProgress?.(Math.min(files.length, start + batch.length), files.length);
   }

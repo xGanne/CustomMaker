@@ -67,4 +67,39 @@ describe("envio ao ImgChest", () => {
     expect(result.links).toEqual(["a"]);
     expect(result.errors).toEqual(["Lote 2: HTTP 422 ruim"]);
   });
+
+  /** fetch que nunca responde (conexão travada), mas obedece ao cancelamento. */
+  const hanging = (_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+  });
+
+  it("conexão travada: desiste do lote depois do tempo limite, tenta de novo e segue", async () => {
+    let call = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      call++;
+      return call === 1 ? hanging(url, init) : ok(["b"]);
+    }));
+    const result = await uploadCustoms(files(2), "Miku", "tok", { retryDelayMs: 0, timeoutMs: 20 });
+    expect(call).toBe(2);
+    expect(result).toEqual({ links: ["b"], errors: [] });
+
+    vi.stubGlobal("fetch", vi.fn(hanging));
+    const stuck = await uploadCustoms(files(2), "Miku", "tok", { retryDelayMs: 0, timeoutMs: 20, retries: 1 });
+    expect(stuck).toEqual({ links: [], errors: ["Lote 1: sem conexão com o ImgChest (demorou demais)."] });
+  });
+
+  it("cancelar no meio devolve os links dos lotes que já subiram", async () => {
+    const controller = new AbortController();
+    let call = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      call++;
+      if (call === 1) return ok(Array.from({ length: 10 }, (_, i) => `l${i}`));
+      setTimeout(() => controller.abort(), 5); // cancela com o lote 2 no ar
+      return hanging(url, init);
+    }));
+    const result = await uploadCustoms(files(25), "Miku", "tok", { signal: controller.signal, retryDelayMs: 0 });
+    expect(call).toBe(2); // o lote 3 nem começa
+    expect(result.links).toHaveLength(10);
+    expect(result.errors).toEqual(["Lote 2: cancelado."]);
+  });
 });
