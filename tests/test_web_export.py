@@ -68,6 +68,10 @@ class TestWebFixturesAreCurrent(unittest.TestCase):
             np.testing.assert_array_equal(self._stored(f"color-{name}.png"), np.asarray(image),
                                           err_msg=f"color-{name}: {REGENERATE}")
 
+    def test_mudae_commands_reference_is_current(self):
+        with open(os.path.join(self.fixtures.FIXTURES_DIR, "mudae.json"), encoding="utf-8") as file_obj:
+            self.assertEqual(json.load(file_obj), self.fixtures.mudae_table(), REGENERATE)
+
     def test_sources_and_reference_customs_are_current(self):
         for name, image in self.sources.items():
             np.testing.assert_array_equal(self._stored(f"source-{name}.png"), np.asarray(image),

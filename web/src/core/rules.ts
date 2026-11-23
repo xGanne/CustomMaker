@@ -10,6 +10,7 @@ export interface Rules {
   defaultStyle: BorderStyle;
   masks: { file: string; order: string[] };
   discordMessageLimit: number;
+  imgchest: { batchSize: number; privacy: string; nsfw: string };
   danbooru: {
     postFields: string;
     imageExtensions: string[];

@@ -176,6 +176,16 @@ def color_table():
     ]
 
 
+def mudae_table():
+    """Comando $ai dividido em mensagens de até 2000 caracteres (src/core/mudae.py)."""
+    from src.core.mudae import mudae_commands
+    links = [f"https://cdn.imgchest.com/files/{i:03d}abcdefghijklmnopq.png" for i in range(120)]
+    cases = []
+    for title, count in (("Hatsune Miku", 1), ("Hatsune Miku", 5), ("Rem (Re:Zero)", 40), ("Nihilux", 120)):
+        cases.append({"title": title, "links": links[:count], "commands": mudae_commands(title, links[:count])})
+    return cases
+
+
 def build_all():
     """(sources, cases, autofit, gradient) — sem gravar nada (usado pelo teste)."""
     sources = build_sources()
@@ -195,6 +205,8 @@ def main():
         file_obj.write(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     for name, image in color_images().items():
         image.save(os.path.join(FIXTURES_DIR, f"color-{name}.png"))
+    with open(os.path.join(FIXTURES_DIR, "mudae.json"), "w", encoding="utf-8", newline="\n") as file_obj:
+        file_obj.write(json.dumps(mudae_table(), ensure_ascii=False, indent=2) + "\n")
     scorer = {"scorer": scorer_table(), "color": color_table()}
     with open(os.path.join(FIXTURES_DIR, "scorer.json"), "w", encoding="utf-8", newline="\n") as file_obj:
         file_obj.write(json.dumps(scorer, ensure_ascii=False, indent=2) + "\n")

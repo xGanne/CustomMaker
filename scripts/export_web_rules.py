@@ -19,7 +19,7 @@ sys.path.insert(0, ROOT)
 
 import numpy as np  # noqa: E402
 
-from src.config.settings import BORDA_HEIGHT, BORDA_HEX, BORDA_WIDTH, BORDER_THICKNESS  # noqa: E402
+from src.config.settings import BORDA_HEIGHT, BORDA_HEX, BORDA_WIDTH, BORDER_THICKNESS, UPLOAD_BATCH_SIZE  # noqa: E402
 from src.core import border_styles, custom_scorer, danbooru  # noqa: E402
 from src.core.mudae import DISCORD_MESSAGE_LIMIT  # noqa: E402
 
@@ -70,6 +70,8 @@ def build_rules():
         "defaultStyle": border_styles.DEFAULT_STYLE,
         "masks": {"file": "generated/masks.bin.gz", "order": list(MASK_ORDER)},
         "discordMessageLimit": DISCORD_MESSAGE_LIMIT,
+        # upload (src/core/uploader.py): lotes de até N imagens, post oculto, sem "anonymous"
+        "imgchest": {"batchSize": min(max(1, int(UPLOAD_BATCH_SIZE)), 20), "privacy": "hidden", "nsfw": "1"},
         "danbooru": {
             "postFields": danbooru.POST_FIELDS,
             "imageExtensions": sorted(danbooru.IMAGE_FILE_EXTENSIONS),

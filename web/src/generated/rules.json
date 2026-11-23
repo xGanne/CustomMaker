@@ -45,6 +45,11 @@
     ]
   },
   "discordMessageLimit": 2000,
+  "imgchest": {
+    "batchSize": 10,
+    "privacy": "hidden",
+    "nsfw": "1"
+  },
   "danbooru": {
     "postFields": "id,rating,score,fav_count,image_width,image_height,file_ext,tag_string,tag_string_character,file_url,large_file_url,preview_file_url,uploader_id",
     "imageExtensions": [
