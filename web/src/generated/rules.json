@@ -1,0 +1,48 @@
+{
+  "_aviso": "Gerado por scripts/export_web_rules.py a partir de src/ — não edite à mão.",
+  "border": {
+    "width": 225,
+    "height": 350,
+    "thickness": 5
+  },
+  "colors": {
+    "Red": "#f38ba8",
+    "Blue": "#89b4fa",
+    "Green": "#a6e3a1",
+    "Yellow": "#f9e2af",
+    "Purple": "#cba6f7",
+    "Orange": "#fab387",
+    "White": "#cdd6f4",
+    "Black": "#11111b",
+    "Gray": "#6c7086",
+    "Cyan": "#74c7ec",
+    "Magenta": "#f5c2e7",
+    "Brown": "#b4637a",
+    "Pink": "#f5c2e7",
+    "Lime": "#a6e3a1",
+    "Olive": "#a6c288",
+    "Maroon": "#bf5f82",
+    "Navy": "#1e66f5",
+    "Teal": "#94e2d5",
+    "Aqua": "#89dceb",
+    "Silver": "#a6adc8"
+  },
+  "styles": {
+    "simples": "Simples",
+    "dupla": "Dupla",
+    "brilho": "Brilho",
+    "degrade": "Degradê",
+    "sombra": "Sombra"
+  },
+  "defaultStyle": "simples",
+  "masks": {
+    "file": "generated/masks.bin.gz",
+    "order": [
+      "band",
+      "dupla",
+      "brilho",
+      "sombra"
+    ]
+  },
+  "discordMessageLimit": 2000
+}
