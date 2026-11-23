@@ -4,7 +4,6 @@
  * Navegação pelo #hash: cada tela é uma entrada no histórico, então o botão
  * "voltar" do Android volta uma tela em vez de fechar o app.
  */
-import { autoFit } from "../core/autofit";
 import { applyBorder, loadMasks, type BorderMasks } from "../core/borders";
 import {
   buildTags,
@@ -15,18 +14,19 @@ import {
   type Post,
   type SearchOptions,
 } from "../core/danbooru";
+import { BORDA_POS, fitFraming, framingKey, rounded, type Framing } from "../core/framing";
 import { decodeImage, fetchImage } from "../core/images";
 import { isNativeApp } from "../core/network";
 import { encodePng } from "../core/png";
-import type { Raster } from "../core/raster";
+import { createRaster, type Raster } from "../core/raster";
 import { renderToBorder } from "../core/render";
 import { rules, type BorderStyle } from "../core/rules";
 import { autoSelect } from "../core/scorer";
 import { h, store } from "./dom";
+import { createEditor } from "./editor";
 import { handleBackButton, shareNative, type PngFile } from "./native";
 
 const PAGE_SIZE = 40;
-const BORDA_POS: [number, number] = [0, 0];
 const RATING_BADGES: Record<string, [string, string]> = {
   g: ["G", "#a6e3a1"],
   s: ["S", "#f9e2af"],
@@ -34,7 +34,7 @@ const RATING_BADGES: Record<string, [string, string]> = {
   e: ["E", "#f38ba8"],
 };
 
-type View = "busca" | "escolher" | "gerar";
+type View = "busca" | "escolher" | "enquadrar" | "gerar";
 
 /** O que vira custom: um post do Danbooru ou uma foto do celular. */
 interface Item {
@@ -56,6 +56,9 @@ const state = {
   color: store.get<string>("color", "#89b4fa"),
   status: "",
   auto: null as AbortController | null,
+  /** enquadramento escolhido por imagem (Item.key); sem entrada = encaixe automático */
+  framings: new Map<string, Framing>(),
+  editIndex: 0,
 };
 
 const root = document.getElementById("app") as HTMLElement;
@@ -73,7 +76,7 @@ function masks(): Promise<BorderMasks> {
 
 function currentView(): View {
   const view = location.hash.replace("#", "") as View;
-  return view === "escolher" || view === "gerar" ? view : "busca";
+  return view === "escolher" || view === "enquadrar" || view === "gerar" ? view : "busca";
 }
 
 function navigate(view: View): void {
@@ -159,7 +162,10 @@ function searchView(): HTMLElement {
     type: "file", accept: "image/*", multiple: true, hidden: true,
     onchange: () => {
       state.photos = [...(photoInput.files ?? [])];
-      if (state.photos.length) navigate("gerar");
+      if (state.photos.length) {
+        state.editIndex = 0;
+        navigate("enquadrar");
+      }
     },
   });
   const recent = store.get<string[]>("recent", []);
@@ -291,14 +297,15 @@ function chooseView(): HTMLElement {
         type: "button", disabled: !state.selected.size,
         onclick: () => {
           state.photos = [];
-          navigate("gerar");
+          state.editIndex = 0;
+          navigate("enquadrar");
         },
-      }, `Gerar customs (${state.selected.size})`)));
+      }, `Enquadrar (${state.selected.size})`)));
 }
 
 // ── Gerar ───────────────────────────────────────────────────────────────
 
-/** Recortes já calculados (o auto fit não muda ao trocar cor/estilo). */
+/** Recortes já calculados, por imagem e enquadramento (cor/estilo não mudam o recorte). */
 const crops = new Map<string, Raster>();
 let generation = 0;
 
@@ -309,22 +316,39 @@ function items(): Item[] {
   return [...state.selected.values()].map((post) => ({ key: `post:${post.id}`, name: String(post.id), post }));
 }
 
+/** Endereço da imagem para a tela de enquadrar (a mesma que vira a custom). */
+const photoUrls = new Map<string, string>();
+
+function sourceUrl(item: Item): string | null {
+  if (item.file) {
+    let url = photoUrls.get(item.key);
+    if (!url) {
+      url = URL.createObjectURL(item.file);
+      photoUrls.set(item.key, url);
+    }
+    return url;
+  }
+  return item.post ? importSource(item.post) : null;
+}
+
 async function cropFor(item: Item): Promise<Raster> {
-  const cached = crops.get(item.key);
+  const saved = state.framings.get(item.key);
+  const cacheKey = `${item.key}|${saved ? framingKey(saved) : "auto"}`;
+  const cached = crops.get(cacheKey);
   if (cached) return cached;
   let source: Raster;
   if (item.file) {
     source = await decodeImage(item.file);
   } else {
-    const url = item.post ? importSource(item.post) : null;
+    const url = sourceUrl(item);
     if (!url) throw new Error("post sem imagem");
     source = await fetchImage(url);
   }
-  const fit = autoFit(source.width, source.height, BORDA_POS);
-  if (!fit) throw new Error("imagem pequena demais");
-  const [fitW, fitH, fitX, fitY] = fit;
-  const cropped = renderToBorder(source, [fitX, fitY], [fitW, fitH], BORDA_POS);
-  crops.set(item.key, cropped);
+  // sem enquadramento salvo (não passou pela tela de enquadrar): encaixe automático
+  const framing = saved ? rounded(saved) : fitFraming(source.width, source.height);
+  if (!framing) throw new Error("imagem pequena demais");
+  const cropped = renderToBorder(source, framing.pos, framing.size, BORDA_POS);
+  crops.set(cacheKey, cropped);
   return cropped;
 }
 
@@ -397,14 +421,13 @@ async function shareFiles(pngs: PngFile[]): Promise<void> {
   }
 }
 
-function generateView(): HTMLElement {
-  const list = items();
-  const grid = h("div.customs", {}, ...list.map(() => h("figure.custom", {}, h("p.hint", {}, "Na fila..."))));
+/** Cor, cor personalizada e estilo da borda (enquadrar e gerar). */
+function borderControls(onChange: () => void): HTMLElement[] {
   const colorSelect = h("select", {
     onchange: () => {
       if (colorSelect.value !== "custom") state.color = colorSelect.value;
       store.set("color", state.color);
-      void buildAll(grid);
+      onChange();
     },
   },
   ...Object.entries(rules.colors).map(([name, hex]) => h("option", { value: hex, selected: hex === state.color }, name)),
@@ -415,25 +438,76 @@ function generateView(): HTMLElement {
       state.color = customColor.value;
       colorSelect.value = "custom";
       store.set("color", state.color);
-      void buildAll(grid);
+      onChange();
     },
   });
   const styleSelect = h("select", {
     onchange: () => {
       state.style = styleSelect.value as BorderStyle;
       store.set("style", state.style);
-      void buildAll(grid);
+      onChange();
     },
   }, ...Object.entries(rules.styles).map(([key, label]) => h("option", { value: key, selected: key === state.style }, label)));
+  return [
+    h("label.field", {}, "Cor", colorSelect),
+    h("label.field", {}, "Personalizada", customColor),
+    h("label.field", {}, "Estilo", styleSelect),
+  ];
+}
+
+// ── Enquadrar ───────────────────────────────────────────────────────────
+
+/** Só a borda (225x350, transparente no meio), na cor e estilo atuais. */
+function borderOverlay(borderMasks: BorderMasks): Raster {
+  return applyBorder(createRaster(rules.border.width, rules.border.height), state.style, state.color, borderMasks);
+}
+
+function frameView(): HTMLElement {
+  const list = items();
+  state.editIndex = Math.max(0, Math.min(state.editIndex, list.length - 1));
+  const item = list[state.editIndex];
+  const editor = createEditor({
+    src: sourceUrl(item) ?? "",
+    framing: state.framings.get(item.key) ?? null,
+    overlay: createRaster(rules.border.width, rules.border.height),
+    onChange: (framing) => state.framings.set(item.key, framing),
+    onError: setStatus,
+  });
+  const refreshOverlay = () => void masks().then((m) => editor.setOverlay(borderOverlay(m)));
+  refreshOverlay();
+  const go = (delta: number) => {
+    state.editIndex += delta;
+    render();
+  };
+  return h("section.view", {},
+    h("header.bar", {},
+      h("button.icon", { type: "button", "aria-label": "Voltar", onclick: () => history.back() }, "←"),
+      h("div.title", {}, h("strong", {}, `Enquadrar · ${state.editIndex + 1} de ${list.length}`),
+        h("span.hint", {}, "Arraste para mover · dois dedos para zoom · toque duplo para encaixar"))),
+    editor.element,
+    h("div.toolbar", {}, ...borderControls(refreshOverlay),
+      h("button.button", { type: "button", onclick: () => editor.fit() }, "Encaixar")),
+    h("nav.pager", {},
+      h("button.button", { type: "button", disabled: state.editIndex <= 0, onclick: () => go(-1) }, "◀ Anterior"),
+      h("span", {}, `${state.editIndex + 1}/${list.length}`),
+      h("button.button", { type: "button", disabled: state.editIndex >= list.length - 1, onclick: () => go(1) }, "Próxima ▶")),
+    h("p.hint#status", {}, ""),
+    h("footer.actions", {},
+      h("button.button.primary.wide", { type: "button", onclick: () => navigate("gerar") }, `Gerar customs (${list.length})`)));
+}
+
+// ── Gerar (continuação) ─────────────────────────────────────────────────
+
+function generateView(): HTMLElement {
+  const list = items();
+  const grid = h("div.customs", {}, ...list.map(() => h("figure.custom", {}, h("p.hint", {}, "Na fila..."))));
 
   const view = h("section.view", {},
     h("header.bar", {},
       h("button.icon", { type: "button", "aria-label": "Voltar", onclick: () => history.back() }, "←"),
       h("div.title", {}, h("strong", {}, `${list.length} custom(s)`),
-        h("span.hint", {}, "Enquadramento automático (ajuste com o dedo na próxima versão)"))),
-    h("div.toolbar", {},
-      h("label.field", {}, "Cor", colorSelect), h("label.field", {}, "Personalizada", customColor),
-      h("label.field", {}, "Estilo", styleSelect)),
+        h("span.hint", {}, "Como você enquadrou (o que não passou pela tela de enquadrar usa o encaixe automático)"))),
+    h("div.toolbar", {}, ...borderControls(() => void buildAll(grid))),
     h("p.hint#status", {}, ""),
     grid,
     h("footer.actions", {},
@@ -447,13 +521,19 @@ function generateView(): HTMLElement {
 
 function render(): void {
   const view = currentView();
-  if (view === "gerar" && !items().length) {
+  if ((view === "gerar" || view === "enquadrar") && !items().length) {
     history.replaceState(null, "", "#busca");
     root.replaceChildren(searchView());
     return;
   }
   if (view !== "gerar") generation++; // saiu da tela: para de gerar
-  root.replaceChildren(view === "escolher" ? chooseView() : view === "gerar" ? generateView() : searchView());
+  const screens: Record<View, () => HTMLElement> = {
+    busca: searchView,
+    escolher: chooseView,
+    enquadrar: frameView,
+    gerar: generateView,
+  };
+  root.replaceChildren(screens[view]());
 }
 
 export function startApp(): void {

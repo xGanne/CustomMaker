@@ -3,6 +3,8 @@
 > Status: **aprovado** (2026-11-22). **M1 publicada** (render idêntico ao PC).
 > **M2 implementada** (busca, ★ Auto, telas). Mudança de rumo: a busca no Danbooru só
 > funciona no **app Android** (seção 7.1); o APK sai do CI.
+> **M3 implementada**: tela de enquadrar (arrastar, pinça, toque duplo, borda ao vivo);
+> testada no navegador com toques de verdade — a custom gerada segue a tela (< 1 px).
 > Decisões: endereço público ok; versão 1 só com PNG estático; calibrar para **Android**.
 
 ## 1. Objetivo
