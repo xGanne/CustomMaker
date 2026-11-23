@@ -1,0 +1,60 @@
+name: App Android
+
+# empacota o app web (web/) como APK Android (Capacitor). No app, os pedidos ao
+# Danbooru saem do próprio celular (o navegador é barrado pelo Cloudflare deles)
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - run: npm ci
+      - run: npm test
+      - run: npx vite build
+      # copia o site para dentro do projeto Android
+      - run: npx cap sync android
+
+      - name: Gerar o APK
+        working-directory: web/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Publicar o APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: CustomMaker-android-${{ github.sha }}
+          path: web/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

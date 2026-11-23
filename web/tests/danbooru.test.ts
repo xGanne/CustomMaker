@@ -10,16 +10,14 @@ import {
   type Post,
 } from "../src/core/danbooru";
 
-const PROXY = "https://repassador.example";
+const DANBOORU = "https://danbooru.donmai.us";
 
-/** localStorage de mentira com o repassador configurado (como no aparelho). */
-function withProxy(base: string | null = PROXY) {
-  const data = new Map<string, string>();
-  if (base) data.set("custommaker:proxy", JSON.stringify(base));
-  vi.stubGlobal("localStorage", { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => data.set(k, v) });
+/** Simula estar dentro do app Android (Capacitor) ou no navegador. */
+function inAndroidApp(native = true) {
+  vi.stubGlobal("Capacitor", { isNativePlatform: () => native });
 }
 
-beforeEach(() => withProxy());
+beforeEach(() => inAndroidApp());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("montagem da busca", () => {
@@ -69,32 +67,21 @@ describe("erros da busca viram mensagens claras", () => {
     await expect(searchPosts("miku", 1, 40)).rejects.toBeInstanceOf(DanbooruError);
   });
 
-  it("pede só os campos que o app usa, pelo repassador, e respeita o limite de páginas", async () => {
+  it("no app, pede só os campos que o app usa ao Danbooru e respeita o limite de páginas", async () => {
     const fetchMock = vi.fn(async () => new Response("[]", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await searchPosts("miku", 5000, 40);
     const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]));
-    expect(url.origin + url.pathname).toBe(`${PROXY}/posts.json`);
+    expect(url.origin + url.pathname).toBe(`${DANBOORU}/posts.json`);
     expect(url.searchParams.get("page")).toBe("1000");
     expect(url.searchParams.get("only")).toContain("tag_string_character");
   });
 
-  it("sem repassador configurado explica em vez de tentar o Danbooru direto", async () => {
-    withProxy(null);
+  it("no navegador explica que a busca precisa do app, sem tentar (seria barrada)", async () => {
+    inAndroidApp(false);
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await expect(searchPosts("miku", 1, 40)).rejects.toThrow(/repassador/);
+    await expect(searchPosts("miku", 1, 40)).rejects.toThrow(/app Android/);
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("imagens pelo repassador", () => {
-  it("URLs da CDN do Danbooru passam pelo repassador", () => {
-    const post = {
-      id: 1, file_ext: "png", image_width: 1700, image_height: 2400,
-      file_url: "https://cdn.donmai.us/original/ab/cd/abcd.png",
-      large_file_url: "https://cdn.donmai.us/sample/ab/cd/sample-abcd.jpg",
-    };
-    expect(importSource(post)).toBe(`${PROXY}/cdn/sample/ab/cd/sample-abcd.jpg`);
   });
 });

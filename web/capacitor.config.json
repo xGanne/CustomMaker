@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.xganne.custommaker",
+  "appName": "CustomMaker",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}

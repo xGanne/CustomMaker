@@ -1,18 +1,19 @@
 /**
- * Busca no Danbooru, pelo repassador (core/proxy.ts): o Cloudflare do Danbooru
- * barra pedidos feitos por navegador. Mesmas regras de src/core/danbooru.py;
- * filtros e campos vêm do rules.json.
+ * Busca no Danbooru. Só funciona dentro do app Android (core/network.ts): o
+ * Cloudflare do Danbooru barra pedidos feitos por navegador. Mesmas regras de
+ * src/core/danbooru.py; filtros e campos vêm do rules.json.
  */
-import { proxyBase, viaProxy } from "./proxy";
+import { danbooruBase } from "./network";
 import { rules } from "./rules";
 
+export const ANDROID_ONLY_MESSAGE =
+  "A busca no Danbooru só funciona no app Android: o Danbooru barra buscas feitas pelo navegador " +
+  "(com ou sem login). Baixe o app em github.com/xGanne/CustomMaker/releases. " +
+  "Aqui no navegador dá para gerar customs com fotos do próprio celular.";
+
 function api(): string {
-  const base = proxyBase();
-  if (!base) {
-    throw new DanbooruError(
-      "O repassador do Danbooru ainda não está configurado (o Danbooru barra buscas feitas direto do navegador).",
-    );
-  }
+  const base = danbooruBase();
+  if (!base) throw new DanbooruError(ANDROID_ONLY_MESSAGE);
   return base;
 }
 
@@ -90,7 +91,7 @@ export function importSource(post: Post, minSize = rules.danbooru.importMinSize)
     const [largeW, largeH] = width > sample ? [sample, (height * sample) / width] : [width, height];
     if (largeW >= minSize[0] && largeH >= minSize[1]) chosen = largeUrl;
   }
-  return viaProxy(chosen || fileUrl || largeUrl) || null;
+  return chosen || fileUrl || largeUrl || null;
 }
 
 /** Erro da busca já com a mensagem para o usuário. */
