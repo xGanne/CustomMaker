@@ -17,6 +17,9 @@ export function h<K extends keyof HTMLElementTagNameMap>(
     if (value === undefined || value === null || value === false) continue;
     if (key.startsWith("on") && typeof value === "function") {
       element.addEventListener(key.slice(2), value as EventListener);
+    } else if (key === "value") {
+      // propriedade, não atributo: o atributo "value" não mostra texto em <textarea>
+      (element as unknown as { value: string }).value = String(value);
     } else if (key === "dataset") {
       Object.assign(element.dataset, value);
     } else if (key in element && typeof value !== "string") {

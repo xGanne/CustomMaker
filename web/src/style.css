@@ -345,6 +345,68 @@ h1 {
   color: var(--muted);
 }
 
+/* ── tela inicial, envio e configurações ───────────────────── */
+
+.home {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.actions.split {
+  display: flex;
+  gap: 10px;
+}
+
+.actions.split .button {
+  flex: 1;
+}
+
+.upload {
+  margin-top: 20px;
+}
+
+.upload-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.command pre {
+  margin: 0 0 6px;
+  padding: 10px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  user-select: text;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field textarea {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
 /* ── customs geradas ───────────────────────────────────────── */
 
 .customs {

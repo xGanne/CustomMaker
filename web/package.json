@@ -23,6 +23,7 @@
   "dependencies": {
     "@capacitor/android": "8.6.2",
     "@capacitor/app": "8.1.2",
+    "@capacitor/clipboard": "8.0.1",
     "@capacitor/core": "8.6.2",
     "@capacitor/filesystem": "8.1.5",
     "@capacitor/share": "8.0.3"

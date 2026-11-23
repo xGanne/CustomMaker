@@ -21,12 +21,26 @@ import { encodePng } from "../core/png";
 import { createRaster, type Raster } from "../core/raster";
 import { renderToBorder } from "../core/render";
 import { rules, type BorderStyle } from "../core/rules";
-import { autoSelect } from "../core/scorer";
+import { ImgChestAuthError, uploadCustoms } from "../core/imgchest";
+import { mudaeCommands, suggestTitle } from "../core/mudae";
+import { autoSelect, parseAvoidTags } from "../core/scorer";
 import { h, store } from "./dom";
 import { createEditor } from "./editor";
-import { handleBackButton, shareNative, type PngFile } from "./native";
+import { copyText, handleBackButton, shareNative, type PngFile } from "./native";
 
-const PAGE_SIZE = 40;
+// preferências do aparelho (tela Configurações)
+const settings = {
+  get token(): string {
+    return store.get<string>("imgchestToken", "");
+  },
+  get avoidTags(): string {
+    // null = nunca configurado (lista padrão do PC); "" = limpou de propósito
+    return store.get<string | null>("avoidTags", null) ?? rules.scorer.defaultAvoidTags;
+  },
+  get pageSize(): number {
+    return store.get<number>("pageSize", 40);
+  },
+};
 const RATING_BADGES: Record<string, [string, string]> = {
   g: ["G", "#a6e3a1"],
   s: ["S", "#f9e2af"],
@@ -34,7 +48,7 @@ const RATING_BADGES: Record<string, [string, string]> = {
   e: ["E", "#f38ba8"],
 };
 
-type View = "busca" | "escolher" | "enquadrar" | "gerar";
+type View = "busca" | "escolher" | "enquadrar" | "gerar" | "config";
 
 /** O que vira custom: um post do Danbooru ou uma foto do celular. */
 interface Item {
@@ -76,7 +90,7 @@ function masks(): Promise<BorderMasks> {
 
 function currentView(): View {
   const view = location.hash.replace("#", "") as View;
-  return view === "escolher" || view === "enquadrar" || view === "gerar" ? view : "busca";
+  return ["escolher", "enquadrar", "gerar", "config"].includes(view) ? view : "busca";
 }
 
 function navigate(view: View): void {
@@ -111,7 +125,7 @@ async function runSearch(page: number): Promise<void> {
   state.loading = true;
   setStatus(`Buscando a página ${page}...`);
   try {
-    const posts = await searchPosts(state.tags, page, PAGE_SIZE);
+    const posts = await searchPosts(state.tags, page, settings.pageSize);
     if (!posts.length && page > 1) {
       setStatus(`A página ${page} não tem resultados — fim da busca.`);
       return;
@@ -170,7 +184,10 @@ function searchView(): HTMLElement {
   });
   const recent = store.get<string[]>("recent", []);
   return h("section.view", {},
-    h("header", {}, h("h1", {}, "CustomMaker"),
+    h("header.home", {},
+      h("h1", {}, "CustomMaker"),
+      h("button.icon", { type: "button", "aria-label": "Configurações", onclick: () => navigate("config") }, "⚙")),
+    h("header", {},
       h("p.hint", {}, "Busque no Danbooru, escolha as imagens e gere as customs do Mudae.")),
     h("form.search", {
       onsubmit: (event: Event) => {
@@ -218,7 +235,7 @@ async function runAuto(countInput: HTMLInputElement): Promise<void> {
     state.auto.abort();
     return;
   }
-  const count = Math.max(1, Math.min(Number(countInput.value) || 10, PAGE_SIZE * rules.danbooru.autoSelectMaxPages));
+  const count = Math.max(1, Math.min(Number(countInput.value) || 10, settings.pageSize * rules.danbooru.autoSelectMaxPages));
   state.auto = new AbortController();
   const { signal } = state.auto;
   render();
@@ -227,12 +244,13 @@ async function runAuto(countInput: HTMLInputElement): Promise<void> {
       count,
       firstPage: state.page,
       firstPosts: state.posts,
-      pageSize: PAGE_SIZE,
-      fetchPage: (page) => searchPosts(state.tags, page, PAGE_SIZE, signal),
+      pageSize: settings.pageSize,
+      fetchPage: (page) => searchPosts(state.tags, page, settings.pageSize, signal),
       loadPreview: (post) => post.preview_file_url
         ? fetchImage(post.preview_file_url, signal, 400).catch(() => null)
         : Promise.resolve(null),
       alreadySelected: new Set(state.selected.keys()),
+      avoidTags: parseAvoidTags(settings.avoidTags),
       signal,
       onProgress: setStatus,
     });
@@ -267,7 +285,7 @@ function resultCard(post: Post): HTMLElement {
 }
 
 function chooseView(): HTMLElement {
-  const countInput = h("input", { type: "number", min: 1, max: PAGE_SIZE * rules.danbooru.autoSelectMaxPages, value: 10, inputmode: "numeric" });
+  const countInput = h("input", { type: "number", min: 1, max: settings.pageSize * rules.danbooru.autoSelectMaxPages, value: 10, inputmode: "numeric" });
   const label = state.search.query.trim() || state.tags;
   return h("section.view", {},
     h("header.bar", {},
@@ -291,7 +309,7 @@ function chooseView(): HTMLElement {
     h("nav.pager", {},
       h("button.button", { type: "button", disabled: state.loading || state.page <= 1, onclick: () => void runSearch(state.page - 1) }, "← Anterior"),
       h("span", {}, `pág. ${state.page}`),
-      h("button.button", { type: "button", disabled: state.loading || state.posts.length < PAGE_SIZE, onclick: () => void runSearch(state.page + 1) }, "Próxima →")),
+      h("button.button", { type: "button", disabled: state.loading || state.posts.length < settings.pageSize, onclick: () => void runSearch(state.page + 1) }, "Próxima →")),
     h("footer.actions", {},
       h("button.button.primary.wide", {
         type: "button", disabled: !state.selected.size,
@@ -498,23 +516,142 @@ function frameView(): HTMLElement {
 
 // ── Gerar (continuação) ─────────────────────────────────────────────────
 
+let building: Promise<void> = Promise.resolve();
+
+/** Resultado do envio: o comando $ai (em partes de até 2000 caracteres) com botão de copiar. */
+function uploadResult(title: string, links: string[], errors: string[]): HTMLElement {
+  const copyButton = (label: string, text: string) => {
+    const button: HTMLButtonElement = h("button.button", {
+      type: "button",
+      onclick: async () => {
+        try {
+          await copyText(text);
+          button.textContent = "Copiado ✓";
+        } catch {
+          button.textContent = "Não deu para copiar: segure o texto";
+        }
+      },
+    }, label);
+    return button;
+  };
+  const commands = links.length ? mudaeCommands(title, links) : [];
+  return h("div.upload-result", {},
+    links.length ? h("p", {}, `${links.length} imagem(ns) enviada(s). Cole no Discord:`) : null,
+    ...commands.map((command, i) => h("div.command", {},
+      h("pre", {}, command),
+      copyButton(commands.length > 1 ? `Copiar comando ${i + 1} de ${commands.length}` : "Copiar comando", command))),
+    links.length ? copyButton("Copiar só os links", links.join("\n")) : null,
+    ...errors.map((error) => h("p.error", {}, error)));
+}
+
 function generateView(): HTMLElement {
   const list = items();
   const grid = h("div.customs", {}, ...list.map(() => h("figure.custom", {}, h("p.hint", {}, "Na fila..."))));
+  const rebuild = () => {
+    building = buildAll(grid);
+  };
+  const titleInput = h("input", {
+    type: "text", value: state.photos.length ? "" : suggestTitle(state.search.query),
+    placeholder: "Nome do personagem no Mudae", autocapitalize: "words", enterkeyhint: "send",
+  });
+  const result = h("div", {});
+  const sendButton: HTMLButtonElement = h("button.button.primary", {
+    type: "button",
+    onclick: async () => {
+      const title = titleInput.value.trim();
+      if (!title) {
+        setStatus("Digite o nome da custom (o mesmo nome do personagem no Mudae).");
+        titleInput.focus();
+        return;
+      }
+      if (!settings.token) {
+        setStatus("Falta o token do ImgChest: abra as Configurações (⚙ na tela inicial).");
+        return;
+      }
+      sendButton.disabled = true;
+      try {
+        await building; // termina de gerar antes de enviar
+        setStatus(`Enviando ${built.length} custom(s) ao ImgChest...`);
+        const { links, errors } = await uploadCustoms([...built], title, settings.token, {
+          onProgress: (done, total) => setStatus(`Enviando ao ImgChest: ${done} de ${total}...`),
+        });
+        result.replaceChildren(uploadResult(title, links, errors));
+        setStatus(errors.length ? "Enviado com erros — veja abaixo." : "Pronto! Copie o comando e cole no Discord.");
+        result.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        setStatus(error instanceof ImgChestAuthError ? error.message : `Falhou: ${(error as Error).message}`);
+      } finally {
+        sendButton.disabled = false;
+      }
+    },
+  }, "Enviar ao ImgChest");
 
   const view = h("section.view", {},
     h("header.bar", {},
       h("button.icon", { type: "button", "aria-label": "Voltar", onclick: () => history.back() }, "←"),
       h("div.title", {}, h("strong", {}, `${list.length} custom(s)`),
         h("span.hint", {}, "Como você enquadrou (o que não passou pela tela de enquadrar usa o encaixe automático)"))),
-    h("div.toolbar", {}, ...borderControls(() => void buildAll(grid))),
+    h("div.toolbar", {}, ...borderControls(rebuild)),
     h("p.hint#status", {}, ""),
     grid,
-    h("footer.actions", {},
-      h("button.button.primary.wide", { type: "button", onclick: () => void shareFiles([...built]) },
-        isNativeApp() ? "Compartilhar todas" : "Compartilhar / baixar todas")));
-  queueMicrotask(() => void buildAll(grid));
+    h("section.upload", {},
+      h("label.field.wide", {}, "Nome da custom no Mudae", titleInput),
+      result),
+    h("footer.actions.split", {},
+      h("button.button", { type: "button", onclick: () => void shareFiles([...built]) },
+        isNativeApp() ? "Compartilhar" : "Baixar"),
+      sendButton));
+  queueMicrotask(rebuild);
   return view;
+}
+
+// ── Configurações ───────────────────────────────────────────────────────
+
+function configView(): HTMLElement {
+  const token = h("input", {
+    type: "password", value: settings.token, placeholder: "cole aqui o token", autocomplete: "off", spellcheck: false,
+    onchange: () => store.set("imgchestToken", token.value.trim()),
+  });
+  const avoid = h("textarea", {
+    rows: 4, value: settings.avoidTags, spellcheck: false,
+    onchange: () => store.set("avoidTags", avoid.value.split(/\s+/).filter(Boolean).join(" ")),
+  });
+  const pageSize = h("select", { onchange: () => store.set("pageSize", Number(pageSize.value)) },
+    ...[20, 40, 100, 200].map((n) => h("option", { value: n, selected: n === settings.pageSize }, `${n}`)));
+  return h("section.view", {},
+    h("header.bar", {},
+      h("button.icon", { type: "button", "aria-label": "Voltar", onclick: () => history.back() }, "←"),
+      h("div.title", {}, h("strong", {}, "Configurações"))),
+    h("section.settings", {},
+      h("label.field.wide", {}, "Token do ImgChest", token),
+      h("p.hint", {}, "Pegue em imgchest.com › Settings › API. Fica salvo só neste aparelho e só é enviado ao ImgChest."),
+      h("div.toolbar", {},
+        h("button.button", {
+          type: "button",
+          onclick: () => {
+            token.type = token.type === "password" ? "text" : "password";
+          },
+        }, "Mostrar/ocultar"),
+        h("button.button", {
+          type: "button",
+          onclick: () => {
+            token.value = "";
+            store.set("imgchestToken", "");
+            setStatus("Token apagado deste aparelho.");
+          },
+        }, "Esquecer token")),
+      h("label.field.wide", {}, "Tags que o ★ Auto evita", avoid),
+      h("p.hint", {}, "Pesam contra, não excluem. Questionável e explícito ficam sempre de fora. Vazio: não evita nenhuma."),
+      h("button.button", {
+        type: "button",
+        onclick: () => {
+          avoid.value = rules.scorer.defaultAvoidTags;
+          store.set("avoidTags", null);
+        },
+      }, "Voltar à lista padrão"),
+      h("label.field.wide", {}, "Resultados por página", pageSize),
+      h("p.hint", {}, "Mais resultados dão mais candidatos ao ★ Auto em uma página só."),
+      h("p.hint#status", {}, "")));
 }
 
 // ── Montagem ────────────────────────────────────────────────────────────
@@ -532,6 +669,7 @@ function render(): void {
     escolher: chooseView,
     enquadrar: frameView,
     gerar: generateView,
+    config: configView,
   };
   root.replaceChildren(screens[view]());
 }

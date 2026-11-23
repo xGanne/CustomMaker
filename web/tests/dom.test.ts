@@ -9,6 +9,11 @@ describe("h()", () => {
     expect([element.tagName, element.className, element.id, element.textContent]).toEqual(["P", "hint", "status", "ok"]);
   });
 
+  it("value aparece em <textarea> e <input> (propriedade, não atributo)", () => {
+    expect(h("textarea", { value: "cleavage swimsuit" }).value).toBe("cleavage swimsuit");
+    expect(h("input", { value: "Hatsune Miku" }).value).toBe("Hatsune Miku");
+  });
+
   it("liga eventos e ignora atributos falsos", () => {
     let clicks = 0;
     const button = h("button.button.primary", { type: "button", disabled: false, onclick: () => clicks++ });

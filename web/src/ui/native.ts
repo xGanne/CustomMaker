@@ -6,6 +6,7 @@
  * compartilhar do Android (Discord, Arquivos, Fotos, Drive...).
  */
 import { App } from "@capacitor/app";
+import { Clipboard } from "@capacitor/clipboard";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 
@@ -37,6 +38,12 @@ export async function shareNative(files: PngFile[]): Promise<void> {
     uris.push(written.uri);
   }
   await Share.share({ title: files.length === 1 ? files[0].name : `${files.length} customs`, files: uris });
+}
+
+/** Copia texto (no app pelo Android; no navegador pela API da web). */
+export async function copyText(text: string): Promise<void> {
+  // o plugin também funciona no navegador (usa a API da web por baixo)
+  await Clipboard.write({ string: text });
 }
 
 /**
