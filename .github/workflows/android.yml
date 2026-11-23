@@ -48,17 +48,36 @@ jobs:
       # copia o site para dentro do projeto Android
       - run: npx cap sync android
 
+      # Com a chave nos secrets: APK assinado sempre com a mesma chave (instala por cima
+      # da versão anterior). Sem ela (forks, PRs): APK de teste, assinatura descartável.
       - name: Gerar o APK
         working-directory: web/android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+          ANDROID_VERSION_NAME: 1.0.${{ github.run_number }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/custommaker.jks"
+            echo "$KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_PATH"
+            ./gradlew assembleRelease --no-daemon --stacktrace
+            cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/CustomMaker.apk"
+            echo "SIGNED=assinado" >> "$GITHUB_ENV"
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+            cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/CustomMaker.apk"
+            echo "SIGNED=de teste (sem a chave fixa: pode ser preciso desinstalar antes)" >> "$GITHUB_ENV"
+          fi
 
       - name: Publicar o APK
         uses: actions/upload-artifact@v7
         with:
           name: CustomMaker-android-${{ github.sha }}
-          path: web/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ runner.temp }}/CustomMaker.apk
           retention-days: 14
 
       # link fixo, sem login, para baixar direto no celular. É pré-release: a
@@ -69,8 +88,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk CustomMaker.apk
-          notes="APK de teste do commit ${GITHUB_SHA::7}. Para instalar, permita fontes desconhecidas quando o Android pedir."
+          cp "$RUNNER_TEMP/CustomMaker.apk" CustomMaker.apk
+          notes="APK $SIGNED, versão 1.0.${{ github.run_number }}, do commit ${GITHUB_SHA::7}. Para instalar, permita fontes desconhecidas quando o Android pedir."
           if gh release view android-teste >/dev/null 2>&1; then
             gh release upload android-teste CustomMaker.apk --clobber
             gh release edit android-teste --notes "$notes"

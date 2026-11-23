@@ -1,5 +1,10 @@
 apply plugin: 'com.android.application'
 
+// Assinatura e versão vêm do CI (.github/workflows/android.yml): a chave fica nos
+// secrets do GitHub, nunca no repositório. Mesma chave em todos os builds = o
+// Android instala cada versão nova por cima da anterior.
+def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+
 android {
     namespace = "io.github.xganne.custommaker"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +12,9 @@ android {
         applicationId "io.github.xganne.custommaker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // cada build do CI tem um número maior: o Android só atualiza para versão maior
+        versionCode((System.getenv("ANDROID_VERSION_CODE") ?: "1").toInteger())
+        versionName(System.getenv("ANDROID_VERSION_NAME") ?: "1.0")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +22,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            if (keystorePath) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
