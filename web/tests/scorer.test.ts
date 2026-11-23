@@ -80,6 +80,17 @@ describe("★ Auto em várias páginas", () => {
     expect([result.pages, result.lastPage, result.excluded]).toEqual([3, 3, 2]);
   });
 
+  it("pula os já usados antes (como os já importados do PC) e segue para a próxima página", async () => {
+    const result = await autoSelect({
+      count: 2, firstPage: 1, pageSize: 2, firstPosts: [post(1, "g"), post(2, "g")],
+      fetchPage: async (page) => (page === 2 ? [post(3, "g"), post(4, "e")] : []),
+      loadPreview: colorful, alreadySelected: new Set(), used: new Set([1, 2, 4]),
+    });
+    expect(result.posts.map((p) => p.id)).toEqual([3]);
+    // o explícito conta como excluído, não como usado
+    expect([result.used, result.excluded, result.pages]).toEqual([2, 1, 2]);
+  });
+
   it("nunca escolhe questionável/explícito nem o já marcado, e não completa com ruins", async () => {
     const result = await autoSelect({
       count: 5, firstPage: 1, pageSize: 40, fetchPage: null, loadPreview: colorful,

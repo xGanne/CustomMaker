@@ -104,6 +104,8 @@ export interface AutoSelectOptions {
   /** prévia decodificada do post (para a checagem de cor), ou null */
   loadPreview: (post: Post) => Promise<Raster | null>;
   alreadySelected: Set<number>;
+  /** posts já usados antes (enviados/compartilhados): como o "já importado" do PC */
+  used?: Set<number>;
   avoidTags?: Set<string>;
   maxPages?: number;
   signal?: AbortSignal;
@@ -115,12 +117,13 @@ export interface AutoSelectResult {
   pages: number;
   lastPage: number;
   excluded: number; // questionável/explícito
+  used: number; // já usados antes, fora da disputa
 }
 
 /**
  * O ★ Auto do PC: pontua a página atual e, sem candidatos bons suficientes,
  * segue para as próximas (até maxPages). Nunca escolhe questionável/explícito,
- * nem o que já está marcado, nem candidatos abaixo da nota mínima.
+ * nem o já usado antes, nem o que já está marcado, nem candidatos abaixo da nota mínima.
  */
 export async function autoSelect(options: AutoSelectOptions): Promise<AutoSelectResult> {
   const avoid = options.avoidTags ?? DEFAULT_AVOID;
@@ -129,6 +132,7 @@ export async function autoSelect(options: AutoSelectOptions): Promise<AutoSelect
   const good: [number, Post][] = [];
   const seen = new Set<number>();
   let excluded = 0;
+  let used = 0;
   let pages = 0;
   let page = options.firstPage;
   let posts = options.firstPosts;
@@ -138,7 +142,9 @@ export async function autoSelect(options: AutoSelectOptions): Promise<AutoSelect
     images.forEach((p) => seen.add(p.id));
     const eligible = images.filter(isAutoEligible);
     excluded += images.length - eligible.length;
-    const fresh = eligible.filter((p) => !options.alreadySelected.has(p.id));
+    const unused = eligible.filter((p) => !options.used?.has(p.id));
+    used += eligible.length - unused.length;
+    const fresh = unused.filter((p) => !options.alreadySelected.has(p.id));
     const missing = options.count - good.length;
     // a parte visual (que baixa a prévia) só para os mais promissores
     const ranked = fresh
@@ -163,5 +169,5 @@ export async function autoSelect(options: AutoSelectOptions): Promise<AutoSelect
     if (!posts.length) break;
   }
   good.sort((a, b) => b[0] - a[0]);
-  return { posts: good.slice(0, options.count).map(([, post]) => post), pages, lastPage: page, excluded };
+  return { posts: good.slice(0, options.count).map(([, post]) => post), pages, lastPage: page, excluded, used };
 }

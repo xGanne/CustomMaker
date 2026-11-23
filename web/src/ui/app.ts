@@ -24,6 +24,7 @@ import { rules, type BorderStyle } from "../core/rules";
 import { ImgChestAuthError, uploadCustoms } from "../core/imgchest";
 import { mudaeCommands, suggestTitle } from "../core/mudae";
 import { autoSelect, parseAvoidTags } from "../core/scorer";
+import { markUsed, usedPosts } from "../core/used-posts";
 import { h, store } from "./dom";
 import { createEditor } from "./editor";
 import { copyText, handleBackButton, shareNative, type PngFile } from "./native";
@@ -272,6 +273,7 @@ async function runAuto(): Promise<void> {
         ? fetchImage(post.preview_file_url, signal, 400).catch(() => null)
         : Promise.resolve(null),
       alreadySelected: new Set(state.selected.keys()),
+      used: usedPosts(),
       avoidTags: parseAvoidTags(settings.avoidTags),
       signal,
       onProgress: (message) => {
@@ -288,6 +290,7 @@ async function runAuto(): Promise<void> {
         : `Nada ${where} parece um bom custom (quadrinho, P&B, grupo, sem personagem...). Tente outra busca.`,
       elsewhere ? `${elsewhere} de outras páginas (→ para ver).` : "",
       result.excluded ? `${result.excluded} questionável/explícito fora.` : "",
+      result.used ? `${result.used} já usada(s) antes, fora.` : "",
       result.posts.length && result.posts.length < count ? `Só ${result.posts.length} de ${count} pareceram bons.` : "",
     ];
     state.status = parts.filter(Boolean).join(" ");
@@ -302,14 +305,15 @@ async function runAuto(): Promise<void> {
   }
 }
 
-function resultCard(post: Post): HTMLElement {
+function resultCard(post: Post, used: Set<number>): HTMLElement {
   const selected = state.selected.has(post.id);
   const badge = RATING_BADGES[String(post.rating ?? "")];
   return h("button.card", { type: "button", "aria-pressed": String(selected), onclick: () => toggle(post) },
     // no app Android o pedido da imagem é refeito pelo próprio app (DanbooruWebViewClient)
     h("img", { src: post.preview_file_url ?? "", alt: `#${post.id}`, loading: "lazy" }),
     badge ? h("span.badge", { style: `background:${badge[1]}` }, badge[0]) : null,
-    selected ? h("span.tick", {}, "✓") : null);
+    selected ? h("span.tick", {}, "✓") : null,
+    used.has(post.id) ? h("span.used", {}, "já usada") : null);
 }
 
 function chooseView(): HTMLElement {
@@ -325,6 +329,7 @@ function chooseView(): HTMLElement {
       }
     },
   });
+  const used = usedPosts();
   const label = state.search.query.trim() || state.tags;
   return h("section.view", {},
     h("header.bar", {},
@@ -344,7 +349,7 @@ function chooseView(): HTMLElement {
         },
       }, "Limpar")),
     h("p.hint#status", {}, state.loading ? "Buscando..." : state.status),
-    h("div.grid", {}, ...state.posts.map(resultCard)),
+    h("div.grid", {}, ...state.posts.map((post) => resultCard(post, used))),
     h("nav.pager", {},
       h("button.button", { type: "button", disabled: state.loading || state.page <= 1, onclick: () => void runSearch(state.page - 1) }, "← Anterior"),
       h("span", {}, `pág. ${state.page}`),
@@ -410,11 +415,19 @@ async function cropFor(item: Item): Promise<Raster> {
 }
 
 const built: PngFile[] = [];
+/** post do Danbooru de cada custom pronta (fotos do celular não têm) */
+const builtPosts = new Map<PngFile, number>();
+
+/** As customs foram usadas (enviadas/compartilhadas): o ★ Auto não as escolhe de novo. */
+function markBuiltUsed(files: PngFile[]): void {
+  markUsed(files.map((file) => builtPosts.get(file)).filter((id): id is number => id !== undefined));
+}
 
 async function buildAll(grid: HTMLElement): Promise<void> {
   const run = ++generation;
   const list = items();
   built.length = 0;
+  builtPosts.clear();
   const borderMasks = await masks();
   let renderMs = 0;
   let rendered = 0;
@@ -435,6 +448,7 @@ async function buildAll(grid: HTMLElement): Promise<void> {
       if (run !== generation) return;
       const file = { name: `${item.name}_custom.png`, png };
       built.push(file);
+      if (item.post) builtPosts.set(file, item.post.id);
       const canvas = h("canvas", { width: custom.width, height: custom.height });
       canvas.getContext("2d")?.putImageData(new ImageData(custom.data, custom.width, custom.height), 0, 0);
       // no app Android não existe download: abre o menu de compartilhar do sistema
@@ -455,6 +469,7 @@ async function shareFiles(pngs: PngFile[]): Promise<void> {
   if (isNativeApp()) {
     try {
       await shareNative(pngs);
+      markBuiltUsed(pngs);
     } catch (error) {
       // fechar o menu sem escolher também cai aqui: só avisa se for outra coisa
       const message = (error as Error).message ?? "";
@@ -466,11 +481,13 @@ async function shareFiles(pngs: PngFile[]): Promise<void> {
   if (navigator.canShare?.({ files })) {
     try {
       await navigator.share({ files, title: "Customs" });
+      markBuiltUsed(pngs);
       return;
     } catch (error) {
       if ((error as Error).name === "AbortError") return; // fechou o menu de compartilhar
     }
   }
+  markBuiltUsed(pngs);
   for (const file of files) {
     const link = h("a", { href: URL.createObjectURL(file), download: file.name });
     link.click();
@@ -611,9 +628,11 @@ function generateView(): HTMLElement {
       try {
         await building; // termina de gerar antes de enviar
         setStatus(`Enviando ${built.length} custom(s) ao ImgChest...`);
-        const { links, errors } = await uploadCustoms([...built], title, settings.token, {
+        const sending = [...built];
+        const { links, errors } = await uploadCustoms(sending, title, settings.token, {
           onProgress: (done, total) => setStatus(`Enviando ao ImgChest: ${done} de ${total}...`),
         });
+        if (links.length) markBuiltUsed(sending);
         result.replaceChildren(uploadResult(title, links, errors));
         setStatus(errors.length ? "Enviado com erros — veja abaixo." : "Pronto! Copie o comando e cole no Discord.");
         result.scrollIntoView({ behavior: "smooth", block: "start" });
