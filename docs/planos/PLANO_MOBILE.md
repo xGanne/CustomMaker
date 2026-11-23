@@ -1,6 +1,8 @@
 # Plano — CustomMaker no celular (app web instalável, versão 1)
 
-> Status: **proposta, aguardando aprovação** (2026-11-22). Nada implementado.
+> Status: **aprovado** (2026-11-22). **M1 implementada** (render idêntico ao PC, página
+> de teste, publicação no GitHub Pages); falta ativar o Pages e testar no celular.
+> Decisões: endereço público ok; versão 1 só com PNG estático; calibrar para **Android**.
 
 ## 1. Objetivo
 
@@ -81,22 +83,23 @@ O risco de ter duas implementações é a custom do celular sair diferente da do
    redimensiona a imagem inteira para o tamanho enquadrado e depois recorta os
    225×350 da área da borda. Partes fora da imagem ficam transparentes.
 2. **Mesmo redimensionamento**: o PC usa Lanczos (PIL `LANCZOS`, a=3). O canvas do
-   navegador não oferece Lanczos, então o web usa a biblioteca **pica**, que
-   implementa Lanczos3.
-3. **Borda Simples idêntica**: retângulo de 5 px (`BORDER_THICKNESS`) nos 225×350
-   (`add_borda_to_image`). Os outros estilos seguem `border_styles.py`: Dupla (3 px por
-   fora, vão de 2 px, 1 px por dentro), Brilho (desfoque 6 a 55%), Sombra (faixa de 9 px,
-   desfoque 5 a 40%) e Degradê (mesma matiz ±25% de luminosidade, de cima para baixo).
+   navegador não oferece Lanczos; `web/src/core/resample.ts` é um porte do
+   `Resample.c` do Pillow (coeficientes em ponto fixo de 22 bits, premultiplicação
+   do alfa) e sai **idêntico bit a bit** — conferido contra o Pillow antes do porte.
+   (O plano original previa a biblioteca pica com tolerância; não foi preciso.)
+3. **Bordas idênticas**: as máscaras dos estilos (onde a borda cobre e com que
+   opacidade, inclusive o desfoque do Brilho e da Sombra) são geradas pelo próprio
+   `border_styles.py` e o web só as pinta com a cor; a composição usa a mesma conta
+   inteira do `alpha_composite` do Pillow, e o Degradê porta o `colorsys` do Python.
 4. **Uma fonte só para as tabelas**: cores (`BORDA_HEX`), pesos do Auto
    (`custom_scorer.py`), tags evitadas e limites (225×350, 5 px, 2000 caracteres) são
    exportados do Python para `web/src/generated/rules.json` por um script. Um teste no
    Python confere que o JSON está em dia. Mudou o peso no PC, o celular acompanha.
-5. **Testes de paridade**: um script Python gera customs de referência (`.png`) com o
-   código do PC, cobrindo os 5 estilos, imagem maior e menor que a borda e imagem
-   deslocada. Os testes do web geram as mesmas customs e comparam pixel a pixel. A
-   tolerância precisa ser calibrada, porque o Lanczos do pica não é bit a bit igual ao
-   do PIL: começar exigindo diferença média < 1/255 e máxima < 8/255. A borda Simples
-   tem que sair exata.
+5. **Testes de paridade**: `scripts/web_fixtures.py` gera customs de referência com o
+   código do PC (5 estilos, imagem deslocada, ampliada, reduzida, com transparência,
+   posição fracionária, cor clara no Degradê). Os testes do web exigem **zero pixels
+   diferentes**. A única diferença possível no uso real é a decodificação do JPEG
+   (navegador vs. libjpeg do Pillow), anterior ao render.
 
 ## 6. Organização no repositório
 
@@ -199,10 +202,10 @@ aqui).
 | Safari (iPhone) sem a redução no download (`resizeWidth`) | Médio | Detectar e, sem ela, usar o `large_file_url` também para gerar (resolução menor, mas sem estourar a memória) |
 | Gestos desconfortáveis | Médio | Rodadas de ajuste com você na fase M3 |
 
-## 11. O que preciso que você decida
+## 11. Decisões (respondidas em 2026-11-22)
 
-1. **Endereço público:** o app fica em `xganne.github.io/CustomMaker` e qualquer
-   pessoa com o link consegue abrir (o token de cada um fica só no próprio celular).
-   Tudo bem?
-2. **Versão 1 só com PNG estático** (animações na versão 2): de acordo?
-3. **Seu celular é Android ou iPhone?** Começo calibrando para ele.
+1. **Endereço público** (`xganne.github.io/CustomMaker`): ok — o token de cada um fica
+   só no próprio celular.
+2. **Versão 1 só com PNG estático**, animações na versão 2: de acordo.
+3. **Celular: Android** (Chrome). Os riscos específicos do iPhone (seção 10) ficam para
+   quando alguém usar nele.
