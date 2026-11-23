@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#11111b" />
+    <title>CustomMaker</title>
+  </head>
+  <body>
+    <main id="app">
+      <header>
+        <h1>CustomMaker</h1>
+        <p class="hint">Teste do render (fase M1): escolha uma foto e veja a custom nos 5 estilos de borda,
+          igual à do app do PC.</p>
+      </header>
+
+      <section class="controls">
+        <label class="button primary">
+          Escolher foto
+          <input id="file" type="file" accept="image/*" hidden />
+        </label>
+        <button id="sample" class="button" type="button">Usar exemplo</button>
+        <label class="field">
+          Cor da borda
+          <select id="color"></select>
+        </label>
+        <label class="field">
+          Personalizada
+          <input id="custom-color" type="color" value="#89b4fa" />
+        </label>
+      </section>
+
+      <p id="status" class="hint" role="status"></p>
+      <section id="results" class="results"></section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

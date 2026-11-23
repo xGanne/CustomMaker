@@ -1,0 +1,114 @@
+:root {
+  --bg: #11111b;
+  --panel: #1e1e2e;
+  --text: #cdd6f4;
+  --muted: #a6adc8;
+  --accent: #89b4fa;
+  --radius: 10px;
+  color-scheme: dark;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 4px 0 12px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px; /* área de toque confortável */
+  padding: 0 16px;
+  border: 1px solid #45475a;
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #11111b;
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.field select,
+.field input[type="color"] {
+  min-height: 44px;
+  min-width: 120px;
+  border-radius: var(--radius);
+  border: 1px solid #45475a;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.custom {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+.custom canvas {
+  width: 100%;
+  max-width: 225px;
+  aspect-ratio: 225 / 350;
+  /* xadrez atrás: mostra onde a custom é transparente */
+  background: repeating-conic-gradient(#313244 0 25%, #45475a 0 50%) 0 0 / 16px 16px;
+}
+
+.custom a {
+  color: var(--accent);
+  font-size: 0.9rem;
+}
