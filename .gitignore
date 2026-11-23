@@ -31,6 +31,13 @@ pytest-output.txt
 pytest-output-crash.txt
 selftest-report.txt
 
+# ── Segredos locais (nunca no git) ────────────────────────────────────
+# backup da chave de assinatura do app Android e outras credenciais
+secrets/
+*.p12
+*.jks
+*.keystore
+
 # ── Estado do app rodando pelo código-fonte ───────────────────────────
 # (no exe fica em %LOCALAPPDATA%\CustomMaker; ver src/utils/resource_loader.py)
 .env
