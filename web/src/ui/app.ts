@@ -70,6 +70,9 @@ const state = {
   color: store.get<string>("color", "#89b4fa"),
   status: "",
   auto: null as AbortController | null,
+  autoCount: store.get<number>("autoCount", 10),
+  /** muda a cada busca nova: resultado (de busca ou Auto) de uma busca anterior é descartado */
+  searchId: 0,
   /** enquadramento escolhido por imagem (Item.key); sem entrada = encaixe automático */
   framings: new Map<string, Framing>(),
   editIndex: 0,
@@ -121,23 +124,36 @@ function onQueryInput(input: HTMLInputElement, list: HTMLDataListElement): void 
   }, 250);
 }
 
+let searchAbort: AbortController | null = null;
+
 async function runSearch(page: number): Promise<void> {
+  // uma busca por vez: a anterior (outra página ou outra busca) é cancelada,
+  // senão a resposta dela poderia chegar depois e tomar o lugar desta
+  searchAbort?.abort();
+  const controller = new AbortController();
+  searchAbort = controller;
   state.loading = true;
-  setStatus(`Buscando a página ${page}...`);
+  state.status = `Buscando a página ${page}...`;
+  render(); // desativa os botões de página enquanto carrega
   try {
-    const posts = await searchPosts(state.tags, page, settings.pageSize);
+    const posts = await searchPosts(state.tags, page, settings.pageSize, controller.signal);
+    if (controller.signal.aborted) return;
     if (!posts.length && page > 1) {
-      setStatus(`A página ${page} não tem resultados — fim da busca.`);
+      state.status = `A página ${page} não tem resultados — fim da busca.`;
       return;
     }
     state.page = page;
     state.posts = posts;
-    setStatus(posts.length ? "" : "Nenhum resultado. Tente outras tags ou outra classificação.");
+    state.status = posts.length ? "" : "Nenhum resultado. Tente outras tags ou outra classificação.";
   } catch (error) {
-    setStatus(error instanceof DanbooruError ? error.message : `Erro na busca: ${(error as Error).message}`);
+    if (controller.signal.aborted) return; // trocada por outra busca
+    state.status = error instanceof DanbooruError ? error.message : `Erro na busca: ${(error as Error).message}`;
   } finally {
-    state.loading = false;
-    render();
+    if (searchAbort === controller) {
+      searchAbort = null;
+      state.loading = false;
+      render();
+    }
   }
 }
 
@@ -148,6 +164,10 @@ async function startSearch(): Promise<void> {
     return;
   }
   store.set("search", state.search);
+  // o Auto da busca anterior não pode marcar nada nesta
+  state.searchId++;
+  state.auto?.abort();
+  state.auto = null;
   const recent = store.get<string[]>("recent", []).filter((q) => q !== state.search.query.trim());
   store.set("recent", [state.search.query.trim(), ...recent].slice(0, 10));
   state.selected.clear();
@@ -230,14 +250,16 @@ function toggle(post: Post): void {
   render();
 }
 
-async function runAuto(countInput: HTMLInputElement): Promise<void> {
+async function runAuto(): Promise<void> {
   if (state.auto) {
     state.auto.abort();
     return;
   }
-  const count = Math.max(1, Math.min(Number(countInput.value) || 10, settings.pageSize * rules.danbooru.autoSelectMaxPages));
-  state.auto = new AbortController();
-  const { signal } = state.auto;
+  const count = Math.max(1, Math.min(state.autoCount || 10, settings.pageSize * rules.danbooru.autoSelectMaxPages));
+  const controller = new AbortController();
+  const { signal } = controller;
+  const searchId = state.searchId;
+  state.auto = controller;
   render();
   try {
     const result = await autoSelect({
@@ -252,8 +274,11 @@ async function runAuto(countInput: HTMLInputElement): Promise<void> {
       alreadySelected: new Set(state.selected.keys()),
       avoidTags: parseAvoidTags(settings.avoidTags),
       signal,
-      onProgress: setStatus,
+      onProgress: (message) => {
+        if (searchId === state.searchId) setStatus(message);
+      },
     });
+    if (searchId !== state.searchId) return; // já é outra busca: descarta
     result.posts.forEach((post) => state.selected.set(post.id, post));
     const where = result.pages > 1 ? `nas páginas ${state.page}–${result.lastPage}` : "nesta página";
     const elsewhere = result.posts.filter((p) => !state.posts.some((q) => q.id === p.id)).length;
@@ -267,10 +292,13 @@ async function runAuto(countInput: HTMLInputElement): Promise<void> {
     ];
     state.status = parts.filter(Boolean).join(" ");
   } catch (error) {
+    if (searchId !== state.searchId) return;
     state.status = (error as Error).name === "AbortError" ? "Auto cancelado." : `Auto: ${(error as Error).message}`;
   } finally {
-    state.auto = null;
-    render();
+    if (state.auto === controller) {
+      state.auto = null;
+      render();
+    }
   }
 }
 
@@ -285,7 +313,18 @@ function resultCard(post: Post): HTMLElement {
 }
 
 function chooseView(): HTMLElement {
-  const countInput = h("input", { type: "number", min: 1, max: settings.pageSize * rules.danbooru.autoSelectMaxPages, value: 10, inputmode: "numeric" });
+  // o número fica no estado: a tela é redesenhada a cada toque numa miniatura
+  const countInput = h("input", {
+    type: "number", min: 1, max: settings.pageSize * rules.danbooru.autoSelectMaxPages,
+    value: state.autoCount, inputmode: "numeric",
+    oninput: () => {
+      const value = Math.trunc(Number(countInput.value));
+      if (value > 0) {
+        state.autoCount = value;
+        store.set("autoCount", value);
+      }
+    },
+  });
   const label = state.search.query.trim() || state.tags;
   return h("section.view", {},
     h("header.bar", {},
@@ -295,7 +334,7 @@ function chooseView(): HTMLElement {
       h("label.auto", {}, "★ Auto", countInput),
       h(state.auto ? "button.button.danger" : "button.button.primary", {
         type: "button", disabled: state.loading || !state.posts.length,
-        onclick: () => void runAuto(countInput),
+        onclick: () => void runAuto(),
       }, state.auto ? "Cancelar" : "Escolher"),
       h("button.button", {
         type: "button", disabled: !state.selected.size,
@@ -686,8 +725,8 @@ export function startApp(): void {
     void startSearch().then(() => {
       const auto = Number(params.get("auto"));
       if (auto > 0) {
-        const input = h("input", { value: String(auto) });
-        void runAuto(input);
+        state.autoCount = Math.trunc(auto);
+        void runAuto();
       }
     });
   }
