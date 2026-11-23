@@ -102,6 +102,80 @@ def gradient_table():
     return [{"color": c, "end": list(_gradient_end(ImageColor.getrgb(c)[:3]))} for c in colors]
 
 
+def _post(post_id, rating, tags, width=1000, height=1500, characters="hatsune_miku", **extra):
+    post = {"id": post_id, "rating": rating, "tag_string": tags, "image_width": width,
+            "image_height": height, "file_ext": "png", "fav_count": 10, "score": 5,
+            "tag_string_character": characters}
+    post.update(extra)
+    return post
+
+
+def scorer_posts():
+    """Posts que cobrem cada regra do ★ Auto (casos reais que motivaram as regras)."""
+    manga = "1girl monochrome english_text faceless twitter_username solo solo_focus absurdres highres"
+    posts = [
+        _post(1, "g", "1girl solo upper_body looking_at_viewer official_art absurdres highres", fav_count=900, score=300),
+        _post(2, "g", manga, width=2894, height=4093),  # página de mangá sem a tag comic
+        _post(3, "g", "comic speech_bubble multiple_girls greyscale"),
+        _post(4, "s", "1girl solo cleavage swimsuit large_breasts"),
+        _post(5, "s", "1girl solo upper_body"),
+        _post(6, "g", "1girl solo ai-generated"),
+        _post(7, "g", "1girl solo lowres", width=200, height=300),
+        _post(8, "g", "1girl solo", width=400, height=600),
+        _post(9, "g", "multiple_girls 2girls", characters="hatsune_miku kagamine_rin"),
+        _post(10, "g", "scenery no_humans", characters=""),
+        _post(11, "q", "1girl solo upper_body", fav_count=9000),
+        _post(12, "e", "1girl solo", fav_count=9000),
+        _post(13, "g", "1girl solo portrait", width=None, height=None),
+        _post(14, "g", "1boy solo close-up from_behind cosplay photo_(medium)"),
+        _post(15, "", "1girl solo"),  # sem classificação: nunca no Auto
+    ]
+    del posts[12]["tag_string_character"]  # busca antiga, sem o campo: neutro
+    return posts
+
+
+def scorer_table():
+    """Pontuação e elegibilidade de cada post, com a lista padrão de tags evitadas
+    e com uma lista própria (o web tem que dar exatamente o mesmo)."""
+    from src.core.custom_scorer import is_auto_eligible, metadata_score, parse_avoid_tags
+    custom_avoid = "swimsuit hat"
+    return {
+        "customAvoidTags": custom_avoid,
+        "posts": [
+            {"post": post, "eligible": is_auto_eligible(post), "score": metadata_score(post),
+             "scoreCustomAvoid": metadata_score(post, parse_avoid_tags(custom_avoid)),
+             "scoreNoAvoid": metadata_score(post, set())}
+            for post in scorer_posts()
+        ],
+    }
+
+
+def color_images():
+    """Imagens para a checagem de cor (P&B de mangá x colorida x quase P&B)."""
+    import numpy as np
+    sources = build_sources()
+    gray = np.asarray(sources["retrato"].convert("L").convert("RGBA")).copy()
+    almost = gray.copy()
+    almost[:12, :12, 0] = 255  # ~0,1% colorido (partially_colored)
+    sepia = np.asarray(sources["retrato"].convert("L")).astype(np.float32)
+    toned = np.stack([sepia, sepia * 0.92, sepia * 0.8, np.full_like(sepia, 255)], -1).astype(np.uint8)
+    return {
+        "colorida": sources["retrato"],
+        "cinza": Image.fromarray(gray, "RGBA"),
+        "quase-cinza": Image.fromarray(almost, "RGBA"),
+        "sepia": Image.fromarray(toned, "RGBA"),
+    }
+
+
+def color_table():
+    from src.core.custom_scorer import _MIN_COLOR_FRACTION, colorful_fraction
+    return [
+        {"image": f"color-{name}.png", "fraction": colorful_fraction(image),
+         "grayscale": colorful_fraction(image) < _MIN_COLOR_FRACTION}
+        for name, image in color_images().items()
+    ]
+
+
 def build_all():
     """(sources, cases, autofit, gradient) — sem gravar nada (usado pelo teste)."""
     sources = build_sources()
@@ -119,8 +193,14 @@ def main():
     manifest = {"cases": cases, "autofit": autofit, "gradient": gradient}
     with open(os.path.join(FIXTURES_DIR, "cases.json"), "w", encoding="utf-8", newline="\n") as file_obj:
         file_obj.write(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    for name, image in color_images().items():
+        image.save(os.path.join(FIXTURES_DIR, f"color-{name}.png"))
+    scorer = {"scorer": scorer_table(), "color": color_table()}
+    with open(os.path.join(FIXTURES_DIR, "scorer.json"), "w", encoding="utf-8", newline="\n") as file_obj:
+        file_obj.write(json.dumps(scorer, ensure_ascii=False, indent=2) + "\n")
     print(f"{len(sources)} imagens de teste, {len(cases)} customs de referência, "
-          f"{len(gradient)} cores de degradê em {os.path.relpath(FIXTURES_DIR, ROOT)}")
+          f"{len(gradient)} cores de degradê, {len(scorer['scorer']['posts'])} posts do ★ Auto "
+          f"em {os.path.relpath(FIXTURES_DIR, ROOT)}")
 
 
 if __name__ == "__main__":

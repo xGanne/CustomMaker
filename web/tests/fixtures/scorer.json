@@ -1,0 +1,283 @@
+{
+  "scorer": {
+    "customAvoidTags": "swimsuit hat",
+    "posts": [
+      {
+        "post": {
+          "id": 1,
+          "rating": "g",
+          "tag_string": "1girl solo upper_body looking_at_viewer official_art absurdres highres",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 900,
+          "score": 300,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": 15.911045058803706,
+        "scoreCustomAvoid": 15.911045058803706,
+        "scoreNoAvoid": 15.911045058803706
+      },
+      {
+        "post": {
+          "id": 2,
+          "rating": "g",
+          "tag_string": "1girl monochrome english_text faceless twitter_username solo solo_focus absurdres highres",
+          "image_width": 2894,
+          "image_height": 4093,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": 3.185109397537763,
+        "scoreCustomAvoid": 3.185109397537763,
+        "scoreNoAvoid": 3.185109397537763
+      },
+      {
+        "post": {
+          "id": 3,
+          "rating": "g",
+          "tag_string": "comic speech_bubble multiple_girls greyscale",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": -10.493708095743449,
+        "scoreCustomAvoid": -10.493708095743449,
+        "scoreNoAvoid": -10.493708095743449
+      },
+      {
+        "post": {
+          "id": 4,
+          "rating": "s",
+          "tag_string": "1girl solo cleavage swimsuit large_breasts",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": -0.493708095743449,
+        "scoreCustomAvoid": 4.5062919042565515,
+        "scoreNoAvoid": 7.0062919042565515
+      },
+      {
+        "post": {
+          "id": 5,
+          "rating": "s",
+          "tag_string": "1girl solo upper_body",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": 9.006291904256551,
+        "scoreCustomAvoid": 9.006291904256551,
+        "scoreNoAvoid": 9.006291904256551
+      },
+      {
+        "post": {
+          "id": 6,
+          "rating": "g",
+          "tag_string": "1girl solo ai-generated",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": 4.5062919042565515,
+        "scoreCustomAvoid": 4.5062919042565515,
+        "scoreNoAvoid": 4.5062919042565515
+      },
+      {
+        "post": {
+          "id": 7,
+          "rating": "g",
+          "tag_string": "1girl solo lowres",
+          "image_width": 200,
+          "image_height": 300,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": 4.5062919042565515,
+        "scoreCustomAvoid": 4.5062919042565515,
+        "scoreNoAvoid": 4.5062919042565515
+      },
+      {
+        "post": {
+          "id": 8,
+          "rating": "g",
+          "tag_string": "1girl solo",
+          "image_width": 400,
+          "image_height": 600,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": 8.006291904256551,
+        "scoreCustomAvoid": 8.006291904256551,
+        "scoreNoAvoid": 8.006291904256551
+      },
+      {
+        "post": {
+          "id": 9,
+          "rating": "g",
+          "tag_string": "multiple_girls 2girls",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku kagamine_rin"
+        },
+        "eligible": true,
+        "score": -0.993708095743449,
+        "scoreCustomAvoid": -0.993708095743449,
+        "scoreNoAvoid": -0.993708095743449
+      },
+      {
+        "post": {
+          "id": 10,
+          "rating": "g",
+          "tag_string": "scenery no_humans",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": ""
+        },
+        "eligible": true,
+        "score": 2.006291904256551,
+        "scoreCustomAvoid": 2.006291904256551,
+        "scoreNoAvoid": 2.006291904256551
+      },
+      {
+        "post": {
+          "id": 11,
+          "rating": "q",
+          "tag_string": "1girl solo upper_body",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 9000,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": false,
+        "score": 12.518450610794165,
+        "scoreCustomAvoid": 12.518450610794165,
+        "scoreNoAvoid": 12.518450610794165
+      },
+      {
+        "post": {
+          "id": 12,
+          "rating": "e",
+          "tag_string": "1girl solo",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 9000,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": false,
+        "score": 10.518450610794165,
+        "scoreCustomAvoid": 10.518450610794165,
+        "scoreNoAvoid": 10.518450610794165
+      },
+      {
+        "post": {
+          "id": 13,
+          "rating": "g",
+          "tag_string": "1girl solo portrait",
+          "image_width": null,
+          "image_height": null,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5
+        },
+        "eligible": true,
+        "score": 7.577720475685123,
+        "scoreCustomAvoid": 7.577720475685123,
+        "scoreNoAvoid": 7.577720475685123
+      },
+      {
+        "post": {
+          "id": 14,
+          "rating": "g",
+          "tag_string": "1boy solo close-up from_behind cosplay photo_(medium)",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": true,
+        "score": 2.006291904256551,
+        "scoreCustomAvoid": 2.006291904256551,
+        "scoreNoAvoid": 2.006291904256551
+      },
+      {
+        "post": {
+          "id": 15,
+          "rating": "",
+          "tag_string": "1girl solo",
+          "image_width": 1000,
+          "image_height": 1500,
+          "file_ext": "png",
+          "fav_count": 10,
+          "score": 5,
+          "tag_string_character": "hatsune_miku"
+        },
+        "eligible": false,
+        "score": 8.506291904256551,
+        "scoreCustomAvoid": 8.506291904256551,
+        "scoreNoAvoid": 8.506291904256551
+      }
+    ]
+  },
+  "color": [
+    {
+      "image": "color-colorida.png",
+      "fraction": 0.9563048245614035,
+      "grayscale": false
+    },
+    {
+      "image": "color-cinza.png",
+      "fraction": 0.0,
+      "grayscale": true
+    },
+    {
+      "image": "color-quase-cinza.png",
+      "fraction": 0.0013706140350877192,
+      "grayscale": true
+    },
+    {
+      "image": "color-sepia.png",
+      "fraction": 0.8353618421052632,
+      "grayscale": false
+    }
+  ]
+}

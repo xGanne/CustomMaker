@@ -20,7 +20,7 @@ sys.path.insert(0, ROOT)
 import numpy as np  # noqa: E402
 
 from src.config.settings import BORDA_HEIGHT, BORDA_HEX, BORDA_WIDTH, BORDER_THICKNESS  # noqa: E402
-from src.core import border_styles  # noqa: E402
+from src.core import border_styles, custom_scorer, danbooru  # noqa: E402
 from src.core.mudae import DISCORD_MESSAGE_LIMIT  # noqa: E402
 
 RULES_PATH = os.path.join(ROOT, "web", "src", "generated", "rules.json")
@@ -70,6 +70,32 @@ def build_rules():
         "defaultStyle": border_styles.DEFAULT_STYLE,
         "masks": {"file": "generated/masks.bin.gz", "order": list(MASK_ORDER)},
         "discordMessageLimit": DISCORD_MESSAGE_LIMIT,
+        "danbooru": {
+            "postFields": danbooru.POST_FIELDS,
+            "imageExtensions": sorted(danbooru.IMAGE_FILE_EXTENSIONS),
+            "ratingTags": dict(danbooru.RATING_TAGS),
+            "sortTags": dict(danbooru.SORT_TAGS),
+            "portraitRatioTag": danbooru.PORTRAIT_RATIO_TAG,
+            "sampleWidth": danbooru.DANBOORU_SAMPLE_WIDTH,
+            "importMinSize": list(danbooru.IMPORT_MIN_SIZE),
+            "maxPage": danbooru.MAX_PAGE,
+            "autoSelectMaxPages": danbooru.AUTO_SELECT_MAX_PAGES,
+        },
+        # ★ Auto: tabelas e limites de custom_scorer.py (as fórmulas são portadas
+        # em web/src/core/scorer.ts e conferidas por tests/fixtures/scorer.json)
+        "scorer": {
+            "tagBoosts": dict(custom_scorer._TAG_BOOSTS),
+            "tagPenalties": dict(custom_scorer._TAG_PENALTIES),
+            "qualityBoosts": dict(custom_scorer._QUALITY_BOOSTS),
+            "qualityPenalties": dict(custom_scorer._QUALITY_PENALTIES),
+            "autoRatings": sorted(custom_scorer.AUTO_RATINGS),
+            "sensitiveRatingPenalty": custom_scorer._SENSITIVE_RATING_PENALTY,
+            "defaultAvoidTags": custom_scorer.DEFAULT_AVOID_TAGS,
+            "avoidTagPenalty": custom_scorer._AVOID_TAG_PENALTY,
+            "minAutoScore": custom_scorer.MIN_AUTO_SCORE,
+            "grayscalePenalty": custom_scorer._GRAYSCALE_PENALTY,
+            "minColorFraction": custom_scorer._MIN_COLOR_FRACTION,
+        },
     }
 
 

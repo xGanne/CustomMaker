@@ -44,5 +44,93 @@
       "sombra"
     ]
   },
-  "discordMessageLimit": 2000
+  "discordMessageLimit": 2000,
+  "danbooru": {
+    "postFields": "id,rating,score,fav_count,image_width,image_height,file_ext,tag_string,tag_string_character,file_url,large_file_url,preview_file_url,uploader_id",
+    "imageExtensions": [
+      "bmp",
+      "gif",
+      "jpeg",
+      "jpg",
+      "png",
+      "webp"
+    ],
+    "ratingTags": {
+      "Qualquer classificação": "",
+      "Geral": "rating:g",
+      "Sensível": "rating:s",
+      "Questionável": "rating:q",
+      "Explícito": "rating:e"
+    },
+    "sortTags": {
+      "Mais recentes": "",
+      "Melhor avaliados": "order:score",
+      "Mais favoritos": "order:favcount"
+    },
+    "portraitRatioTag": "ratio:0.5..0.85",
+    "sampleWidth": 850,
+    "importMinSize": [
+      450,
+      700
+    ],
+    "maxPage": 1000,
+    "autoSelectMaxPages": 5
+  },
+  "scorer": {
+    "tagBoosts": {
+      "solo": 3.0,
+      "solo_focus": 2.0,
+      "1girl": 1.5,
+      "1boy": 1.5,
+      "1other": 1.0,
+      "upper_body": 2.0,
+      "portrait": 2.0,
+      "close-up": 1.5,
+      "close_up": 1.5,
+      "looking_at_viewer": 0.5
+    },
+    "tagPenalties": {
+      "comic": 5.0,
+      "4koma": 5.0,
+      "manga": 4.0,
+      "multiple_girls": 3.0,
+      "multiple_boys": 3.0,
+      "multiple_others": 3.0,
+      "monochrome": 4.0,
+      "greyscale": 4.0,
+      "partially_colored": 2.0,
+      "text": 1.5,
+      "speech_bubble": 2.5,
+      "english_text": 1.5,
+      "translated": 1.0,
+      "watermark": 1.0,
+      "from_behind": 2.0,
+      "faceless": 3.0,
+      "full_body": 1.0
+    },
+    "qualityBoosts": {
+      "official_art": 1.5,
+      "absurdres": 0.8,
+      "highres": 0.5
+    },
+    "qualityPenalties": {
+      "ai-generated": 4.0,
+      "photo_(medium)": 3.0,
+      "cosplay": 3.0,
+      "3d": 2.0,
+      "lowres": 2.0,
+      "sketch": 1.5,
+      "jpeg_artifacts": 1.0
+    },
+    "autoRatings": [
+      "g",
+      "s"
+    ],
+    "sensitiveRatingPenalty": 1.5,
+    "defaultAvoidTags": "cleavage large_breasts huge_breasts underwear panties bra lingerie swimsuit bikini see-through sideboob underboob ass pantyshot upskirt spread_legs towel bathing undressing partially_undressed topless nude censored",
+    "avoidTagPenalty": 2.5,
+    "minAutoScore": 0.0,
+    "grayscalePenalty": 4.0,
+    "minColorFraction": 0.05
+  }
 }
