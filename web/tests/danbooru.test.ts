@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildTags,
@@ -10,6 +10,16 @@ import {
   type Post,
 } from "../src/core/danbooru";
 
+const PROXY = "https://repassador.example";
+
+/** localStorage de mentira com o repassador configurado (como no aparelho). */
+function withProxy(base: string | null = PROXY) {
+  const data = new Map<string, string>();
+  if (base) data.set("custommaker:proxy", JSON.stringify(base));
+  vi.stubGlobal("localStorage", { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => data.set(k, v) });
+}
+
+beforeEach(() => withProxy());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("montagem da busca", () => {
@@ -59,12 +69,32 @@ describe("erros da busca viram mensagens claras", () => {
     await expect(searchPosts("miku", 1, 40)).rejects.toBeInstanceOf(DanbooruError);
   });
 
-  it("pede só os campos que o app usa e respeita o limite de páginas", async () => {
+  it("pede só os campos que o app usa, pelo repassador, e respeita o limite de páginas", async () => {
     const fetchMock = vi.fn(async () => new Response("[]", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await searchPosts("miku", 5000, 40);
     const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]));
+    expect(url.origin + url.pathname).toBe(`${PROXY}/posts.json`);
     expect(url.searchParams.get("page")).toBe("1000");
     expect(url.searchParams.get("only")).toContain("tag_string_character");
+  });
+
+  it("sem repassador configurado explica em vez de tentar o Danbooru direto", async () => {
+    withProxy(null);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(searchPosts("miku", 1, 40)).rejects.toThrow(/repassador/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("imagens pelo repassador", () => {
+  it("URLs da CDN do Danbooru passam pelo repassador", () => {
+    const post = {
+      id: 1, file_ext: "png", image_width: 1700, image_height: 2400,
+      file_url: "https://cdn.donmai.us/original/ab/cd/abcd.png",
+      large_file_url: "https://cdn.donmai.us/sample/ab/cd/sample-abcd.jpg",
+    };
+    expect(importSource(post)).toBe(`${PROXY}/cdn/sample/ab/cd/sample-abcd.jpg`);
   });
 });

@@ -16,6 +16,7 @@ import {
   type SearchOptions,
 } from "../core/danbooru";
 import { decodeImage, fetchImage } from "../core/images";
+import { viaProxy } from "../core/proxy";
 import { encodePng } from "../core/png";
 import type { Raster } from "../core/raster";
 import { renderToBorder } from "../core/render";
@@ -222,7 +223,7 @@ async function runAuto(countInput: HTMLInputElement): Promise<void> {
       pageSize: PAGE_SIZE,
       fetchPage: (page) => searchPosts(state.tags, page, PAGE_SIZE, signal),
       loadPreview: (post) => post.preview_file_url
-        ? fetchImage(post.preview_file_url, signal, 400).catch(() => null)
+        ? fetchImage(viaProxy(post.preview_file_url), signal, 400).catch(() => null)
         : Promise.resolve(null),
       alreadySelected: new Set(state.selected.keys()),
       signal,
@@ -252,7 +253,8 @@ function resultCard(post: Post): HTMLElement {
   const selected = state.selected.has(post.id);
   const badge = RATING_BADGES[String(post.rating ?? "")];
   return h("button.card", { type: "button", "aria-pressed": String(selected), onclick: () => toggle(post) },
-    h("img", { src: post.preview_file_url ?? "", alt: `#${post.id}`, loading: "lazy", referrerpolicy: "no-referrer" }),
+    // pelo repassador; o Referer (padrão) diz a ele que o pedido vem do app
+    h("img", { src: viaProxy(post.preview_file_url), alt: `#${post.id}`, loading: "lazy" }),
     badge ? h("span.badge", { style: `background:${badge[1]}` }, badge[0]) : null,
     selected ? h("span.tick", {}, "✓") : null);
 }

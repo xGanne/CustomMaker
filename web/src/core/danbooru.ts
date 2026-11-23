@@ -1,10 +1,20 @@
 /**
- * Busca no Danbooru direto do navegador (a API aceita CORS). Mesmas regras de
- * src/core/danbooru.py; filtros e campos vêm do rules.json.
+ * Busca no Danbooru, pelo repassador (core/proxy.ts): o Cloudflare do Danbooru
+ * barra pedidos feitos por navegador. Mesmas regras de src/core/danbooru.py;
+ * filtros e campos vêm do rules.json.
  */
+import { proxyBase, viaProxy } from "./proxy";
 import { rules } from "./rules";
 
-const API = "https://danbooru.donmai.us";
+function api(): string {
+  const base = proxyBase();
+  if (!base) {
+    throw new DanbooruError(
+      "O repassador do Danbooru ainda não está configurado (o Danbooru barra buscas feitas direto do navegador).",
+    );
+  }
+  return base;
+}
 
 export interface Post {
   id: number;
@@ -80,7 +90,7 @@ export function importSource(post: Post, minSize = rules.danbooru.importMinSize)
     const [largeW, largeH] = width > sample ? [sample, (height * sample) / width] : [width, height];
     if (largeW >= minSize[0] && largeH >= minSize[1]) chosen = largeUrl;
   }
-  return chosen || fileUrl || largeUrl || null;
+  return viaProxy(chosen || fileUrl || largeUrl) || null;
 }
 
 /** Erro da busca já com a mensagem para o usuário. */
@@ -104,9 +114,10 @@ export async function searchPosts(tags: string, page: number, limit: number, sig
     page: String(Math.max(1, Math.min(rules.danbooru.maxPage, page))),
     only: rules.danbooru.postFields,
   });
+  const base = api();
   let response: Response;
   try {
-    response = await fetch(`${API}/posts.json?${params}`, { signal });
+    response = await fetch(`${base}/posts.json?${params}`, { signal });
   } catch (error) {
     if ((error as Error).name === "AbortError") throw error;
     throw new DanbooruError("Sem conexão com o Danbooru. Verifique a internet e tente de novo.");
@@ -138,7 +149,7 @@ export async function suggestTags(query: string, signal?: AbortSignal): Promise<
     limit: "10",
   });
   try {
-    const response = await fetch(`${API}/tags.json?${params}`, { signal });
+    const response = await fetch(`${api()}/tags.json?${params}`, { signal });
     if (!response.ok) return [];
     const data = (await response.json()) as { name?: string; post_count?: number }[];
     return data.filter((t) => t.name).map((t) => ({ name: t.name as string, postCount: t.post_count ?? 0 }));

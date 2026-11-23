@@ -1,7 +1,8 @@
 # Plano — CustomMaker no celular (app web instalável, versão 1)
 
-> Status: **aprovado** (2026-11-22). **M1 implementada** (render idêntico ao PC, página
-> de teste, publicação no GitHub Pages); falta ativar o Pages e testar no celular.
+> Status: **aprovado** (2026-11-22). **M1 publicada** (render idêntico ao PC).
+> **M2 implementada** (busca, ★ Auto, telas), testada de ponta a ponta contra o Danbooru
+> real via repassador local; falta publicar o repassador no Cloudflare (seção 7.1).
 > Decisões: endereço público ok; versão 1 só com PNG estático; calibrar para **Android**.
 
 ## 1. Objetivo
@@ -19,7 +20,7 @@ o PC não está à mão.
 |---|---|---|
 | Tipo de app | **PWA**: site que vira ícone na tela inicial, abre em tela cheia | Funciona em Android e iPhone, sem loja nem conta paga |
 | Hospedagem | **GitHub Pages** (grátis), publicado pelo CI | O repositório já é público e já tem CI |
-| Servidor próprio | **Nenhum** | Testado em 2026-11-22: Danbooru, a CDN de imagens dele e o ImgChest aceitam chamadas direto do navegador (CORS liberado, inclusive o cabeçalho `Authorization` do upload) |
+| Servidor próprio | **Só um repassador do Danbooru** (Cloudflare Worker grátis) — ver seção 7.1 | O ImgChest aceita chamadas direto do navegador. O Danbooru **não**: o Cloudflare dele barra busca, sugestões e imagens pedidas por navegador (403 `cf-mitigated: challenge`), com ou sem login. O teste inicial (2026-11-22) não pegou isso porque não se identificava como navegador |
 | Linguagem | **TypeScript** + Vite, sem framework de interface | Poucas telas; build pequeno e rápido no celular |
 | Python no navegador (Pyodide) | **Não** | O primeiro acesso baixaria 30–40 MB e gerar GIF no celular ficaria lento |
 
@@ -144,6 +145,25 @@ igual. O do web roda só quando algo em `web/` (ou nas regras) muda.
 - **Conteúdo**: o filtro de classificação começa em **Geral**, e o ★ Auto segue as
   mesmas regras do PC.
 
+### 7.1 Repassador do Danbooru
+
+`web/proxy/danbooru-worker.js` faz os pedidos ao Danbooru como o app do PC faz
+(identificado como programa) e devolve a resposta liberada para o app web. Aceita só
+`/posts.json`, `/tags.json` e `/cdn/<imagem>`; só atende páginas de
+`xganne.github.io` (e `localhost` nos testes); não repassa cookies, tokens nem
+cabeçalhos do celular; guarda as imagens em cache na borda do Cloudflare.
+
+**Publicar (uma vez, ~5 min):**
+1. Criar conta grátis em <https://dash.cloudflare.com/sign-up>.
+2. **Workers & Pages** › **Create** › **Create Worker** › nome `custommaker-danbooru` ›
+   **Deploy** (publica o exemplo "Hello World").
+3. **Edit code** › apagar o exemplo › colar o conteúdo inteiro de
+   `web/proxy/danbooru-worker.js` › **Deploy**.
+4. Copiar o endereço do Worker (`https://custommaker-danbooru.<sua-conta>.workers.dev`)
+   e colocá-lo em `DEFAULT_PROXY`, em `web/src/core/proxy.ts`.
+
+O plano grátis do Workers permite 100 mil pedidos por dia, muito acima do uso pessoal.
+
 ## 8. Fases de implementação
 
 Cada fase termina com testes passando e uma versão publicada que você pode abrir no
@@ -197,7 +217,8 @@ aqui).
 |---|---|---|
 | Custom do celular diferente da do PC | Alto | Testes de paridade (seção 5) e tabelas geradas do Python |
 | Celular sem memória com imagem grande | Médio | Prévia para enquadrar; original reduzido no download (seção 7) |
-| Danbooru ou ImgChest mudarem o CORS | Alto (o app para) | Checagem no início do app com mensagem clara; plano B é um repassador grátis (Cloudflare Worker) |
+| Danbooru barrar o navegador | — | **Aconteceu** (Cloudflare do Danbooru): resolvido com o repassador (seção 7.1) |
+| Danbooru barrar também o repassador | Alto (busca para) | Testado de um PC com o mesmo código: passa. Do Cloudflare Workers só dá para confirmar depois de publicado; plano B é empacotar como app Android (Capacitor), que faz os pedidos direto como o PC |
 | iPhone: limites de PWA (armazenamento pode ser limpo pelo sistema) | Baixo | Na versão 1 só o token e as preferências ficam salvos; colar de novo resolve |
 | Safari (iPhone) sem a redução no download (`resizeWidth`) | Médio | Detectar e, sem ela, usar o `large_file_url` também para gerar (resolução menor, mas sem estourar a memória) |
 | Gestos desconfortáveis | Médio | Rodadas de ajuste com você na fase M3 |

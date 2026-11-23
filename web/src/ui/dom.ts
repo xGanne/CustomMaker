@@ -29,21 +29,4 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
-/** Guarda um valor pequeno no navegador; nunca falha (aba anônima, armazenamento cheio). */
-export const store = {
-  get<T>(key: string, fallback: T): T {
-    try {
-      const raw = localStorage.getItem(`custommaker:${key}`);
-      return raw === null ? fallback : (JSON.parse(raw) as T);
-    } catch {
-      return fallback;
-    }
-  },
-  set(key: string, value: unknown): void {
-    try {
-      localStorage.setItem(`custommaker:${key}`, JSON.stringify(value));
-    } catch {
-      /* sem armazenamento: segue sem lembrar */
-    }
-  },
-};
+export { store } from "../core/storage";
