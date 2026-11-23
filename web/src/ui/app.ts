@@ -19,7 +19,7 @@ import { decodeImage, fetchImage } from "../core/images";
 import { isNativeApp } from "../core/network";
 import { encodePng } from "../core/png";
 import { createRaster, type Raster } from "../core/raster";
-import { renderToBorder } from "../core/render";
+import { renderInBackground } from "../core/render-client";
 import { rules, type BorderStyle } from "../core/rules";
 import { ImgChestAuthError, uploadCustoms } from "../core/imgchest";
 import { mudaeCommands, suggestTitle } from "../core/mudae";
@@ -365,7 +365,7 @@ async function cropFor(item: Item): Promise<Raster> {
   // sem enquadramento salvo (não passou pela tela de enquadrar): encaixe automático
   const framing = saved ? rounded(saved) : fitFraming(source.width, source.height);
   if (!framing) throw new Error("imagem pequena demais");
-  const cropped = renderToBorder(source, framing.pos, framing.size, BORDA_POS);
+  const cropped = await renderInBackground(source, framing.pos, framing.size, BORDA_POS);
   crops.set(cacheKey, cropped);
   return cropped;
 }

@@ -1,9 +1,10 @@
 /**
  * Recorte da custom, igual a ImageProcessor.render_image_to_borda do PC:
  * redimensiona a imagem inteira para o tamanho enquadrado e recorta a área da
- * borda. O que fica fora da imagem sai transparente.
+ * borda. O que fica fora da imagem sai transparente. Aqui só a área recortada
+ * é redimensionada (mesmos pixels, bem menos conta).
  */
-import { resizeLanczos } from "./resample";
+import { resizeLanczosRegion } from "./resample";
 import { createRaster, pyRound, type Raster } from "./raster";
 import { rules } from "./rules";
 
@@ -16,7 +17,6 @@ export function renderToBorder(source: Raster, pos: Point, size: Point, bordaPos
   const imgW = Math.trunc(size[0]);
   const imgH = Math.trunc(size[1]);
   if (imgW <= 0 || imgH <= 0) return out;
-  const resized = resizeLanczos(source, imgW, imgH);
 
   const [bx, by] = bordaPos;
   const [x, y] = pos;
@@ -29,24 +29,18 @@ export function renderToBorder(source: Raster, pos: Point, size: Point, bordaPos
   // Image.crop arredonda com round() do Python; paste também
   const x0 = pyRound(relX1);
   const y0 = pyRound(relY1);
-  const x1 = pyRound(relX2);
-  const y1 = pyRound(relY2);
   const pasteX = pyRound(Math.max(0, x - bx));
   const pasteY = pyRound(Math.max(0, y - by));
+  // paste do Pillow corta o que passa da custom: nem precisa calcular essa parte
+  const x1 = Math.min(pyRound(relX2), x0 + W - pasteX);
+  const y1 = Math.min(pyRound(relY2), y0 + H - pasteY);
+  if (x0 >= x1 || y0 >= y1) return out;
 
-  for (let cy = y0; cy < y1; cy++) {
-    const ty = pasteY + (cy - y0);
-    if (ty < 0 || ty >= H) continue;
-    for (let cx = x0; cx < x1; cx++) {
-      const tx = pasteX + (cx - x0);
-      if (tx < 0 || tx >= W) continue; // paste do Pillow corta o que passa da custom
-      const s = (cy * resized.width + cx) * 4;
-      const t = (ty * W + tx) * 4;
-      out.data[t] = resized.data[s];
-      out.data[t + 1] = resized.data[s + 1];
-      out.data[t + 2] = resized.data[s + 2];
-      out.data[t + 3] = resized.data[s + 3];
-    }
+  const piece = resizeLanczosRegion(source, imgW, imgH, [x0, y0, x1, y1]);
+  const rowBytes = piece.width * 4;
+  for (let row = 0; row < piece.height; row++) {
+    const from = row * rowBytes;
+    out.data.set(piece.data.subarray(from, from + rowBytes), ((pasteY + row) * W + pasteX) * 4);
   }
   return out;
 }
