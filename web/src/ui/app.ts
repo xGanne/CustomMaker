@@ -77,7 +77,17 @@ const state = {
   /** enquadramento escolhido por imagem (Item.key); sem entrada = encaixe automático */
   framings: new Map<string, Framing>(),
   editIndex: 0,
+  /** último envio ao ImgChest (ou o que está em andamento), das imagens em `items` */
+  upload: null as UploadState | null,
 };
+
+interface UploadState {
+  items: string; // itemsKey() das imagens enviadas
+  title: string;
+  links: string[];
+  errors: string[];
+  running: AbortController | null;
+}
 
 const root = document.getElementById("app") as HTMLElement;
 let masksPromise: Promise<BorderMasks> | null = null;
@@ -429,12 +439,19 @@ async function cropFor(item: Item): Promise<Raster> {
 }
 
 const built: PngFile[] = [];
+/** links "Baixar" da geração atual (navegador): liberados quando ela é refeita */
+const downloadUrls: string[] = [];
 /** post do Danbooru de cada custom pronta (fotos do celular não têm) */
 const builtPosts = new Map<PngFile, number>();
 
+/** Posts do Danbooru destas customs (fotos do celular não têm). */
+function postIdsOf(files: PngFile[]): number[] {
+  return files.map((file) => builtPosts.get(file)).filter((id): id is number => id !== undefined);
+}
+
 /** As customs foram usadas (enviadas/compartilhadas): o ★ Auto não as escolhe de novo. */
 function markBuiltUsed(files: PngFile[]): void {
-  markUsed(files.map((file) => builtPosts.get(file)).filter((id): id is number => id !== undefined));
+  markUsed(postIdsOf(files));
 }
 
 async function buildAll(grid: HTMLElement): Promise<void> {
@@ -442,6 +459,7 @@ async function buildAll(grid: HTMLElement): Promise<void> {
   const list = items();
   built.length = 0;
   builtPosts.clear();
+  for (const url of downloadUrls.splice(0)) URL.revokeObjectURL(url);
   // recortes de imagens que saíram da seleção não servem mais
   const keys = new Set(list.map((item) => item.key));
   for (const key of crops.keys()) if (!keys.has(key)) crops.delete(key);
@@ -471,7 +489,7 @@ async function buildAll(grid: HTMLElement): Promise<void> {
       // no app Android não existe download: abre o menu de compartilhar do sistema
       const save = isNativeApp()
         ? h("button.link", { type: "button", onclick: () => void shareFiles([file]) }, "Compartilhar")
-        : h("a", { href: URL.createObjectURL(png), download: file.name }, "Baixar");
+        : h("a", { href: downloadUrls[downloadUrls.push(URL.createObjectURL(png)) - 1], download: file.name }, "Baixar");
       card.replaceChildren(canvas, save);
     } catch (error) {
       card.replaceChildren(h("p.hint", {}, `Falhou: ${(error as Error).message}`));
@@ -506,8 +524,9 @@ async function shareFiles(pngs: PngFile[]): Promise<void> {
   }
   markBuiltUsed(pngs);
   for (const file of files) {
-    const link = h("a", { href: URL.createObjectURL(file), download: file.name });
-    link.click();
+    const url = URL.createObjectURL(file);
+    h("a", { href: url, download: file.name }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000); // o download já começou
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
 }
@@ -591,6 +610,67 @@ function frameView(): HTMLElement {
 
 let building: Promise<void> = Promise.resolve();
 
+/** Espera a geração mais recente (trocar cor/estilo no meio começa outra). */
+async function latestBuild(): Promise<void> {
+  for (;;) {
+    const current = building;
+    await current;
+    if (current === building) return;
+  }
+}
+
+function itemsKey(): string {
+  return items().map((item) => item.key).join("|");
+}
+
+/** Partes da tela de Gerar aberta agora (o envio continua mesmo saindo dela). */
+let uploadUi: { result: HTMLElement; button: HTMLButtonElement } | null = null;
+
+/** Mostra o estado do envio na tela de Gerar, se ela estiver aberta. */
+function showUpload(scroll = false): void {
+  if (!uploadUi?.result.isConnected) return;
+  const upload = state.upload?.items === itemsKey() ? state.upload : null;
+  uploadUi.button.textContent = upload?.running ? "Cancelar envio" : "Enviar ao ImgChest";
+  uploadUi.button.classList.toggle("danger", Boolean(upload?.running));
+  uploadUi.result.replaceChildren(upload && !upload.running ? uploadResult(upload.title, upload.links, upload.errors) : "");
+  if (scroll && upload && !upload.running) uploadUi.result.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/** setStatus só se a tela de Gerar estiver aberta (o envio roda em segundo plano). */
+function uploadStatus(text: string): void {
+  if (currentView() === "gerar") setStatus(text);
+}
+
+async function sendToImgChest(title: string): Promise<void> {
+  const controller = new AbortController();
+  const upload: UploadState = { items: itemsKey(), title, links: [], errors: [], running: controller };
+  state.upload = upload;
+  showUpload();
+  try {
+    await latestBuild(); // termina de gerar (a geração mais recente) antes de enviar
+    const sending = [...built];
+    const ids = postIdsOf(sending); // antes: uma geração nova no meio do envio limpa o mapa
+    if (!sending.length) throw new Error("nenhuma custom pronta para enviar.");
+    uploadStatus(`Enviando ${sending.length} custom(s) ao ImgChest...`);
+    const { links, errors } = await uploadCustoms(sending, title, settings.token, {
+      signal: controller.signal,
+      onProgress: (done, total) => uploadStatus(`Enviando ao ImgChest: ${done} de ${total}...`),
+    });
+    if (links.length) markUsed(ids);
+    Object.assign(upload, { links, errors });
+    uploadStatus(controller.signal.aborted
+      ? "Envio cancelado."
+      : errors.length ? "Enviado com erros — veja abaixo." : "Pronto! Copie o comando e cole no Discord.");
+  } catch (error) {
+    const message = error instanceof ImgChestAuthError ? error.message : `Falhou: ${(error as Error).message}`;
+    upload.errors = [message];
+    uploadStatus(message);
+  } finally {
+    upload.running = null;
+    showUpload(true);
+  }
+}
+
 /** Resultado do envio: o comando $ai (em partes de até 2000 caracteres) com botão de copiar. */
 function uploadResult(title: string, links: string[], errors: string[]): HTMLElement {
   const copyButton = (label: string, text: string) => {
@@ -623,14 +703,19 @@ function generateView(): HTMLElement {
   const rebuild = () => {
     building = buildAll(grid);
   };
+  const previous = state.upload?.items === itemsKey() ? state.upload : null;
   const titleInput = h("input", {
-    type: "text", value: state.photos.length ? "" : suggestTitle(state.search.query),
+    type: "text", value: previous?.title ?? (state.photos.length ? "" : suggestTitle(state.search.query)),
     placeholder: "Nome do personagem no Mudae", autocapitalize: "words", enterkeyhint: "send",
   });
   const result = h("div", {});
   const sendButton: HTMLButtonElement = h("button.button.primary", {
     type: "button",
-    onclick: async () => {
+    onclick: () => {
+      if (state.upload?.running && state.upload.items === itemsKey()) {
+        state.upload.running.abort(); // o botão virou "Cancelar envio"
+        return;
+      }
       const title = titleInput.value.trim();
       if (!title) {
         setStatus("Digite o nome da custom (o mesmo nome do personagem no Mudae).");
@@ -641,23 +726,11 @@ function generateView(): HTMLElement {
         setStatus("Falta o token do ImgChest: abra as Configurações (⚙ na tela inicial).");
         return;
       }
-      sendButton.disabled = true;
-      try {
-        await building; // termina de gerar antes de enviar
-        setStatus(`Enviando ${built.length} custom(s) ao ImgChest...`);
-        const sending = [...built];
-        const { links, errors } = await uploadCustoms(sending, title, settings.token, {
-          onProgress: (done, total) => setStatus(`Enviando ao ImgChest: ${done} de ${total}...`),
-        });
-        if (links.length) markBuiltUsed(sending);
-        result.replaceChildren(uploadResult(title, links, errors));
-        setStatus(errors.length ? "Enviado com erros — veja abaixo." : "Pronto! Copie o comando e cole no Discord.");
-        result.scrollIntoView({ behavior: "smooth", block: "start" });
-      } catch (error) {
-        setStatus(error instanceof ImgChestAuthError ? error.message : `Falhou: ${(error as Error).message}`);
-      } finally {
-        sendButton.disabled = false;
+      if (state.upload?.running) {
+        setStatus("Ainda há um envio de outras imagens no ar: aguarde ele terminar.");
+        return;
       }
+      void sendToImgChest(title);
     },
   }, "Enviar ao ImgChest");
 
@@ -676,7 +749,11 @@ function generateView(): HTMLElement {
       h("button.button", { type: "button", onclick: () => void shareFiles([...built]) },
         isNativeApp() ? "Compartilhar" : "Baixar"),
       sendButton));
-  queueMicrotask(rebuild);
+  uploadUi = { result, button: sendButton };
+  queueMicrotask(() => {
+    rebuild();
+    showUpload(); // voltou para a tela: mostra o envio em andamento ou o último resultado
+  });
   return view;
 }
 
