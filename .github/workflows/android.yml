@@ -73,6 +73,21 @@ jobs:
             echo "SIGNED=de teste (sem a chave fixa: pode ser preciso desinstalar antes)" >> "$GITHUB_ENV"
           fi
 
+      # O build do Android pode mudar arquivos no caminho (ex.: descompacta todo .gz e
+      # tira o ".gz" do nome — o app ficou sem as bordas por isso). Confere que cada
+      # arquivo do site está no APK com o mesmo nome.
+      - name: Conferir que o APK tem todos os arquivos do site
+        run: |
+          listing=$(unzip -Z1 "$RUNNER_TEMP/CustomMaker.apk")
+          missing=0
+          while IFS= read -r file; do
+            if ! grep -qxF "assets/public/$file" <<<"$listing"; then
+              echo "::error::falta no APK: $file"
+              missing=1
+            fi
+          done < <(cd dist && find . -type f | sed 's#^\./##')
+          exit $missing
+
       - name: Publicar o APK
         uses: actions/upload-artifact@v7
         with:

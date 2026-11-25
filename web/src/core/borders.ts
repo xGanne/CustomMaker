@@ -2,7 +2,7 @@
  * Estilos de borda, iguais a src/core/border_styles.py.
  *
  * As máscaras (onde a borda cobre e com que opacidade) vêm prontas do Python
- * (masks.bin.gz), inclusive o desfoque do Brilho e da Sombra; aqui só se pinta
+ * (generated/masks.gz.bin), inclusive o desfoque do Brilho e da Sombra; aqui só se pinta
  * com a cor e se compõe sobre o recorte com a mesma conta do Pillow.
  */
 import { cloneRaster, parseHexColor, pyMod, pyRound, type Raster } from "./raster";
@@ -10,7 +10,7 @@ import { rules, type BorderStyle } from "./rules";
 
 export type BorderMasks = Record<"band" | "dupla" | "brilho" | "sombra", Uint8Array>;
 
-/** Lê masks.bin.gz (bytes gzip) na ordem de rules.masks.order. */
+/** Lê o arquivo das máscaras (gzip ou já descompactado) na ordem de rules.masks.order. */
 export async function loadMasks(gzipped: ArrayBuffer | Uint8Array): Promise<BorderMasks> {
   const bytes = gzipped instanceof Uint8Array ? gzipped : new Uint8Array(gzipped);
   // um servidor que mande o .gz com Content-Encoding faz o navegador já descompactar

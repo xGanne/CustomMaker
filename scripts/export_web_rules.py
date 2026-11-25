@@ -6,7 +6,7 @@ próprio border_styles.py. O web só pinta as máscaras com a cor escolhida, ent
 a custom sai igual à do PC sem reimplementar o desfoque.
 
 Uso:  python scripts/export_web_rules.py
-Gera: web/src/generated/rules.json e web/public/generated/masks.bin.gz
+Gera: web/src/generated/rules.json e web/public/generated/masks.gz.bin
       (tests/test_web_export.py falha se estiverem desatualizados)
 """
 import gzip
@@ -24,9 +24,12 @@ from src.core import border_styles, custom_scorer, danbooru  # noqa: E402
 from src.core.mudae import DISCORD_MESSAGE_LIMIT  # noqa: E402
 
 RULES_PATH = os.path.join(ROOT, "web", "src", "generated", "rules.json")
-MASKS_PATH = os.path.join(ROOT, "web", "public", "generated", "masks.bin.gz")
+# Conteúdo gzip, mas o nome NÃO termina em .gz: o build do Android descompacta
+# todo asset .gz e tira o ".gz" do nome, e o app não achava o arquivo (HTTP 404).
+# O web reconhece o gzip pelos primeiros bytes, com qualquer nome.
+MASKS_PATH = os.path.join(ROOT, "web", "public", "generated", "masks.gz.bin")
 SIZE = (BORDA_WIDTH, BORDA_HEIGHT)
-# ordem das máscaras dentro de masks.bin (cada uma: largura x altura bytes, 0-255)
+# ordem das máscaras dentro do arquivo (cada uma: largura x altura bytes, 0-255)
 MASK_ORDER = ("band", "dupla", "brilho", "sombra")
 _PROBE_COLOR = (200, 30, 90)
 
@@ -68,7 +71,7 @@ def build_rules():
         "colors": dict(BORDA_HEX),
         "styles": dict(border_styles.BORDER_STYLES),
         "defaultStyle": border_styles.DEFAULT_STYLE,
-        "masks": {"file": "generated/masks.bin.gz", "order": list(MASK_ORDER)},
+        "masks": {"file": "generated/" + os.path.basename(MASKS_PATH), "order": list(MASK_ORDER)},
         "discordMessageLimit": DISCORD_MESSAGE_LIMIT,
         # upload (src/core/uploader.py): lotes de até N imagens, post oculto, sem "anonymous"
         "imgchest": {"batchSize": min(max(1, int(UPLOAD_BATCH_SIZE)), 20), "privacy": "hidden", "nsfw": "1"},
@@ -102,7 +105,7 @@ def build_rules():
 
 
 def masks_payload(masks):
-    """masks.bin.gz determinístico (mtime 0): mesmo conteúdo, mesmos bytes."""
+    """Máscaras em gzip determinístico (mtime 0): mesmo conteúdo, mesmos bytes."""
     raw = b"".join(masks[name].tobytes() for name in MASK_ORDER)
     return gzip.compress(raw, compresslevel=9, mtime=0)
 

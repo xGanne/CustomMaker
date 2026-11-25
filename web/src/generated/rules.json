@@ -36,7 +36,7 @@
   },
   "defaultStyle": "simples",
   "masks": {
-    "file": "generated/masks.bin.gz",
+    "file": "generated/masks.gz.bin",
     "order": [
       "band",
       "dupla",

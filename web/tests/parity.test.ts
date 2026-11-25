@@ -12,7 +12,7 @@ import { autoFit } from "../src/core/autofit";
 import { applyBorder, gradientEnd, loadMasks, type BorderMasks } from "../src/core/borders";
 import { parseHexColor, pyRound, type Raster } from "../src/core/raster";
 import { renderToBorder } from "../src/core/render";
-import type { BorderStyle } from "../src/core/rules";
+import { rules, type BorderStyle } from "../src/core/rules";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = join(here, "fixtures");
@@ -62,7 +62,7 @@ function compare(actual: Raster, expected: Raster) {
 let masks: BorderMasks;
 
 beforeAll(async () => {
-  masks = await loadMasks(readFileSync(join(here, "..", "public", "generated", "masks.bin.gz")));
+  masks = await loadMasks(readFileSync(join(here, "..", "public", rules.masks.file)));
 });
 
 describe("custom igual à do PC", () => {
